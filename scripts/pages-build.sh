@@ -51,23 +51,28 @@ if ! { command -v wasm-bindgen >/dev/null && [ "$(wasm-bindgen --version | awk '
 fi
 wasm-bindgen --version
 
-# SQLite is compiled from C for wasm32, so the C compiler needs the WebAssembly backend.
+# SQLite is compiled from C for wasm32, so the C compiler needs the WebAssembly backend. The
+# Pages build user is not root (no apt, no sudo), so fetch wasi-sdk: a relocatable clang with
+# the wasm32 backend and llvm-ar. The justfile reads LLVM_BIN.
 step "clang with the wasm32 backend"
 has_wasm_clang() { command -v clang >/dev/null && clang -print-targets 2>/dev/null | grep -q wasm32; }
-if ! has_wasm_clang; then
-  echo "clang: $(command -v clang || echo none); trying apt"
-  if [ "$(id -u)" = 0 ]; then
-    apt-get update -qq && apt-get install -y -qq clang llvm
-  elif command -v sudo >/dev/null; then
-    sudo apt-get update -qq && sudo apt-get install -y -qq clang llvm
+if has_wasm_clang; then
+  echo "using $(command -v clang)"
+else
+  wasi="${WASI_SDK_VERSION:-34}"
+  dir="$HOME/.local/wasi-sdk-$wasi.0-x86_64-linux"
+  if [ ! -x "$dir/bin/clang" ]; then
+    echo "no clang with wasm32; downloading wasi-sdk $wasi (about 180 MB)"
+    mkdir -p "$HOME/.local"
+    curl -fsSL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$wasi/wasi-sdk-$wasi.0-x86_64-linux.tar.gz" | tar -xz -C "$HOME/.local"
   fi
+  export LLVM_BIN="$dir/bin"
+  echo "LLVM_BIN=$LLVM_BIN"
 fi
-if ! has_wasm_clang; then
-  echo "FAIL: no clang with a wasm32 target. Found: $(command -v clang || echo none)"
-  clang -print-targets 2>&1 | head -20 || true
-  exit 1
-fi
-clang --version | head -1
+clang_bin="${LLVM_BIN:+$LLVM_BIN/}clang"
+"$clang_bin" --version | head -1
+"$clang_bin" -print-targets | grep -q wasm32 || { echo "FAIL: this clang has no wasm32 target"; exit 1; }
+if [ -n "${LLVM_BIN:-}" ] && [ ! -x "$LLVM_BIN/llvm-ar" ]; then echo "FAIL: no llvm-ar in $LLVM_BIN"; exit 1; fi
 
 step "wasm bundles"
 just wasm-bundle typst-bundle
