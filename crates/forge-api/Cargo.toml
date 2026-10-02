@@ -10,11 +10,15 @@ description = "Transport-agnostic Forge HTTP API (axum Router). Hosted natively 
 default = []
 # Run store calls on tokio's blocking pool instead of inline. Enabled by forge-server.
 tokio = ["dep:tokio"]
+# Compile PDFs in-process with Typst (forge-typst). Enabled by forge-server. The browser build
+# leaves it off and compiles in its own lazily loaded module instead.
+pdf = ["dep:forge-typst"]
 
 [dependencies]
 forge-core = { workspace = true, features = ["rusqlite"] }
 forge-sdk = { workspace = true }
 forge-ai = { workspace = true }
+forge-typst = { workspace = true, optional = true }
 axum = { version = "0.8", default-features = false, features = ["json", "query"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

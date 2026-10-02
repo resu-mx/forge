@@ -18,6 +18,7 @@ pub mod integrity;
 pub mod job_descriptions;
 pub mod notes;
 pub mod organizations;
+pub mod pdf;
 pub mod perspectives;
 pub mod profile;
 pub mod resumes;
