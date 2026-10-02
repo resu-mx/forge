@@ -1,0 +1,25 @@
+[package]
+name = "forge-typst"
+version = "0.1.0"
+edition = "2021"
+description = "Compile Typst source to PDF, in-process: no subprocess, no system fonts. Used natively by forge-server and, as its own lazily loaded wasm module, by the browser."
+
+# `cdylib` is the browser module (built by `just typst-bundle`); `rlib` is the native library.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+typst-as-lib = "0.16"
+typst-layout = "0.15"
+typst-library = "0.15"
+typst-pdf = "0.15"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+forge-sdk = { workspace = true }
+forge-core = { workspace = true, features = ["rusqlite"] }
