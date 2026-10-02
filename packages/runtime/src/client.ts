@@ -57,6 +57,29 @@ export interface RuntimeOptions {
   lockName?: string
   /** Defaults to `location.href`. */
   baseHref?: string
+  /**
+   * Called after a request that changed stored data succeeded. Defaults to dispatching a
+   * `forge:changed` event on `globalThis`, which is how the UI (and an agent driving the page)
+   * learns that data moved underneath it.
+   */
+  onChange?: (change: ForgeChange) => void
+}
+
+/** What `forge:changed` carries in `event.detail`. */
+export interface ForgeChange {
+  method: string
+  path: string
+}
+
+export const FORGE_CHANGED_EVENT = 'forge:changed'
+
+/** Requests that use a write method but leave stored data as it was. */
+function changesData(method: string, pathname: string): boolean {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false
+  if (pathname.endsWith('/pdf')) return false
+  // Preparing a derivation records the request, and nothing a list would show.
+  if (pathname === '/api/derivations/prepare') return false
+  return true
 }
 
 export interface ForgeRuntime {
@@ -303,6 +326,15 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
     }
   }
 
+  function announceChange(change: ForgeChange) {
+    try {
+      if (options.onChange) options.onChange(change)
+      else globalThis.dispatchEvent?.(new CustomEvent(FORGE_CHANGED_EVENT, { detail: change }))
+    } catch {
+      // a listener's failure must not fail the request that already succeeded
+    }
+  }
+
   async function runtimeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const req =
       input instanceof Request
@@ -332,6 +364,7 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
         { op: 'request', method: req.method, path: url.pathname + url.search, headers, body },
         body.byteLength > 0 ? [body.buffer] : [],
       )
+      if (res.status < 400 && changesData(req.method, url.pathname)) announceChange({ method: req.method, path: url.pathname })
       return new Response(NULL_BODY_STATUSES.has(res.status) ? null : (res.body as BodyInit), {
         status: res.status,
         headers: res.headers,
@@ -355,7 +388,9 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
     },
     async importDatabase(bytes) {
       await ready
-      return call<ImportInfo>({ op: 'import', bytes }, [bytes.buffer as ArrayBuffer])
+      const info = await call<ImportInfo>({ op: 'import', bytes }, [bytes.buffer as ArrayBuffer])
+      announceChange({ method: 'IMPORT', path: '/database' })
+      return info
     },
   }
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
+  import { onForgeChanged } from '$lib/forge-changed'
   import { StatusBadge, LoadingSpinner, EmptyState, PageHeader, ListSearchInput } from '$lib/components'
   import BulletDetailModal from '$lib/components/BulletDetailModal.svelte'
   import ViewToggle from '$lib/components/ViewToggle.svelte'
@@ -118,9 +119,14 @@
     loadItems()
   })
 
-  async function loadItems() {
-    loading = true
-    items = []
+  // An agent (or another part of the page) changed data: refresh in place, keeping the list on screen.
+  $effect(() => onForgeChanged(() => loadItems(true)))
+
+  async function loadItems(quiet = false) {
+    if (!quiet) {
+      loading = true
+      items = []
+    }
 
     if (contentType === 'bullet') {
       const [bulletRes, perspRes] = await Promise.all([

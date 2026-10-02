@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { DERIVE_VIA_AGENT } from '$lib/derive-message'
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import { LoadingSpinner } from '$lib/components'
@@ -59,7 +60,7 @@
 
   async function derive() {
     if (!canDerive) return
-    addToast({ message: 'Perspective derivation temporarily disabled — use MCP tools', type: 'info' })
+    addToast({ message: DERIVE_VIA_AGENT, type: 'info' })
   }
 
   function handleKeydown(e: KeyboardEvent) {
