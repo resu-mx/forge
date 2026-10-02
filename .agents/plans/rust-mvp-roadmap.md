@@ -1,7 +1,7 @@
 # Roadmap: minimal Rust Forge (browser-first, core loop)
 
 **Date**: 2026-10-01
-**Status**: Proposed. This is a plan; nothing here has been implemented.
+**Status**: Proposed. M0 (merged) and M1 (spike, see below) are done; the rest is a plan.
 **Parent**: `forge-nfpz` (Rust Rewrite). Baseline: [`this-repo-is-in-moonlit-pinwheel.md`](./this-repo-is-in-moonlit-pinwheel.md) (progress assessment).
 
 ## Decisions
@@ -59,6 +59,10 @@ each store over wa-sqlite) becomes the **fallback**, and its unmerged branch `or
 - **Done when:** `just --list` works, and CI is green on a no-op PR.
 
 ## M1: Spike, Rust SQLite and router in a browser Worker (decision gate)
+
+**Status: done 2026-10-01. Path A confirmed in Chrome.** See `docs/src/dev/adrs/rust-wasm/0001-rusqlite-and-axum-in-a-browser-worker.md`.
+Not yet verified: Firefox/Safari, and a Linux CI build of the wasm SQLite. Two constraints found: the build needs a clang with the
+wasm backend, and `sqlite-wasm-vfs` must be 0.2.x to match rusqlite 0.40's `sqlite-wasm-rs` 0.5.
 Build a throwaway harness in `crates/forge-wasm/examples/` (it extends `browser-smoke`). It must show:
 1. rusqlite upgraded 0.32 → ≥ 0.38 (latest is 0.40.2), with all forge-sdk tests still green natively.
 2. `forge-sdk` compiles to wasm32. Watch for getrandom's wasm backend feature (uuid v4) and chrono's `wasmbind` (on by default).

@@ -122,6 +122,10 @@ telemetry-stop:
 wasm-target:
     rustup target add wasm32-unknown-unknown --toolchain stable
 
+# Run any cargo subcommand against wasm32, e.g. `just wasm-cargo check -p forge-sdk`.
+wasm-cargo *args: wasm-target
+    {{cargo}} {{args}} --target wasm32-unknown-unknown
+
 # Build forge-wasm to wasm32. Use this in CI to catch WASM-only breaks at
 # build time rather than at deploy time. forge-server MUST NOT depend on
 # forge-wasm (passive guard: forge-wasm is omitted from workspace.dependencies).
