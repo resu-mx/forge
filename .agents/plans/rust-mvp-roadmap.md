@@ -177,6 +177,7 @@ tests); Firefox/Safari. Endpoints not yet in the Rust API answer 501 in the brow
 - **Caveat to state in the doc:** this needs Chrome plus the extension with site permission for the app origin. Browser
   storage is per browser, so Forge's data lives in Chrome, not Zen. The M4 export/import moves it between browsers.
 - **Done when:** in a live session, Claude derives bullets from a source and then a perspective, and both appear in the UI awaiting approval.
+- **Status:** done in the PR for `feat/m6-agent-bridge`. `window.forge` is always present in wasm mode; the runtime fires `forge:changed` after every successful write; the sources and bullets/perspectives lists refetch on it; skill at `.claude/skills/forge-in-chrome/SKILL.md`. Checked by driving a Chrome tab through `javascript_tool` (source, then bullets, then an approved bullet, then a perspective, all `in_review`, bullets visible without a reload). Not done: other list pages (organizations, skills, resumes, and so on) do not listen for `forge:changed` yet; the model-writing step was me following the prompt by hand, not an unattended run.
 
 ## M7: Minimal-Rust acceptance and switching the default to wasm
 - Add a Playwright core-loop spec in `packages/webui/e2e` for wasm mode: profile → org → source → (seeded) bullet →
