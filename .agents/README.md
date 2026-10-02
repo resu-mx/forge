@@ -11,7 +11,7 @@ AGENTS.md                     root instructions, loaded at the start of every se
 .agents/
 ├── AGENTS.md                 the index: imported by the root file, re-read after compaction
 ├── README.md                 this file
-├── context/                  shared, task-triggered context (e.g. beads-taxonomy.md)
+├── context/                  shared, task-triggered context (e.g. work-tracking.md, beads-taxonomy.md)
 └── plans/                    working plans, specs and prompts (layout in the index)
 packages/AGENTS.md            one per major directory, next to the code it describes
 packages/webui/AGENTS.md

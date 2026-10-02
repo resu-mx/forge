@@ -1,6 +1,8 @@
 # Beads Categories (Forge)
 
 Project-specific bead categories for Forge. Read this before creating or labelling a bead.
+Beads are generated from GitHub issues; how they link back and what each one holds is in
+`work-tracking.md`.
 
 ## Category (where it belongs)
 

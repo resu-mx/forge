@@ -21,6 +21,7 @@ file named below before working there.
 
 | Read | Before you |
 |---|---|
+| `.agents/context/work-tracking.md` | create a GitHub milestone or issue, or generate beads from an issue |
 | `.agents/context/beads-taxonomy.md` | create or label a bead (`cat:` labels) |
 | `.agents/plans/rust-mvp-roadmap.md` | work on the Rust port (milestones M0–M7 and their status) |
 | `docs/src/dev/adrs/` | change something an ADR decided |
