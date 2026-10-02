@@ -28,11 +28,14 @@ if (runtime) installApiFetch(runtime)
 
 export const forge = new ForgeClient({ baseUrl: '', debug: true, fetch: runtime?.fetch })
 
-// Expose forge on window in dev mode for console debugging
-// Usage: forge.debug.getAll() in browser console
-if (typeof window !== 'undefined' && isDevMode()) {
-  ;(window as unknown as Record<string, unknown>).forge = forge
-  ;(window as unknown as Record<string, unknown>).forgeRuntime = runtime
+// `window.forge` is the same client the UI uses, so an agent driving this tab (Claude in
+// Chrome, through `javascript_tool`) works on exactly the data the person sees. In `wasm` mode
+// it is always there; in `api` mode only in dev, for console debugging.
+// Usage: await forge.sources.list() in the browser console.
+if (typeof window !== 'undefined' && (forgeMode === 'wasm' || isDevMode())) {
+  const w = window as unknown as Record<string, unknown>
+  w.forge = forge
+  w.forgeRuntime = runtime
 }
 
 /**

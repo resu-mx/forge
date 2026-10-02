@@ -1,6 +1,8 @@
 <script lang="ts">
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
+  import { onForgeChanged } from '$lib/forge-changed'
+  import { DERIVE_VIA_AGENT } from '$lib/derive-message'
   import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, SplitPanel, ListPanelHeader, EmptyPanel } from '$lib/components'
   import OrgCombobox from '$lib/components/OrgCombobox.svelte'
   import type { Source, Organization, Skill, ClearanceLevel, ClearancePolygraph, ClearanceStatus, ClearanceType, ClearanceAccessProgram } from '@forge/sdk'
@@ -189,6 +191,9 @@
     loadAllSkills()
   })
 
+  // An agent (or another part of the page) changed data: refresh the list without the spinner.
+  $effect(() => onForgeChanged(() => loadSources(true)))
+
   $effect(() => {
     if (selectedSource && !editing) {
       populateFormFromSource(selectedSource)
@@ -271,8 +276,8 @@
     formEduOrgId = null
   }
 
-  async function loadSources() {
-    loading = true
+  async function loadSources(quiet = false) {
+    if (!quiet) loading = true
     const result = await forge.sources.list({ limit: 500 })
     if (result.ok) {
       sources = result.data
@@ -553,7 +558,7 @@
   }
 
   async function deriveBullets() {
-    addToast({ message: 'Derivation temporarily disabled — use MCP tools (forge_prepare_derivation)', type: 'info' })
+    addToast({ message: DERIVE_VIA_AGENT, type: 'info' })
   }
 
   /**
