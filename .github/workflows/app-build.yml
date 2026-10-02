@@ -1,0 +1,64 @@
+name: App build
+
+# Proves the browser-first app (Rust API compiled to WASM + the Svelte UI) builds and fits
+# Cloudflare Pages' limits. It does not deploy: Cloudflare's Git integration builds and deploys
+# the `resumx-app` project (app.resu.mx) itself, running scripts/pages-build.sh. The project,
+# hostname and DNS are owned by Terraform in resu-mx/infra.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build static app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: extractions/setup-just@v2
+
+      # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock exactly.
+      - name: Read the wasm-bindgen version from Cargo.lock
+        id: wbg
+        run: |
+          v=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "could not read wasm-bindgen version from Cargo.lock"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "wasm-bindgen $v"
+      - uses: actions/cache@v4
+        id: wbg-cache
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ steps.wbg.outputs.version }}
+      - name: Install wasm-bindgen-cli
+        if: steps.wbg-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "${{ steps.wbg.outputs.version }}" --locked
+
+      - run: bun install --frozen-lockfile
+      - name: Build the wasm bundles
+        run: just wasm-bundle typst-bundle
+      - name: Build the web UI (browser runtime mode)
+        run: bun run --filter '@forge/webui' build
+        env:
+          VITE_FORGE_MODE: wasm
+
+      - name: Check limits and shape (the same script the Pages build runs)
+        run: bash scripts/check-app-build.sh packages/webui/build
