@@ -3,6 +3,7 @@
 set dotenv-load := true
 
 # Resolve DB path relative to workspace root (bun --filter changes CWD to package dir)
+export PATH := env("HOME") / ".bun/bin:" + env("PATH")
 export FORGE_DB_PATH := absolute_path(env("FORGE_DB_PATH", "./data/forge.db"))
 
 # Cargo via rustup so the stable toolchain is used even when another Rust
@@ -75,6 +76,18 @@ setup:
     @test -f .env || cp .env.example .env && echo "Created .env from .env.example"
     @mkdir -p data
     @echo "Done. Run 'just dev' to start."
+
+# Run the TS route tests against the Rust forge-server instead of in-process Hono.
+# Each test gets a fresh temp DB and its own server process (see routes/__tests__/helpers.ts).
+# Usage: just parity [test paths relative to packages/core, default: all route tests]
+parity *files="src/routes/__tests__":
+    {{cargo}} build -p forge-server
+    cd packages/core && FORGE_TEST_SERVER_BIN={{justfile_directory()}}/target/debug/forge-server bun test {{files}} --timeout 20000
+
+# The route test files the Rust server is expected to pass today (roadmap M3, Tier 0).
+# CI runs exactly these; widen the list as more of the API is ported.
+parity-tier0:
+    just parity src/routes/__tests__/contracts.test.ts src/routes/__tests__/sources.test.ts src/routes/__tests__/bullets.test.ts src/routes/__tests__/perspectives.test.ts src/routes/__tests__/resumes.test.ts src/routes/__tests__/derivations.test.ts src/routes/__tests__/profile.test.ts src/routes/__tests__/export.test.ts src/routes/__tests__/cors.test.ts src/routes/__tests__/server.test.ts src/routes/__tests__/review.test.ts
 
 # Run only the core API tests
 test-core:

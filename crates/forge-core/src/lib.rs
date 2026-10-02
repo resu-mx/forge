@@ -6,6 +6,7 @@
 //!
 //! TS source: `packages/core/src/types/index.ts`
 
+pub mod serde_util;
 pub mod types;
 pub mod util;
 

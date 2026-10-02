@@ -70,12 +70,44 @@ impl ProfileStore {
         }
     }
 
+    /// Rules from the TS ProfileService: a name, if given, must not be blank, and
+    /// the salary tiers, where two are given, must be ordered min <= target <= stretch.
+    fn validate_patch(patch: &UpdateProfile) -> Result<(), ForgeError> {
+        let invalid = |message: &str, field: &str| ForgeError::Validation {
+            message: message.into(),
+            field: Some(field.into()),
+        };
+        if matches!(&patch.name, Some(n) if n.trim().is_empty()) {
+            return Err(invalid("Name must not be empty", "name"));
+        }
+
+        let tier = |v: &Option<Option<f64>>| v.flatten();
+        let (min, target, stretch) = (
+            tier(&patch.salary_minimum),
+            tier(&patch.salary_target),
+            tier(&patch.salary_stretch),
+        );
+        let exceeds = |lo: Option<f64>, hi: Option<f64>| matches!((lo, hi), (Some(a), Some(b)) if a > b);
+        if exceeds(min, target) {
+            return Err(invalid("salary_minimum must not exceed salary_target", "salary_minimum"));
+        }
+        if exceeds(target, stretch) {
+            return Err(invalid("salary_target must not exceed salary_stretch", "salary_target"));
+        }
+        if exceeds(min, stretch) {
+            return Err(invalid("salary_minimum must not exceed salary_stretch", "salary_minimum"));
+        }
+        Ok(())
+    }
+
     /// Update the singleton profile with the provided patch fields.
     ///
     /// Only the fields present in `UpdateProfile` are written; absent
     /// fields are left unchanged. Creates the profile row if it doesn't
     /// exist yet (first update on a fresh DB). Returns the updated profile.
     pub fn update_profile(conn: &Connection, patch: &UpdateProfile) -> Result<UserProfile, ForgeError> {
+        Self::validate_patch(patch)?;
+
         let current = Self::get_profile(conn)?;
         let profile_id = match &current {
             Some(p) => p.id.clone(),

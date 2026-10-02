@@ -3,19 +3,20 @@
 //! Mirrors `packages/core/src/routes/resumes.ts`.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    AddResumeEntry, CreateResume, Resume, ResumeEntry, ResumeSectionEntity, ResumeWithEntries,
-    UpdateResume,
+    AddResumeCertification, AddResumeEntry, CreateResume, GapAnalysis, Resume,
+    ResumeCertification, ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate,
+    ResumeWithEntries, UpdateResume,
 };
-use forge_sdk::db::ResumeStore;
+use forge_sdk::db::{ResumeStore, TemplateStore};
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{ApiData, ApiList, Created, NoContent};
+use crate::response::{not_implemented, ApiData, ApiList, Created, NoContent};
 use crate::state::SharedState;
 
 // ── Query params ────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ pub struct ResumeListQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateEntryBody {
+    #[serde(default, deserialize_with = "forge_core::serde_util::double_option")]
     pub content: Option<Option<String>>,
     pub section_id: Option<String>,
     pub position: Option<i32>,
@@ -42,7 +44,7 @@ pub struct ReorderEntriesBody {
 
 #[derive(Debug, Deserialize)]
 pub struct ReorderEntryItem {
-    pub entry_id: String,
+    pub id: String,
     pub section_id: String,
     pub position: i32,
 }
@@ -173,18 +175,18 @@ async fn reorder_entries(
     State(state): State<SharedState>,
     Path(resume_id): Path<String>,
     Json(body): Json<ReorderEntriesBody>,
-) -> Result<NoContent, ApiError> {
+) -> Result<Json<ApiData<Option<()>>>, ApiError> {
     let entries: Vec<(String, String, i32)> = body
         .entries
         .into_iter()
-        .map(|e| (e.entry_id, e.section_id, e.position))
+        .map(|e| (e.id, e.section_id, e.position))
         .collect();
 
     with_conn(&state, move |conn| {
         ResumeStore::reorder_entries(conn, &resume_id, &entries)
     })
     .await?;
-    Ok(NoContent)
+    Ok(Json(ApiData { data: None }))
 }
 
 // ── Section sub-resource handlers ──────────────────────────────────
@@ -212,6 +214,213 @@ async fn delete_section(
     Ok(NoContent)
 }
 
+async fn list_sections(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+) -> Result<Json<ApiData<Vec<ResumeSectionEntity>>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        // 404 for an unknown resume rather than an empty list.
+        ResumeStore::get(conn, &resume_id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
+            entity_type: "resume".into(),
+            id: resume_id.clone(),
+        })?;
+        ResumeStore::list_sections(conn, &resume_id)
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSectionBody {
+    pub title: Option<String>,
+    pub position: Option<i32>,
+}
+
+async fn update_section(
+    State(state): State<SharedState>,
+    Path((resume_id, section_id)): Path<(String, String)>,
+    Json(body): Json<UpdateSectionBody>,
+) -> Result<Json<ApiData<ResumeSectionEntity>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::update_section(conn, &resume_id, &section_id, body.title.as_deref(), body.position)
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+// ── Section skills ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct AddSkillBody {
+    pub skill_id: String,
+}
+
+async fn add_section_skill(
+    State(state): State<SharedState>,
+    Path((resume_id, section_id)): Path<(String, String)>,
+    Json(body): Json<AddSkillBody>,
+) -> Result<Created<ResumeSkill>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::add_skill(conn, &resume_id, &section_id, &body.skill_id)
+    })
+    .await?;
+    Ok(Created(data))
+}
+
+async fn list_section_skills(
+    State(state): State<SharedState>,
+    Path((resume_id, section_id)): Path<(String, String)>,
+) -> Result<Json<ApiData<Vec<ResumeSkill>>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::list_skills_for_section(conn, &resume_id, &section_id)
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+async fn remove_section_skill(
+    State(state): State<SharedState>,
+    Path((resume_id, section_id, skill_id)): Path<(String, String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| ResumeStore::remove_skill(conn, &resume_id, &section_id, &skill_id)).await?;
+    Ok(NoContent)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderSkillsBody {
+    pub skills: Vec<ReorderSkillItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderSkillItem {
+    pub skill_id: String,
+    pub position: i32,
+}
+
+async fn reorder_section_skills(
+    State(state): State<SharedState>,
+    Path((resume_id, section_id)): Path<(String, String)>,
+    Json(body): Json<ReorderSkillsBody>,
+) -> Result<Json<ApiData<Option<()>>>, ApiError> {
+    let skills: Vec<(String, i32)> = body.skills.into_iter().map(|s| (s.skill_id, s.position)).collect();
+    with_conn(&state, move |conn| ResumeStore::reorder_skills(conn, &resume_id, &section_id, &skills)).await?;
+    Ok(Json(ApiData { data: None }))
+}
+
+// ── Certifications ─────────────────────────────────────────────────
+
+async fn add_resume_certification(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+    Json(input): Json<AddResumeCertification>,
+) -> Result<Created<ResumeCertification>, ApiError> {
+    let data = with_conn(&state, move |conn| ResumeStore::add_certification(conn, &resume_id, &input)).await?;
+    Ok(Created(data))
+}
+
+async fn list_resume_certifications(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+) -> Result<Json<ApiData<Vec<ResumeCertification>>>, ApiError> {
+    let data = with_conn(&state, move |conn| ResumeStore::list_certifications(conn, &resume_id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+async fn remove_resume_certification(
+    State(state): State<SharedState>,
+    Path((resume_id, rc_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| ResumeStore::remove_certification(conn, &resume_id, &rc_id)).await?;
+    Ok(NoContent)
+}
+
+// ── Templates, gaps, IR, header, overrides, PDF ────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SaveAsTemplateBody {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+async fn save_as_template(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+    Json(body): Json<SaveAsTemplateBody>,
+) -> Result<Created<ResumeTemplate>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        TemplateStore::save_as_template(conn, &resume_id, &body.name, body.description.as_deref())
+    })
+    .await?;
+    Ok(Created(data))
+}
+
+async fn analyze_gaps(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+) -> Result<Json<ApiData<GapAnalysis>>, ApiError> {
+    let data = with_conn(&state, move |conn| ResumeStore::analyze_gaps(conn, &resume_id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// The resume's intermediate representation (what every renderer consumes).
+async fn get_ir(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+) -> Result<Json<ApiData<forge_core::ResumeDocument>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        forge_sdk::services::CompilerService::compile(conn, &resume_id)?.ok_or_else(|| {
+            forge_core::ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.clone() }
+        })
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+async fn update_header(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+    Json(header): Json<serde_json::Value>,
+) -> Result<Json<ApiData<Resume>>, ApiError> {
+    let data = with_conn(&state, move |conn| ResumeStore::update_header(conn, &resume_id, &header)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// `{ "content": string | null }` — null clears the override.
+#[derive(Debug, Deserialize)]
+pub struct OverrideBody {
+    pub content: Option<String>,
+}
+
+async fn update_markdown_override(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+    Json(body): Json<OverrideBody>,
+) -> Result<Json<ApiData<Resume>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::update_markdown_override(conn, &resume_id, body.content.as_deref())
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+async fn update_latex_override(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+    Json(body): Json<OverrideBody>,
+) -> Result<Json<ApiData<Resume>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::update_latex_override(conn, &resume_id, body.content.as_deref())
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// PDF rendering moves from a tectonic subprocess to Typst compiled in-process
+/// (roadmap M5), so it is not available from the Rust server yet.
+async fn pdf_not_available() -> axum::response::Response {
+    not_implemented("PDF rendering is not available in the Rust server yet")
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -222,14 +431,42 @@ pub fn router() -> Router<SharedState> {
             get(get_resume).patch(update_resume).delete(delete_resume),
         )
         .route("/resumes/{id}/entries", post(add_entry))
+        // Static `reorder` wins over the `{entry_id}` parameter below.
+        .route("/resumes/{id}/entries/reorder", patch(reorder_entries))
         .route(
             "/resumes/{resume_id}/entries/{entry_id}",
-            axum::routing::patch(update_entry).delete(remove_entry),
+            patch(update_entry).delete(remove_entry),
         )
-        .route("/resumes/{id}/entries/reorder", post(reorder_entries))
-        .route("/resumes/{id}/sections", post(create_section))
+        .route("/resumes/{id}/sections", post(create_section).get(list_sections))
         .route(
             "/resumes/{resume_id}/sections/{section_id}",
-            axum::routing::delete(delete_section),
+            patch(update_section).delete(delete_section),
         )
+        .route(
+            "/resumes/{resume_id}/sections/{section_id}/skills",
+            post(add_section_skill).get(list_section_skills),
+        )
+        .route(
+            "/resumes/{resume_id}/sections/{section_id}/skills/reorder",
+            patch(reorder_section_skills),
+        )
+        .route(
+            "/resumes/{resume_id}/sections/{section_id}/skills/{skill_id}",
+            axum::routing::delete(remove_section_skill),
+        )
+        .route(
+            "/resumes/{id}/certifications",
+            post(add_resume_certification).get(list_resume_certifications),
+        )
+        .route(
+            "/resumes/{resume_id}/certifications/{rc_id}",
+            axum::routing::delete(remove_resume_certification),
+        )
+        .route("/resumes/{id}/save-as-template", post(save_as_template))
+        .route("/resumes/{id}/gaps", get(analyze_gaps))
+        .route("/resumes/{id}/ir", get(get_ir))
+        .route("/resumes/{id}/header", patch(update_header))
+        .route("/resumes/{id}/markdown-override", patch(update_markdown_override))
+        .route("/resumes/{id}/latex-override", patch(update_latex_override))
+        .route("/resumes/{id}/pdf", post(pdf_not_available))
 }

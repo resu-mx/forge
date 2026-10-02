@@ -30,17 +30,27 @@ pub struct CreateJobDescription {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateJobDescription {
     pub title: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub organization_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub url: Option<Option<String>>,
     pub raw_text: Option<String>,
     pub status: Option<JobDescriptionStatus>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_range: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_min: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_max: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub location: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub parsed_sections: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub work_posture: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub parsed_locations: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_period: Option<Option<String>>,
 }
 
@@ -64,13 +74,21 @@ pub struct CreateContact {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateContact {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub title: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub email: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub phone: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub linkedin: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub team: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub dept: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub notes: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub organization_id: Option<Option<String>>,
 }
 
@@ -119,31 +137,49 @@ pub struct CreateSource {
 pub struct UpdateSource {
     pub title: Option<String>,
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub start_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub end_date: Option<Option<String>>,
     // Role extension
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub organization_id: Option<Option<String>>,
     pub is_current: Option<i32>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub work_arrangement: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub base_salary: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub total_comp_notes: Option<Option<String>>,
     // Project extension
     pub is_personal: Option<i32>,
     pub open_source: Option<i32>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub url: Option<Option<String>>,
     // Education extension
     pub education_type: Option<EducationType>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub education_organization_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub campus_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub field: Option<Option<String>>,
     pub is_in_progress: Option<i32>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub credential_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub expiration_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub degree_level: Option<Option<DegreeLevelType>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub degree_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub certificate_subtype: Option<Option<CertificateSubtype>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub gpa: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub location: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub edu_description: Option<Option<String>>,
     // Presentation extension
     pub venue: Option<String>,
@@ -157,7 +193,9 @@ pub struct UpdateSource {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateBulletInput {
     pub content: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub metrics: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub domain: Option<Option<String>>,
     pub technologies: Option<Vec<String>>,
 }
@@ -214,10 +252,15 @@ pub struct UpdateResume {
     pub target_employer: Option<String>,
     pub archetype: Option<String>,
     pub status: Option<ResumeStatus>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub header: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub summary_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub summary_override: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub markdown_override: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub latex_override: Option<Option<String>>,
     pub show_clearance_in_header: Option<i32>,
 }
@@ -282,12 +325,19 @@ pub struct CreateCertification {
 pub struct UpdateCertification {
     pub short_name: Option<String>,
     pub long_name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub cert_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub issuer_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub date_earned: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub expiry_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub credential_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub credential_url: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub credly_url: Option<Option<String>>,
     pub in_progress: Option<bool>,
 }
@@ -314,6 +364,7 @@ pub struct CreateResumeTemplate {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateResumeTemplate {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub description: Option<Option<String>>,
     pub sections: Option<Vec<super::entities::TemplateSectionDef>>,
 }
@@ -350,6 +401,7 @@ pub struct CreateArchetypeInput {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateArchetypeInput {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub description: Option<Option<String>>,
 }
 
@@ -370,6 +422,7 @@ pub struct CreateOrgLocation {
 pub struct UpdateOrgLocation {
     pub name: Option<String>,
     pub modality: Option<LocationModality>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub address_id: Option<Option<String>>,
     pub is_headquarters: Option<bool>,
 }
@@ -398,11 +451,16 @@ pub struct CreateSummary {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateSummary {
     pub title: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub role: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub description: Option<Option<String>>,
     pub is_template: Option<i32>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub industry_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub role_type_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub notes: Option<Option<String>>,
 }
 
@@ -424,10 +482,15 @@ pub struct CreateAddress {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateAddress {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub street_1: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub street_2: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub city: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub state: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub zip: Option<Option<String>>,
     pub country_code: Option<String>,
 }
@@ -438,13 +501,19 @@ pub struct UpdateAddress {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateProfile {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub email: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub phone: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub address_id: Option<Option<String>>,
     pub address: Option<CreateAddress>,
     pub urls: Option<Vec<ProfileUrlInput>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_minimum: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_target: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub salary_stretch: Option<Option<f64>>,
 }
 
@@ -497,9 +566,12 @@ pub struct CreateCredential {
 pub struct UpdateCredential {
     pub label: Option<String>,
     pub status: Option<CredentialStatus>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub organization_id: Option<Option<String>>,
     pub details: Option<String>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub issued_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::double_option", skip_serializing_if = "Option::is_none")]
     pub expiry_date: Option<Option<String>>,
 }
 

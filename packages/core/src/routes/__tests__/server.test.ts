@@ -48,7 +48,9 @@ describe('Server', () => {
     expect(allowOrigin).toBe('http://localhost:5173')
   })
 
-  test('slow request (>500ms) logged at warn level', async () => {
+  // Mocks performance.now and spies on this process's console: it tests the TS logger,
+  // so it cannot apply when the server under test is a separate (Rust) process.
+  test.skipIf(!!process.env.FORGE_TEST_SERVER_BIN)('slow request (>500ms) logged at warn level', async () => {
     // Mock performance.now to simulate a slow response
     const originalNow = performance.now
     let callCount = 0

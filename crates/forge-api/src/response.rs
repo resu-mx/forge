@@ -37,3 +37,12 @@ impl IntoResponse for NoContent {
         StatusCode::NO_CONTENT.into_response()
     }
 }
+
+/// 501 with the standard error envelope, for endpoints that were replaced.
+pub fn not_implemented(message: &str) -> Response {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({ "error": { "code": "NOT_IMPLEMENTED", "message": message } })),
+    )
+        .into_response()
+}

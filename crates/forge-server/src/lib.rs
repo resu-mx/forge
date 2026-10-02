@@ -8,7 +8,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use axum::body::Body;
-use axum::http::{header, HeaderValue, Method, Response, StatusCode};
+use axum::http::{header, HeaderValue, Method, Request, Response, StatusCode};
+use axum::middleware::{from_fn, Next};
 use axum::Router;
 use forge_api::AppState;
 use forge_sdk::db::DerivationStore;
@@ -71,10 +72,23 @@ impl Config {
 pub fn build_app(forge: Forge, production: bool) -> Router {
     forge_api::app(AppState::new(forge))
         .layer(cors(production))
+        .layer(from_fn(preflight_no_content))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(TraceLayer::new_for_http())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(CatchPanicLayer::custom(panic_response))
+}
+
+/// tower-http answers a CORS preflight with 200; Hono (and so the TS server) with 204.
+/// Clients should not care, but the contract tests do, so match it.
+async fn preflight_no_content(req: Request<Body>, next: Next) -> Response<Body> {
+    let is_preflight = req.method() == Method::OPTIONS
+        && req.headers().contains_key(header::ACCESS_CONTROL_REQUEST_METHOD);
+    let mut resp = next.run(req).await;
+    if is_preflight && resp.status() == StatusCode::OK {
+        *resp.status_mut() = StatusCode::NO_CONTENT;
+    }
+    resp
 }
 
 fn cors(production: bool) -> CorsLayer {

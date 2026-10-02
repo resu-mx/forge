@@ -8,7 +8,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    CreatePerspectiveInput, Framing, PaginationParams, Perspective, PerspectiveFilter,
+    Framing, PaginationParams, Perspective, PerspectiveFilter,
     PerspectiveStatus, PerspectiveWithChain, UpdatePerspectiveInput,
 };
 use forge_sdk::db::PerspectiveStore;
@@ -41,12 +41,34 @@ pub struct RejectBody {
 
 // ── Handlers ────────────────────────────────────────────────────────
 
+/// `POST /perspectives` body. Lighter than the derivation input: the snapshot is
+/// taken from the bullet, and `auto_approve` defaults to true (as in the TS API).
+#[derive(Debug, Deserialize)]
+pub struct CreatePerspectiveBody {
+    pub bullet_id: String,
+    pub content: String,
+    pub target_archetype: Option<String>,
+    pub domain: Option<String>,
+    pub framing: Option<forge_core::Framing>,
+    pub auto_approve: Option<bool>,
+}
+
 async fn create_perspective(
     State(state): State<SharedState>,
-    Json(input): Json<CreatePerspectiveInput>,
+    Json(body): Json<CreatePerspectiveBody>,
 ) -> Result<Created<Perspective>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| PerspectiveStore::create(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        PerspectiveStore::create_direct(
+            conn,
+            &body.bullet_id,
+            &body.content,
+            body.target_archetype.as_deref(),
+            body.domain.as_deref(),
+            body.framing,
+            body.auto_approve.unwrap_or(true),
+        )
+    })
+    .await?;
     Ok(Created(result))
 }
 

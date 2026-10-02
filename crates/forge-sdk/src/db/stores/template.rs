@@ -127,6 +127,37 @@ impl TemplateStore {
             .ok_or_else(|| ForgeError::Internal("Resume created but not found".into()))
     }
 
+    /// Save a resume's section layout as a new template.
+    pub fn save_as_template(
+        conn: &Connection,
+        resume_id: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<ResumeTemplate, ForgeError> {
+        if name.trim().is_empty() {
+            return Err(validation("Name must not be empty", Some("name")));
+        }
+        ResumeStore::get(conn, resume_id)?
+            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.into() })?;
+
+        let sections: Vec<TemplateSectionDef> = ResumeStore::list_sections(conn, resume_id)?
+            .into_iter()
+            .map(|s| TemplateSectionDef { title: s.title, entry_type: s.entry_type, position: s.position })
+            .collect();
+        if sections.is_empty() {
+            return Err(validation("Resume has no sections", Some("sections")));
+        }
+
+        Self::create(
+            conn,
+            &CreateResumeTemplate {
+                name: name.trim().to_string(),
+                description: description.map(str::to_string),
+                sections,
+            },
+        )
+    }
+
     // ── Update ───────────────────────────────────────────────────────
 
     /// Patch a template's name, description and/or sections.

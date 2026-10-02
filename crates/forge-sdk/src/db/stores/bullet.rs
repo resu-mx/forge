@@ -6,9 +6,11 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Bullet, BulletFilter, BulletStatus, ForgeError, Pagination, PaginationParams,
-    UpdateBulletInput, new_id, now_iso,
+    Bullet, BulletFilter, BulletStatus, ForgeError, Pagination, PaginationParams, Skill,
+    SkillCategory, Source, UpdateBulletInput, new_id, now_iso,
 };
+
+use super::source::SourceStore;
 
 /// Valid status transitions for bullets.
 fn valid_transitions(from: &BulletStatus) -> &'static [BulletStatus] {
@@ -242,11 +244,20 @@ impl BulletStore {
         let bullet = Self::get_hydrated(conn, id)?
             .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() })?;
 
+        if new_status == BulletStatus::Rejected
+            && rejection_reason.map_or(true, |r| r.trim().is_empty())
+        {
+            return Err(ForgeError::Validation {
+                message: "Rejection reason must not be empty".into(),
+                field: Some("rejection_reason".into()),
+            });
+        }
+
         let allowed = valid_transitions(&bullet.status);
         if !allowed.contains(&new_status) {
             return Err(ForgeError::Validation {
                 message: format!(
-                    "Cannot transition from {} to {}",
+                    "Cannot transition from '{}' to '{}'",
                     bullet.status, new_status
                 ),
                 field: Some("status".into()),
@@ -281,13 +292,182 @@ impl BulletStore {
 
     // ── Delete ───────────────────────────────────────────────────────
 
-    /// Delete a bullet (cascades to junction tables via FK).
+    /// Submit a draft for review. Unlike `transition_status` this accepts only
+    /// drafts: a rejected bullet is sent back with `reopen`, not `submit`.
+    pub fn submit(conn: &Connection, id: &str) -> Result<Bullet, ForgeError> {
+        let bullet = Self::get_hydrated(conn, id)?
+            .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() })?;
+        if bullet.status != BulletStatus::Draft {
+            return Err(ForgeError::Validation {
+                message: "Only draft bullets can be submitted for review".into(),
+                field: Some("status".into()),
+            });
+        }
+        Self::transition_status(conn, id, BulletStatus::InReview, None)
+    }
+
+    /// Delete a bullet (cascades to junction tables via FK). Refused while
+    /// perspectives still derive from it.
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
+        let perspectives: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM perspectives WHERE bullet_id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if perspectives > 0 {
+            return Err(ForgeError::Conflict {
+                message: "Cannot delete bullet with existing perspectives".into(),
+            });
+        }
         let deleted = conn.execute("DELETE FROM bullets WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() });
         }
         Ok(())
+    }
+
+    // ── Skill links ──────────────────────────────────────────────────
+
+    /// Skills linked to a bullet, by name.
+    pub fn list_skills(conn: &Connection, bullet_id: &str) -> Result<Vec<Skill>, ForgeError> {
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.name, s.category FROM skills s
+             JOIN bullet_skills bs ON bs.skill_id = s.id
+             WHERE bs.bullet_id = ?1
+             ORDER BY s.name ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![bullet_id], Self::map_skill)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Link an existing skill. Linking twice is a no-op.
+    pub fn link_skill(conn: &Connection, bullet_id: &str, skill_id: &str) -> Result<Skill, ForgeError> {
+        match conn.execute(
+            "INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?1, ?2)",
+            params![bullet_id, skill_id],
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                return Err(match ForgeError::from(e) {
+                    ForgeError::ForeignKey { .. } => ForgeError::NotFound {
+                        entity_type: "bullet or skill".into(),
+                        id: format!("{bullet_id}/{skill_id}"),
+                    },
+                    other => other,
+                })
+            }
+        }
+        Self::skill_by_id(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "skill".into(),
+            id: skill_id.into(),
+        })
+    }
+
+    /// Link a skill by name, creating it if needed. The first letter is upper-cased
+    /// (rest preserved: `foo` -> `Foo`, `SAFe` stays `SAFe`) and the lookup is
+    /// case-insensitive, so `python` links an existing `Python`. An unknown or
+    /// absent category falls back to `other`.
+    pub fn link_skill_by_name(
+        conn: &Connection,
+        bullet_id: &str,
+        name: &str,
+        category: Option<&str>,
+    ) -> Result<Skill, ForgeError> {
+        let raw = name.trim();
+        let mut chars = raw.chars();
+        let name: String = match chars.next() {
+            Some(first) => first.to_uppercase().chain(chars).collect(),
+            None => {
+                return Err(ForgeError::Validation {
+                    message: "skill_id or name is required".into(),
+                    field: None,
+                })
+            }
+        };
+
+        let existing = conn
+            .query_row(
+                "SELECT id, name, category FROM skills WHERE name = ?1 COLLATE NOCASE",
+                params![name],
+                Self::map_skill,
+            )
+            .optional()?;
+        let skill = match existing {
+            Some(skill) => skill,
+            None => {
+                let category = category
+                    .and_then(|c| c.parse::<SkillCategory>().ok())
+                    .unwrap_or(SkillCategory::Other);
+                let id = new_id();
+                conn.execute(
+                    "INSERT INTO skills (id, name, category) VALUES (?1, ?2, ?3)",
+                    params![id, name, category.as_ref()],
+                )?;
+                Self::skill_by_id(conn, &id)?
+                    .ok_or_else(|| ForgeError::Internal("Skill created but not found".into()))?
+            }
+        };
+
+        Self::link_skill(conn, bullet_id, &skill.id)
+    }
+
+    /// Remove a skill link. 404 if the link does not exist.
+    pub fn unlink_skill(conn: &Connection, bullet_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+        let deleted = conn.execute(
+            "DELETE FROM bullet_skills WHERE bullet_id = ?1 AND skill_id = ?2",
+            params![bullet_id, skill_id],
+        )?;
+        if deleted == 0 {
+            return Err(ForgeError::NotFound {
+                entity_type: "skill link".into(),
+                id: format!("{bullet_id}/{skill_id}"),
+            });
+        }
+        Ok(())
+    }
+
+    fn skill_by_id(conn: &Connection, id: &str) -> Result<Option<Skill>, ForgeError> {
+        Ok(conn
+            .query_row(
+                "SELECT id, name, category FROM skills WHERE id = ?1",
+                params![id],
+                Self::map_skill,
+            )
+            .optional()?)
+    }
+
+    fn map_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
+        Ok(Skill {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            category: row.get::<_, String>(2)?.parse().unwrap_or(SkillCategory::Other),
+        })
+    }
+
+    // ── Source links ─────────────────────────────────────────────────
+
+    /// Sources a bullet was derived from, primary first, with the `is_primary` flag.
+    pub fn list_sources(conn: &Connection, bullet_id: &str) -> Result<Vec<(Source, i32)>, ForgeError> {
+        let mut stmt = conn.prepare(
+            "SELECT bs.source_id, bs.is_primary
+             FROM bullet_sources bs
+             JOIN sources s ON bs.source_id = s.id
+             WHERE bs.bullet_id = ?1
+             ORDER BY bs.is_primary DESC, s.title ASC",
+        )?;
+        let links = stmt
+            .query_map(params![bullet_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut out = Vec::with_capacity(links.len());
+        for (source_id, is_primary) in links {
+            if let Some(source) = SourceStore::get(conn, &source_id)? {
+                out.push((source, is_primary));
+            }
+        }
+        Ok(out)
     }
 
     // ── Technology helpers ────────────────────────────────────────────

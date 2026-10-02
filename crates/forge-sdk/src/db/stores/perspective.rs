@@ -55,6 +55,60 @@ impl PerspectiveStore {
             .ok_or_else(|| ForgeError::Internal("Perspective created but not found".into()))
     }
 
+    /// Create a perspective by hand (not via a derivation): the snapshot is taken from
+    /// the bullet, framing defaults to `accomplishment`, and `auto_approve` (the TS
+    /// default) approves it immediately as `approved_by = 'direct'`.
+    pub fn create_direct(
+        conn: &Connection,
+        bullet_id: &str,
+        content: &str,
+        target_archetype: Option<&str>,
+        domain: Option<&str>,
+        framing: Option<Framing>,
+        auto_approve: bool,
+    ) -> Result<Perspective, ForgeError> {
+        if content.trim().is_empty() {
+            return Err(ForgeError::Validation {
+                message: "Content must not be empty".into(),
+                field: Some("content".into()),
+            });
+        }
+        let snapshot: String = conn
+            .query_row("SELECT content FROM bullets WHERE id = ?1", params![bullet_id], |row| row.get(0))
+            .optional()?
+            .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: bullet_id.into() })?;
+
+        let id = new_id();
+        let now = now_iso();
+        let (status, approved_at, approved_by) = if auto_approve {
+            (PerspectiveStatus::Approved, Some(now.clone()), Some("direct"))
+        } else {
+            (PerspectiveStatus::Draft, None, None)
+        };
+
+        conn.execute(
+            "INSERT INTO perspectives (id, bullet_id, content, bullet_content_snapshot,
+             target_archetype, domain, framing, status, approved_at, approved_by, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                id,
+                bullet_id,
+                content.trim(),
+                snapshot,
+                target_archetype,
+                domain,
+                framing.unwrap_or(Framing::Accomplishment).as_ref(),
+                status.as_ref(),
+                approved_at,
+                approved_by,
+                now,
+            ],
+        )?;
+
+        Self::get(conn, &id)?
+            .ok_or_else(|| ForgeError::Internal("Perspective created but not found".into()))
+    }
+
     // ── Read ─────────────────────────────────────────────────────────
 
     pub fn get(conn: &Connection, id: &str) -> Result<Option<Perspective>, ForgeError> {
@@ -263,10 +317,19 @@ impl PerspectiveStore {
         let p = Self::get(conn, id)?
             .ok_or_else(|| ForgeError::NotFound { entity_type: "perspective".into(), id: id.into() })?;
 
+        if new_status == PerspectiveStatus::Rejected
+            && rejection_reason.map_or(true, |r| r.trim().is_empty())
+        {
+            return Err(ForgeError::Validation {
+                message: "Rejection reason must not be empty".into(),
+                field: Some("rejection_reason".into()),
+            });
+        }
+
         let allowed = valid_transitions(&p.status);
         if !allowed.contains(&new_status) {
             return Err(ForgeError::Validation {
-                message: format!("Cannot transition from {} to {}", p.status, new_status),
+                message: format!("Cannot transition from '{}' to '{}'", p.status, new_status),
                 field: Some("status".into()),
             });
         }
@@ -299,7 +362,18 @@ impl PerspectiveStore {
 
     // ── Delete ───────────────────────────────────────────────────────
 
+    /// Delete a perspective. Refused while a resume entry uses it.
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
+        let in_resume: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM resume_entries WHERE perspective_id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if in_resume > 0 {
+            return Err(ForgeError::Conflict {
+                message: "Cannot delete perspective that is in a resume".into(),
+            });
+        }
         let deleted = conn.execute("DELETE FROM perspectives WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(ForgeError::NotFound { entity_type: "perspective".into(), id: id.into() });

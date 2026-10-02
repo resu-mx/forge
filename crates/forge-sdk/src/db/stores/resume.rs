@@ -7,7 +7,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    AddResumeCertification, AddResumeEntry, CreateResume, ForgeError, GapBulletCandidate,
+    AddResumeCertification, AddResumeEntry, CoverageSummary, CreateResume, ForgeError, Gap,
+    GapAnalysis, GapBulletCandidate,
     Pagination, Resume, ResumeCertification, ResumeEntry, ResumeEntryWithContent,
     ResumeSectionEntity, ResumeSkill, ResumeStatus, ResumeWithEntries,
     ResumeWithEntriesSection, UpdateResume, new_id, now_iso,
@@ -880,6 +881,119 @@ impl ResumeStore {
             .optional()?;
 
         Ok(title.unwrap_or_else(|| "Unknown Source".into()))
+    }
+
+    // ── Gap analysis ─────────────────────────────────────────────────
+
+    /// Perspectives for an archetype's expected domains that this resume lacks.
+    /// Port of TS `ResumeService.analyzeGaps`.
+    pub fn analyze_gaps(conn: &Connection, resume_id: &str) -> Result<GapAnalysis, ForgeError> {
+        /// A domain with fewer included perspectives than this is "thin".
+        const THIN_COVERAGE_THRESHOLD: i64 = 2;
+
+        let resume = Self::get(conn, resume_id)?
+            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.into() })?;
+
+        // Domain coverage of the perspectives already in the resume.
+        let mut included: Vec<(String, i64)> = Vec::new(); // insertion-ordered counts
+        let mut perspectives_included: i64 = 0;
+        let mut stmt = conn.prepare(
+            "SELECT p.domain FROM resume_entries re
+             LEFT JOIN perspectives p ON p.id = re.perspective_id
+             WHERE re.resume_id = ?1 AND re.perspective_id IS NOT NULL
+             ORDER BY re.position ASC",
+        )?;
+        let domains = stmt
+            .query_map(params![resume_id], |row| row.get::<_, Option<String>>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for domain in domains {
+            perspectives_included += 1;
+            if let Some(domain) = domain {
+                match included.iter_mut().find(|(d, _)| *d == domain) {
+                    Some((_, n)) => *n += 1,
+                    None => included.push((domain, 1)),
+                }
+            }
+        }
+
+        // Domains this archetype is expected to cover.
+        let expected: Vec<String> = conn
+            .query_row(
+                "SELECT id FROM archetypes WHERE name = ?1 COLLATE NOCASE",
+                params![resume.archetype],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .map(|archetype_id| super::archetype::ArchetypeStore::list_domains(conn, &archetype_id))
+            .transpose()?
+            .map(|ds| ds.into_iter().map(|d| d.name).collect())
+            .unwrap_or_default();
+
+        let total_approved: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM perspectives WHERE target_archetype = ?1 AND status = 'approved'",
+            params![resume.archetype],
+            |row| row.get(0),
+        )?;
+
+        let mut gaps = Vec::new();
+        for domain in &expected {
+            let count = included.iter().find(|(d, _)| d == domain).map_or(0, |(_, n)| *n);
+            if count == 0 {
+                gaps.push(Gap::MissingDomain {
+                    domain: domain.clone(),
+                    description: format!("No approved perspectives with domain '{domain}' are included in this resume"),
+                    available_bullets: Self::find_bullets_for_gap(conn, &resume.archetype, domain)?,
+                    recommendation: format!("Derive perspectives with domain '{domain}' from these bullets"),
+                });
+            } else if count < THIN_COVERAGE_THRESHOLD {
+                gaps.push(Gap::ThinCoverage {
+                    domain: domain.clone(),
+                    current_count: count,
+                    description: format!("Only {count} perspective with domain '{domain}' — consider adding more"),
+                    recommendation: format!("Review approved bullets for additional {domain} framing opportunities"),
+                });
+            }
+        }
+
+        // Approved bullets with no approved perspective for this archetype.
+        let mut stmt = conn.prepare(
+            "SELECT b.id, b.content FROM bullets b
+             WHERE b.status = 'approved'
+             AND NOT EXISTS (
+                 SELECT 1 FROM perspectives p
+                 WHERE p.bullet_id = b.id AND p.target_archetype = ?1 AND p.status = 'approved'
+             )",
+        )?;
+        let unused = stmt
+            .query_map(params![resume.archetype], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (bullet_id, bullet_content) in unused {
+            gaps.push(Gap::UnusedBullet {
+                source_title: Self::get_source_title_for_bullet(conn, &bullet_id)?,
+                bullet_id,
+                bullet_content,
+                description: format!("This approved bullet has no perspective for archetype '{}'", resume.archetype),
+                recommendation: format!("Derive a perspective targeting '{}' archetype", resume.archetype),
+            });
+        }
+
+        Ok(GapAnalysis {
+            resume_id: resume.id.clone(),
+            archetype: resume.archetype.clone(),
+            target_role: resume.target_role.clone(),
+            target_employer: resume.target_employer.clone(),
+            gaps,
+            coverage_summary: CoverageSummary {
+                perspectives_included,
+                total_approved_perspectives_for_archetype: total_approved,
+                domains_represented: included.iter().map(|(d, _)| d.clone()).collect(),
+                domains_missing: expected
+                    .iter()
+                    .filter(|d| !included.iter().any(|(i, _)| i == *d))
+                    .cloned()
+                    .collect(),
+            },
+        })
     }
 
     // ── Header / Override storage ───────────────────────────────────

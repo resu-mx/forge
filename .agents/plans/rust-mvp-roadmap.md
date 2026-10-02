@@ -99,6 +99,13 @@ Deviations: the server binds 127.0.0.1 by default (`FORGE_HOST` to change) becau
 - **Done when:** `cargo run -p forge-server` serves `/api/health`, and the web UI pointed at it via `FORGE_API_URL` loads.
 
 ## M3: Tier-0 API parity (native first) plus the parity harness
+
+**Status: done 2026-10-02 for the Tier-0 files.** `just parity` runs the TS route tests against the Rust server (`FORGE_TEST_SERVER_BIN`);
+`just parity-tier0` is the CI gate. Baseline 241/415 passing; now 300/415, with every Tier-0 file (contracts, sources, bullets, perspectives,
+resumes, derivations, profile) plus export, CORS, server and review passing (154 tests). The 115 remaining failures are Tier-1/2 files
+(job descriptions, extension, campuses, credentials, certifications, summaries, domains, archetypes, supporting).
+Not done: the stubbed `forge-sdk` services were not implemented; the validation rules were put in the stores instead, where the routes call them.
+`POST /pdf` and `?format=pdf` answer 501 until M5. Tagline, resume job-description and contact links are Tier 2 and not ported.
 Tier-0 endpoints (about 40), taken from what the web UI, MCP server and CLI call:
 - health, `GET`/`PATCH` profile, `GET` archetypes and domains, `GET`/`POST` orgs
 - sources CRUD, derivations prepare/commit
