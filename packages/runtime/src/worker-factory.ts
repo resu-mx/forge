@@ -7,3 +7,8 @@
 export function createForgeWorker(): Worker {
   return new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'forge-database' })
 }
+
+/** The Typst compiler Worker, loaded only when the first PDF is requested. */
+export function createTypstWorker(): Worker {
+  return new Worker(new URL('./typst-worker.ts', import.meta.url), { type: 'module', name: 'forge-typst' })
+}

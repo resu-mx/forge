@@ -166,6 +166,15 @@ wasm-bundle: wasm-target
     @ls -l packages/runtime/pkg/forge_wasm_bg.wasm
     @gzip -9 -c packages/runtime/pkg/forge_wasm_bg.wasm | wc -c | xargs echo "gzip -9 bytes:"
 
+# Build the Typst PDF compiler as its own browser module, into packages/runtime/typst-pkg.
+# It is large (about 25 MB, nearly all Typst's own embedded data), so it is a separate module
+# the browser loads only when a PDF is first asked for; the data layer's wasm does not carry it.
+typst-bundle: wasm-target
+    {{cargo}} build -p forge-typst --target wasm32-unknown-unknown --profile wasm-release
+    wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir packages/runtime/typst-pkg target/wasm32-unknown-unknown/wasm-release/forge_typst.wasm
+    @ls -l packages/runtime/typst-pkg/forge_typst_bg.wasm
+    @gzip -9 -c packages/runtime/typst-pkg/forge_typst_bg.wasm | wc -c | xargs echo "gzip -9 bytes:"
+
 # Guard the browser build against native-only crates. rusqlite IS expected here (it reaches
 # the browser through sqlite-wasm-rs), but the OS-socket layer (mio), the native SQLite
 # and OpenSSL bindings, must not creep in. (tokio itself appears via sqlite-wasm-vfs's sync

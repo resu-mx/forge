@@ -7,7 +7,16 @@
  *   and the TypeScript SDK work unchanged against the in-browser Rust API.
  */
 
-import type { HeaderPairs, ImportInfo, RawResponse, StartInfo, WorkerReply, WorkerRequest } from './protocol'
+import type {
+  HeaderPairs,
+  ImportInfo,
+  PdfReply,
+  PdfRequest,
+  RawResponse,
+  StartInfo,
+  WorkerReply,
+  WorkerRequest,
+} from './protocol'
 
 export type RuntimeStatus =
   | { state: 'starting' }
@@ -17,6 +26,9 @@ export type RuntimeStatus =
   | { state: 'error'; message: string }
 
 /** The slice of `Worker` the client uses (so tests can fake it). */
+/** `Omit<T, 'id'>` applied to each member of a union (a plain Omit would keep only the shared keys). */
+type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never
+
 export interface WorkerLike {
   postMessage(message: unknown, transfer?: Transferable[]): void
   terminate(): void
@@ -33,6 +45,11 @@ export interface LockManagerLike {
 export interface RuntimeOptions {
   /** May be async, so a bundler can load the Worker chunk lazily. */
   createWorker: () => WorkerLike | Promise<WorkerLike>
+  /**
+   * The Typst compiler Worker, created on the first PDF request (it is a 25 MB module). Without
+   * it, PDF requests answer 501 and everything else works.
+   */
+  createPdfWorker?: () => WorkerLike | Promise<WorkerLike>
   /** Defaults to `navigator.locks`. */
   locks?: LockManagerLike
   /** Defaults to `navigator.storage.persist()`. */
@@ -82,7 +99,7 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
   let nextId = 1
   const pending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>()
 
-  function call<T>(msg: Omit<WorkerRequest, 'id'>, transfer: Transferable[] = []): Promise<T> {
+  function call<T>(msg: WithoutId<WorkerRequest>, transfer: Transferable[] = []): Promise<T> {
     if (!worker) return Promise.reject(new Error('the Forge database is not open in this tab'))
     const id = nextId++
     return new Promise<T>((resolve, reject) => {
@@ -157,6 +174,135 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
     })
   }
 
+  // ── PDF: the database Worker supplies Typst source, the Typst Worker compiles it ──
+
+  let pdfWorker: Promise<WorkerLike> | undefined
+  let nextPdfId = 1
+  const pdfPending = new Map<number, { resolve(v: Uint8Array): void; reject(e: Error): void }>()
+
+  /** Start the Typst Worker once, on first use. */
+  function ensurePdfWorker(): Promise<WorkerLike> {
+    pdfWorker ??= (async () => {
+      if (!options.createPdfWorker) throw new Error('PDF output is not configured in this build')
+      const w = await options.createPdfWorker()
+      w.onmessage = (event) => {
+        const reply = event.data as PdfReply
+        const p = pdfPending.get(reply.id)
+        if (!p) return
+        pdfPending.delete(reply.id)
+        if (reply.ok) p.resolve(reply.result)
+        else p.reject(new Error(reply.error))
+      }
+      w.onerror = (event) => {
+        const message = event.message || 'the Typst compiler failed to load'
+        for (const p of pdfPending.values()) p.reject(new Error(message))
+        pdfPending.clear()
+        pdfWorker = undefined // allow a retry
+      }
+      return w
+    })()
+    // A failed start must not be cached forever.
+    pdfWorker.catch(() => {
+      pdfWorker = undefined
+    })
+    return pdfWorker
+  }
+
+  async function compilePdf(source: string): Promise<Uint8Array> {
+    const w = await ensurePdfWorker()
+    const id = nextPdfId++
+    return new Promise<Uint8Array>((resolve, reject) => {
+      pdfPending.set(id, { resolve, reject })
+      w.postMessage({ id, op: 'compile', source } satisfies PdfRequest)
+    })
+  }
+
+  /** The `{ message, details }` forge-typst throws for a bad document; null for any other failure. */
+  function parseCompileError(raw: string): { message: string; details: string[] } | null {
+    try {
+      const v = JSON.parse(raw)
+      if (v && typeof v.message === 'string') return { message: v.message, details: Array.isArray(v.details) ? v.details : [] }
+    } catch {
+      // not JSON
+    }
+    return null
+  }
+
+  /**
+   * A PDF in the browser: fetch the Typst source from the database Worker (the same
+   * `?format=typst` the server exposes), compile it in the Typst Worker, answer as the
+   * server's PDF route would. Returns null when `url` is not a PDF request.
+   */
+  async function maybeServePdf(method: string, url: URL, body: Uint8Array): Promise<Response | null> {
+    const post = method === 'POST' && /^\/api\/resumes\/([^/]+)\/pdf$/.exec(url.pathname)
+    const exportGet =
+      method === 'GET' && url.searchParams.get('format') === 'pdf' && /^\/api\/export\/resume\/([^/]+)$/.exec(url.pathname)
+    const match = post || exportGet
+    if (!match) return null
+    const resumeId = match[1]
+
+    let source: string | undefined
+    let notice: string | null = null
+    let disposition = 'inline; filename="resume.pdf"'
+
+    // POST may carry hand-written source: { "typst": "..." } (the old { latex } is ignored).
+    if (post && body.byteLength > 0) {
+      try {
+        const supplied = JSON.parse(new TextDecoder().decode(body))?.typst
+        if (typeof supplied === 'string') source = supplied
+      } catch {
+        // no usable body: compile the generated source
+      }
+    }
+
+    if (source === undefined) {
+      const res = await call<RawResponse>({
+        op: 'request',
+        method: 'GET',
+        path: `/api/export/resume/${resumeId}?format=typst`,
+        headers: [],
+        body: new Uint8Array(),
+      })
+      if (res.status !== 200) {
+        // 404 and the like: pass the server's answer through unchanged.
+        return new Response(NULL_BODY_STATUSES.has(res.status) ? null : (res.body as BodyInit), {
+          status: res.status,
+          headers: res.headers,
+        })
+      }
+      source = new TextDecoder().decode(res.body)
+      const header = (name: string) => res.headers.find(([k]) => k.toLowerCase() === name)?.[1] ?? null
+      notice = header('x-forge-pdf-notice')
+      if (exportGet) disposition = (header('content-disposition') ?? disposition).replace(/\.typ"/, '.pdf"')
+    }
+
+    try {
+      const pdf = await compilePdf(source)
+      const headers: Record<string, string> = {
+        'content-type': 'application/pdf',
+        'content-disposition': disposition,
+        'x-forge-pdf-cache': 'miss',
+      }
+      if (notice) headers['x-forge-pdf-notice'] = notice
+      return new Response(pdf as BodyInit, { status: 200, headers })
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e)
+      if (!options.createPdfWorker) {
+        return errorResponse(501, 'NOT_IMPLEMENTED', 'PDF output is not available in this build')
+      }
+      const compileError = parseCompileError(raw)
+      if (compileError) {
+        // The document did not compile: the same shape and status as the server's.
+        return new Response(JSON.stringify({ error: { code: 'TYPST_COMPILE_ERROR', ...compileError } }), {
+          status: 422,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      // The compiler itself could not run (for example its module failed to load).
+      return errorResponse(500, 'PDF_UNAVAILABLE', raw)
+    }
+  }
+
   async function runtimeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const req =
       input instanceof Request
@@ -180,6 +326,8 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
     const body = new Uint8Array(await req.arrayBuffer())
     const headers: HeaderPairs = [...req.headers.entries()]
     try {
+      const pdf = await maybeServePdf(req.method, url, body)
+      if (pdf) return pdf
       const res = await call<RawResponse>(
         { op: 'request', method: req.method, path: url.pathname + url.search, headers, body },
         body.byteLength > 0 ? [body.buffer] : [],

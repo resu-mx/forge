@@ -37,3 +37,15 @@ export type WorkerRequest =
 export type WorkerReply =
   | { id: number; ok: true; result: unknown }
   | { id: number; ok: false; error: string }
+
+/** The Typst compiler Worker (a separate, lazily loaded module; see typst-worker.ts). */
+export interface PdfRequest {
+  id: number
+  op: 'compile'
+  source: string
+}
+
+export type PdfReply =
+  | { id: number; ok: true; result: Uint8Array }
+  /** `error` is the JSON `{ message, details }` forge-typst throws, or a plain message. */
+  | { id: number; ok: false; error: string }

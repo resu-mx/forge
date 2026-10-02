@@ -260,7 +260,7 @@ export class ResumesResource {
     )
   }
 
-  async pdf(id: string, opts?: { bust?: boolean }): Promise<Result<Blob> & { cacheStatus?: 'hit' | 'miss' }> {
+  async pdf(id: string, opts?: { bust?: boolean }): Promise<Result<Blob> & { cacheStatus?: 'hit' | 'miss'; notice?: string }> {
     const bustParam = opts?.bust ? '?bust=1' : ''
     const path = `/api/resumes/${id}/pdf${bustParam}`
     const method = 'POST'
@@ -276,7 +276,10 @@ export class ResumesResource {
         if (this.debug?.logToConsole) {
           console.debug(`[forge:sdk] ← ${method} ${path} ${response.status} ${duration}ms ok (${blob.size} bytes PDF, cache: ${cacheStatus})`)
         }
-        return { ok: true, data: blob, cacheStatus: cacheStatus ?? undefined }
+        // The server says when something about the resume could not be honoured (for example a
+        // saved LaTeX override, which is no longer compiled).
+        const notice = response.headers.get('X-Forge-Pdf-Notice')
+        return { ok: true, data: blob, cacheStatus: cacheStatus ?? undefined, notice: notice ?? undefined }
       }
 
       const json = await response.json() as { error?: ForgeError }
