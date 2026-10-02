@@ -13,7 +13,7 @@ name = "forge-server"
 path = "src/main.rs"
 
 [dependencies]
-forge-api = { workspace = true, features = ["tokio"] }
+forge-api = { workspace = true, features = ["tokio", "pdf"] }
 forge-sdk = { workspace = true }
 forge-core = { workspace = true, features = ["rusqlite"] }
 axum = { workspace = true }

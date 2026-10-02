@@ -16,7 +16,7 @@ use forge_sdk::db::{ResumeStore, TemplateStore};
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{not_implemented, ApiData, ApiList, Created, NoContent};
+use crate::response::{ApiData, ApiList, Created, NoContent};
 use crate::state::SharedState;
 
 // ── Query params ────────────────────────────────────────────────────
@@ -415,10 +415,22 @@ async fn update_latex_override(
     Ok(Json(ApiData { data }))
 }
 
-/// PDF rendering moves from a tectonic subprocess to Typst compiled in-process
-/// (roadmap M5), so it is not available from the Rust server yet.
-async fn pdf_not_available() -> axum::response::Response {
-    not_implemented("PDF rendering is not available in the Rust server yet")
+/// `POST /resumes/:id/pdf`. The body is optional; `{ "typst": "..." }` compiles that source
+/// instead of the generated one (the old `{ "latex": ... }` is ignored: LaTeX is not compiled).
+async fn resume_pdf(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    body: axum::body::Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    let supplied: Option<String> = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("typst").and_then(|s| s.as_str().map(str::to_string)));
+
+    let rendered = with_conn(&state, move |conn| super::pdf::resume_typst(conn, &id)).await?;
+    let source = supplied.as_deref().unwrap_or(&rendered.source);
+    // A hand-supplied source replaces the generated one, so the LaTeX notice no longer applies.
+    let notice = if supplied.is_some() { None } else { rendered.notice };
+    Ok(super::pdf::pdf_response(source, "inline; filename=\"resume.pdf\"", notice))
 }
 
 // ── Router ──────────────────────────────────────────────────────────
@@ -468,5 +480,5 @@ pub fn router() -> Router<SharedState> {
         .route("/resumes/{id}/header", patch(update_header))
         .route("/resumes/{id}/markdown-override", patch(update_markdown_override))
         .route("/resumes/{id}/latex-override", patch(update_latex_override))
-        .route("/resumes/{id}/pdf", post(pdf_not_available))
+        .route("/resumes/{id}/pdf", post(resume_pdf))
 }

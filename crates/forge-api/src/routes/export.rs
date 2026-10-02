@@ -17,7 +17,7 @@ use forge_sdk::services::{CompilerService, ExportService};
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{not_implemented, ApiData};
+use crate::response::ApiData;
 use crate::state::SharedState;
 
 // ── Query params ────────────────────────────────────────────────────
@@ -99,14 +99,41 @@ async fn export_resume(
     Query(q): Query<ExportResumeQuery>,
 ) -> Result<Response, ApiError> {
     let format = match q.format.as_deref() {
-        Some(f @ ("pdf" | "markdown" | "latex" | "json")) => f.to_string(),
+        Some(f @ ("pdf" | "markdown" | "latex" | "json" | "typst")) => f.to_string(),
         _ => {
             return Err(ApiError(forge_core::ForgeError::Validation {
-                message: "format query parameter is required. Valid values: pdf, markdown, latex, json".into(),
+                message: "format query parameter is required. Valid values: pdf, markdown, latex, json, typst".into(),
                 field: Some("format".into()),
             }))
         }
     };
+
+    // PDF and Typst share one source; everything else is rendered from the IR or an override.
+    if matches!(format.as_str(), "pdf" | "typst") {
+        let rendered = with_conn(&state, move |conn| super::pdf::resume_typst(conn, &id)).await?;
+        let disposition = |ext: &str| {
+            format!(
+                "attachment; filename=\"{}-{}.{ext}\"",
+                slugify(&rendered.name),
+                chrono::Utc::now().format("%Y-%m-%d")
+            )
+        };
+        return Ok(if format == "pdf" {
+            super::pdf::pdf_response(&rendered.source, &disposition("pdf"), rendered.notice)
+        } else {
+            super::pdf::with_notice(
+                (
+                    [
+                        (header::CONTENT_TYPE, "text/x-typst; charset=utf-8".to_string()),
+                        (header::CONTENT_DISPOSITION, disposition("typ")),
+                    ],
+                    rendered.source.clone(),
+                )
+                    .into_response(),
+                rendered.notice,
+            )
+        });
+    }
 
     let format_for_db = format.clone();
     let (name, body) = with_conn(&state, move |conn| {
@@ -121,7 +148,6 @@ async fn export_resume(
             "latex" if resume.latex_override.as_deref().is_some_and(|s| !s.is_empty()) => {
                 resume.latex_override.clone().unwrap_or_default()
             }
-            "pdf" => String::new(),
             other => {
                 let doc = CompilerService::compile(conn, &id)?.ok_or_else(|| {
                     forge_core::ForgeError::NotFound { entity_type: "resume".into(), id: id.clone() }
@@ -167,7 +193,7 @@ async fn export_resume(
             body,
         )
             .into_response(),
-        _ => not_implemented("PDF rendering is not available in the Rust server yet"),
+        _ => unreachable!("pdf and typst return above"),
     };
     debug_assert!(response.status() != StatusCode::INTERNAL_SERVER_ERROR);
     Ok(response)

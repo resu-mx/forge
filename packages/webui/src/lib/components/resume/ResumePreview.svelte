@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { marked } from 'marked'
-  import { forge, friendlyError } from '$lib/sdk'
+  import { forge, forgeMode, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import { generateMarkdownFromIR } from '$lib/resume-markdown'
   import { LoadingSpinner } from '$lib/components'
@@ -20,6 +20,8 @@
   let loading = $state(false)
   let error = $state<{ code: string; message: string; details?: string } | null>(null)
   let cacheStatus = $state<'hit' | 'miss' | undefined>(undefined)
+  // Set when the server could not honour something about the resume (a LaTeX override).
+  let notice = $state<string | null>(null)
   let lastFetchedResumeId = $state<string | null>(null)
 
   // Auto-fetch PDF on mount and when resumeId/format changes
@@ -43,6 +45,7 @@
     loading = true
     error = null
     cacheStatus = undefined
+    notice = null
 
     // Revoke previous URL if any
     if (pdfDataUrl) {
@@ -56,30 +59,19 @@
         const blob = result.data as Blob
         pdfDataUrl = URL.createObjectURL(blob)
         cacheStatus = result.cacheStatus
+        notice = result.notice ?? null
         lastFetchedResumeId = resumeId
       } else {
         const err = result.error
-        if (err.code === 'LATEX_COMPILE_ERROR') {
+        if (err.code === 'TYPST_COMPILE_ERROR') {
+          const details = (err as { details?: unknown }).details
           error = {
             code: err.code,
-            message: 'LaTeX compilation failed',
-            details:
-              typeof err.details === 'object' && err.details !== null
-                ? (err.details as Record<string, string>).tectonic_stderr ?? err.message
-                : err.message,
+            message: 'The resume did not compile to a PDF',
+            details: Array.isArray(details) ? details.join('\n') : err.message,
           }
-        } else if (err.code === 'TECTONIC_NOT_AVAILABLE') {
-          error = {
-            code: err.code,
-            message: 'Tectonic is not installed',
-            details: 'Install tectonic for PDF generation: cargo install tectonic',
-          }
-        } else if (err.code === 'TECTONIC_TIMEOUT') {
-          error = {
-            code: err.code,
-            message: 'PDF generation timed out',
-            details: 'The LaTeX compilation took too long (>60s). Simplify the document and try again.',
-          }
+        } else if (err.code === 'NOT_IMPLEMENTED' || err.code === 'PDF_UNAVAILABLE') {
+          error = { code: err.code, message: 'PDF output is not available', details: err.message }
         } else {
           error = { code: 'UNKNOWN', message: friendlyError(err) }
         }
@@ -157,7 +149,9 @@
     {:else if loading}
       <div class="preview-loading">
         <LoadingSpinner size="lg" message="Compiling PDF..." />
-        <p class="preview-loading-sub">This may take 10–30 seconds on first run (tectonic downloads packages).</p>
+        {#if forgeMode === 'wasm'}
+          <p class="preview-loading-sub">The first PDF in this browser downloads the PDF compiler (about 9 MB, once).</p>
+        {/if}
       </div>
     {:else if error}
       <div class="preview-error">
@@ -173,6 +167,12 @@
         </button>
       </div>
     {:else if pdfDataUrl}
+      {#if notice}
+        <div class="preview-notice" role="status" data-testid="pdf-notice">
+          This resume has a saved LaTeX override. LaTeX is no longer compiled, so this PDF is
+          generated from your resume content and does not include the override.
+        </div>
+      {/if}
       <iframe
         class="preview-iframe"
         src={pdfDataUrl}
@@ -187,6 +187,14 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+  }
+
+  .preview-notice {
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-sm);
+    background: var(--color-warning-subtle, #fff7e0);
+    color: var(--color-warning-text, #6b4e00);
+    border-bottom: 1px solid var(--color-border);
   }
 
   .preview-toolbar {

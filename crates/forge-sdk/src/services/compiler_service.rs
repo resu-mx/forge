@@ -243,6 +243,11 @@ impl CompilerService {
     }
 
     /// Render a compiled `ResumeDocument` to LaTeX source.
+    /// Render the document as Typst source (see [`super::typst_render`]).
+    pub fn render_typst(doc: &ResumeDocument) -> String {
+        super::typst_render::render_typst(doc)
+    }
+
     pub fn render_latex(doc: &ResumeDocument) -> String {
         let mut tex = String::new();
 

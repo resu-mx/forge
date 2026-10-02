@@ -16,6 +16,7 @@ pub mod review_service;
 pub mod skill_service;
 pub mod source_service;
 pub mod summary_service;
+pub mod typst_render;
 
 pub use audit_service::AuditService;
 pub use bullet_service::BulletService;
@@ -33,3 +34,4 @@ pub use review_service::ReviewService;
 pub use skill_service::{SkillFilter, SkillService};
 pub use source_service::SourceService;
 pub use summary_service::SummaryService;
+pub use typst_render::render_typst;

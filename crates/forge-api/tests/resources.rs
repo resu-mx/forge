@@ -140,8 +140,10 @@ async fn resume_export_formats_and_errors() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "format={bad:?}");
         assert!(body.contains("VALIDATION_ERROR"));
     }
+    // PDFs compile in-process only when the `pdf` feature is on (the native server); otherwise
+    // the build answers 501 and points at ?format=typst.
     let (status, _, _) = raw_full(&r, get("pdf")).await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(status, if cfg!(feature = "pdf") { StatusCode::OK } else { StatusCode::NOT_IMPLEMENTED });
 
     let missing = Request::builder().uri("/api/export/resume/nope?format=json").body(Body::empty()).unwrap();
     let (status, _, _) = raw_full(&r, missing).await;
