@@ -591,6 +591,7 @@ dependencies = [
  "forge-core",
  "js-sys",
  "petgraph",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror",

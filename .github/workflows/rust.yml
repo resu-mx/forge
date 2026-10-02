@@ -1,0 +1,68 @@
+name: Rust
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# No `paths:` filter on purpose: a required check whose workflow is skipped by a
+# path filter never reports, which blocks the PR (and reads as green elsewhere).
+
+jobs:
+  test:
+    name: check + test (native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --workspace --all-targets --locked
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+  wasm:
+    name: forge-wasm (wasm32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: extractions/setup-just@v2
+      - name: Build forge-wasm
+        run: just wasm-build
+      - name: No native-only crates in the wasm dependency tree
+        run: just wasm-deps-check
+      - name: Control — the probe must be able to fail
+        run: just wasm-deps-check-control
+
+  # Advisory until the codebase is formatted and the todo!() stubs are gone:
+  # the repo has never been through rustfmt (~10k diff lines) and clippy reports
+  # ~200 warnings, mostly unused variables in stub services. Promote to blocking
+  # (drop continue-on-error) once those are cleared.
+  lint:
+    name: fmt + clippy (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+        continue-on-error: true
+      - run: cargo clippy --workspace --all-targets
+        continue-on-error: true
