@@ -65,6 +65,22 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: just parity-tier0
 
+  # The browser runtime's JavaScript half (@forge/runtime) and the SDK's `fetch` option.
+  # No browser needed: the client takes its Worker and Web Locks as dependencies.
+  runtime-js:
+    name: runtime + SDK tests (bun)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun test
+        working-directory: packages/runtime
+      - run: bun test
+        working-directory: packages/sdk
+
   # Advisory until the codebase is formatted and the todo!() stubs are gone:
   # the repo has never been through rustfmt (~10k diff lines) and clippy reports
   # ~200 warnings, mostly unused variables in stub services. Promote to blocking

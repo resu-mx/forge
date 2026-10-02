@@ -132,6 +132,14 @@ Work items:
 - **Done when:** all Tier-0 TS route tests pass against Rust, and the web UI completes the loop against native Rust (PDF excepted).
 
 ## M4: Browser runtime (forge-wasm hosts forge-api)
+
+**Status: done 2026-10-02 in Chrome, apart from the two items below.** See ADR 0002. `forge-wasm` now hosts `forge-api` in a
+dedicated Worker over OPFS; `@forge/runtime` provides the Worker client, Web Lock owner election and a `fetch`; the web UI runs
+the core loop with no server when built with `VITE_FORGE_MODE=wasm`; export/import and a Storage settings page are in.
+Deviations: the UI's raw `fetch('/api/...')` calls are routed by a global fetch wrapper instead of being rewritten to SDK calls; a SharedWorker
+cannot own the database (verified), so a second tab waits and takes over rather than sharing. Runtime: 2.88 MB raw / 0.94 MB gzipped.
+**Not done:** the headless `wasm-pack test` harness (the browser behaviour was verified by driving Chrome, and the dispatch layer has native
+tests); Firefox/Safari. Endpoints not yet in the Rust API answer 501 in the browser (for example the legacy campuses routes the UI calls).
 - forge-wasm:
   - Worker entry that owns the OPFS Connection.
   - `dispatch(method, url, headers, body) -> {status, headers, body}` into the forge-api Router.

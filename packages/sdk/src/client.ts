@@ -32,11 +32,20 @@ import type { ForgeError, PaginatedResult, Result } from './types'
 // Options
 // ---------------------------------------------------------------------------
 
+/** A `fetch`-compatible function. Deliberately not `typeof fetch`, which some runtimes extend. */
+export type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 export interface ForgeClientOptions {
   /** Base URL of the Forge API server, e.g. "http://localhost:3000" or "/api". */
   baseUrl: string
   /** Enable debug logging and ring buffer. true = on, false = off, undefined = auto-detect. */
   debug?: boolean | DebugOptions
+  /**
+   * The `fetch` to send requests with. Defaults to the global `fetch`, looked up at call
+   * time. Pass the in-browser runtime's `fetch` (`@forge/runtime`) to serve the API from
+   * the browser instead of a server.
+   */
+  fetch?: FetchFn
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +54,7 @@ export interface ForgeClientOptions {
 
 export class ForgeClient {
   private baseUrl: string
+  private fetchImpl: FetchFn
 
   /** Debug store for programmatic inspection of SDK requests. */
   public debug: DebugStore
@@ -106,6 +116,7 @@ export class ForgeClient {
     // Strip trailing slash so callers can pass "http://localhost:3000/" without
     // producing double-slash URLs.
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
+    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
 
     // Initialize debug store BEFORE binding request methods
     if (typeof options.debug === 'boolean' || typeof options.debug === 'object') {
@@ -120,7 +131,7 @@ export class ForgeClient {
     this.sources = new SourcesResource(req, reqList)
     this.bullets = new BulletsResource(req, reqList)
     this.perspectives = new PerspectivesResource(req, reqList)
-    this.resumes = new ResumesResource(req, reqList, this.baseUrl, this.debug)
+    this.resumes = new ResumesResource(req, reqList, this.baseUrl, this.debug, this.fetchImpl)
     this.review = new ReviewResource(req)
     this.organizations = new OrganizationsResource(req, reqList)
     this.notes = new NotesResource(req, reqList)
@@ -131,7 +142,7 @@ export class ForgeClient {
     this.skills = new SkillsResource(req)
     this.jobDescriptions = new JobDescriptionsResource(req, reqList)
     this.templates = new TemplatesResource(req)
-    this.export = new ExportResource(req, this.baseUrl)
+    this.export = new ExportResource(req, this.baseUrl, this.fetchImpl)
     this.summaries = new SummariesResource(req, reqList)
     this.contacts = new ContactsResource(req, reqList)
     this.industries = new IndustriesResource(req, reqList)
@@ -184,7 +195,7 @@ export class ForgeClient {
         headers['Content-Type'] = 'application/json'
       }
 
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -349,7 +360,7 @@ export class ForgeClient {
         url += `?${qs}`
       }
 
-      const response = await fetch(url, { method })
+      const response = await this.fetchImpl(url, { method })
       const duration = performance.now() - start
       const requestId = response.headers.get('X-Request-Id') ?? undefined
 

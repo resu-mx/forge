@@ -20,6 +20,14 @@ impl AppState {
         Arc::new(Self { forge: Mutex::new(forge) })
     }
 
+    /// Swap the database, returning the previous one so the caller decides when it
+    /// is dropped (closing its connection). Used by database import: the old
+    /// connection must be closed before the underlying file is replaced.
+    pub fn replace(&self, forge: Forge) -> Result<Forge, ForgeError> {
+        let mut guard = self.lock()?;
+        Ok(std::mem::replace(&mut *guard, forge))
+    }
+
     pub(crate) fn lock(&self) -> Result<MutexGuard<'_, Forge>, ForgeError> {
         self.forge
             .lock()

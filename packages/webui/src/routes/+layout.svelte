@@ -7,6 +7,7 @@
   import { ToastContainer } from '$lib/components'
   import { JDOverlayHost } from '$lib/components/overlays'
   import ProfileMenu from '$lib/components/ProfileMenu.svelte'
+  import StorageBanner from '$lib/components/StorageBanner.svelte'
   import ChainViewModal from '$lib/components/ChainViewModal.svelte'
   import { chainViewState, closeChainView } from '$lib/stores/chain-view.svelte'
   import { navigation, isNavGroup } from '$lib/nav'
@@ -137,6 +138,7 @@
     </div>
   </nav>
   <main class="content">
+    <StorageBanner />
     {@render children()}
   </main>
 </div>

@@ -188,6 +188,9 @@
       <button class="menu-item menu-link" onclick={() => navigateTo('/settings/eeo')}>
         EEO Disclosures
       </button>
+      <button class="menu-item menu-link" onclick={() => navigateTo('/settings/storage')}>
+        Storage
+      </button>
       <button class="menu-item menu-link" onclick={() => navigateTo('/settings/extension')}>
         Extension Config
       </button>

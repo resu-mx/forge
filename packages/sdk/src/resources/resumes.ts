@@ -36,12 +36,15 @@ function toParams(
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 export class ResumesResource {
   constructor(
     private request: RequestFn,
     private requestList: RequestListFn,
     private baseUrl: string = '',
     private debug?: DebugStore,
+    private fetchImpl: FetchFn = (input, init) => globalThis.fetch(input, init),
   ) {}
 
   create(input: CreateResume): Promise<Result<Resume>> {
@@ -264,7 +267,7 @@ export class ResumesResource {
     const start = performance.now()
 
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, { method })
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, { method })
       const duration = Math.round(performance.now() - start)
 
       if (response.ok) {
