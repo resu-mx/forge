@@ -161,6 +161,7 @@ tests); Firefox/Safari. Endpoints not yet in the Rust API answer 501 in the brow
 - Wire `POST /resumes/:id/pdf` and `export ?format=pdf` to it. Natively the same crate replaces tectonic, which removes the subprocess. Return 422 with a `details` field on compile errors.
 - Known gap: `latex_override` can't compile in the browser. Show a UI notice and fall back to generated Typst. A `typst_override` column is follow-up work.
 - **Done when:** the PDF preview renders in wasm mode, and a golden-file test passes on the generated Typst.
+- **Status:** done in PR for `feat/m5-typst-pdf`; see ADR 0003 (`docs/src/dev/adrs/rust-wasm/0003-typst-pdf-in-both-hosts.md`). Checked in Chrome only. Rather than a golden file, the generated source is covered by string-level assertions plus compile-and-extract-text tests.
 
 ## M6: Agent bridge (Claude in Chrome)
 - Expose `window.forge`, the same `ForgeClient` on the wasm transport, so Claude Code calls

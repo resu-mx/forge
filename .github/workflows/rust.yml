@@ -43,6 +43,8 @@ jobs:
       - uses: extractions/setup-just@v2
       - name: Build forge-wasm
         run: just wasm-build
+      - name: Build forge-typst (the lazily loaded PDF compiler)
+        run: just wasm-cargo build -p forge-typst
       - name: No native-only crates in the wasm dependency tree
         run: just wasm-deps-check
       - name: Control — the probe must be able to fail
@@ -76,6 +78,8 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+        working-directory: packages/runtime
       - run: bun test
         working-directory: packages/runtime
       - run: bun test
