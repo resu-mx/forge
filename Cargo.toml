@@ -4,6 +4,7 @@ members = [
     "crates/forge-core",
     "crates/forge-sdk",
     "crates/forge-ai",
+    "crates/forge-api",
     "crates/forge-server",
     "crates/forge-mcp",
     "crates/forge-cli",
@@ -19,6 +20,7 @@ members = [
 forge-core = { path = "crates/forge-core", default-features = false }  # consumers opt into features (e.g. "rusqlite") explicitly
 forge-sdk = { path = "crates/forge-sdk" }
 forge-ai = { path = "crates/forge-ai" }
+forge-api = { path = "crates/forge-api" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }

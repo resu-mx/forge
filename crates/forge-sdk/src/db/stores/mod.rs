@@ -22,7 +22,7 @@ pub mod skill;
 pub mod skill_graph;
 pub mod source;
 pub mod summary;
-// pub mod template;  // forge-es6o: file untracked on main, blocks fresh checkouts. Re-enable when committed.
+pub mod template;
 
 pub use address::AddressStore;
 pub use answer_bank::AnswerBankStore;
@@ -46,4 +46,4 @@ pub use skill::SkillStore;
 pub use skill_graph::SqlSkillGraphStore;
 pub use source::SourceStore;
 pub use summary::SummaryStore;
-// pub use template::TemplateStore;  // forge-es6o
+pub use template::TemplateStore;

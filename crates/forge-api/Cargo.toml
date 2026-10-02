@@ -1,0 +1,29 @@
+[package]
+name = "forge-api"
+version = "0.1.0"
+edition = "2021"
+description = "Transport-agnostic Forge HTTP API (axum Router). Hosted natively by forge-server and, later, in the browser by forge-wasm."
+
+# This crate must stay free of tokio and other native-only dependencies so it can
+# compile for wasm32-unknown-unknown (roadmap M4). Hosts opt in to what they need.
+[features]
+default = []
+# Run store calls on tokio's blocking pool instead of inline. Enabled by forge-server.
+tokio = ["dep:tokio"]
+
+[dependencies]
+forge-core = { workspace = true, features = ["rusqlite"] }
+forge-sdk = { workspace = true }
+forge-ai = { workspace = true }
+axum = { version = "0.8", default-features = false, features = ["json", "query"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["rt"] }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+tokio = { workspace = true, features = ["rt", "macros"] }

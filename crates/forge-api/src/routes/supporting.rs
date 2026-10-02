@@ -4,7 +4,7 @@
 //! the domain junction sub-routes that mirror the TS supporting.ts.
 
 use axum::extract::{Path, State};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
