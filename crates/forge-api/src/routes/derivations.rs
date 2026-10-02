@@ -64,13 +64,6 @@ pub struct PrepareResponse {
     pub expires_at: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum CommitRequest {
-    Bullets { bullets: Vec<BulletCommitItem> },
-    Perspective { content: String, reasoning: String },
-}
-
 #[derive(Debug, Deserialize, serde::Serialize)]
 pub struct BulletCommitItem {
     pub content: String,
@@ -120,11 +113,47 @@ async fn prepare(
     Ok(Created(result))
 }
 
+/// What a commit body is, decided before touching the database (as the TS route does).
+enum CommitBody {
+    Bullets(Vec<BulletCommitItem>),
+    Perspective { content: String, reasoning: String },
+}
+
+fn parse_commit_body(body: &serde_json::Value) -> Result<CommitBody, ForgeError> {
+    let invalid = |message: String| ForgeError::Validation { message, field: None };
+
+    if body.get("bullets").is_some() {
+        let validated = forge_ai::validators::bullet::validate(body)
+            .map_err(|e| invalid(format!("Validation failed: {e}")))?;
+        let items = validated
+            .data
+            .bullets
+            .into_iter()
+            .map(|b| BulletCommitItem { content: b.content, technologies: b.technologies, metrics: b.metrics })
+            .collect();
+        return Ok(CommitBody::Bullets(items));
+    }
+    if body.get("content").is_some() && body.get("reasoning").is_some() {
+        let validated = forge_ai::validators::perspective::validate(body)
+            .map_err(|e| invalid(format!("Validation failed: {e}")))?;
+        return Ok(CommitBody::Perspective {
+            content: validated.data.content,
+            reasoning: validated.data.reasoning,
+        });
+    }
+    Err(invalid(
+        "Body must contain either \"bullets\" (for bullet derivation) or \"content\" + \"reasoning\" (for perspective derivation)"
+            .into(),
+    ))
+}
+
 async fn commit(
     State(state): State<SharedState>,
     Path(derivation_id): Path<String>,
-    Json(req): Json<CommitRequest>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Created<serde_json::Value>, ApiError> {
+    let req = parse_commit_body(&body)?;
+
     let result = with_conn(&state, move |conn| {
         let pending = DerivationStore::get(conn, &derivation_id)?
             .ok_or_else(|| ForgeError::NotFound {
@@ -140,7 +169,7 @@ async fn commit(
         }
 
         match req {
-            CommitRequest::Bullets { bullets } => {
+            CommitBody::Bullets(bullets) => {
                 if pending.entity_type != "source" {
                     return Err(ForgeError::Validation {
                         message: "Bullet commit requires entity_type \"source\"".into(),
@@ -148,9 +177,10 @@ async fn commit(
                     });
                 }
                 let created = commit_bullet_derivation(conn, &pending.id, &pending.entity_id, &pending.snapshot, &bullets)?;
-                Ok(json!({ "bullets": created }))
+                // TS returns the created bullets as a bare array.
+                Ok(json!(created))
             }
-            CommitRequest::Perspective { content, reasoning } => {
+            CommitBody::Perspective { content, reasoning } => {
                 if pending.entity_type != "bullet" {
                     return Err(ForgeError::Validation {
                         message: "Perspective commit requires entity_type \"bullet\"".into(),
@@ -161,7 +191,8 @@ async fn commit(
                     conn, &pending.id, &pending.entity_id, &pending.snapshot,
                     pending.derivation_params.as_deref(), &content, &reasoning,
                 )?;
-                Ok(json!({ "perspective": perspective }))
+                // ...and the created perspective as a bare object.
+                Ok(json!(perspective))
             }
         }
     })
@@ -249,9 +280,9 @@ fn prepare_perspective_derivation(
     let (archetypes, _) = ArchetypeStore::list(conn, 0, 1000)?;
     let archetype_exists = archetypes.iter().any(|a| a.name.eq_ignore_ascii_case(&params.archetype));
     if !archetype_exists {
-        return Err(ForgeError::NotFound {
-            entity_type: "archetype".into(),
-            id: params.archetype.clone(),
+        return Err(ForgeError::Validation {
+            message: format!("Archetype '{}' does not exist", params.archetype),
+            field: Some("params.archetype".into()),
         });
     }
 
@@ -259,9 +290,9 @@ fn prepare_perspective_derivation(
     let domains = DomainStore::list(conn)?;
     let domain_exists = domains.iter().any(|d| d.name.eq_ignore_ascii_case(&params.domain));
     if !domain_exists {
-        return Err(ForgeError::NotFound {
-            entity_type: "domain".into(),
-            id: params.domain.clone(),
+        return Err(ForgeError::Validation {
+            message: format!("Domain '{}' does not exist", params.domain),
+            field: Some("params.domain".into()),
         });
     }
 

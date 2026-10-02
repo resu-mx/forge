@@ -52,30 +52,27 @@ function createRustTestApp(bin: string): TestContext {
   const db = createTestDb(dbPath)
   const port = 30000 + Math.floor(Math.random() * 30000)
   const proc = Bun.spawn([bin], {
-    env: { ...process.env, FORGE_DB_PATH: dbPath, FORGE_PORT: String(port), FORGE_LOG_LEVEL: 'warn' },
-    stdout: 'ignore',
+    env: { ...process.env, FORGE_DB_PATH: dbPath, FORGE_PORT: String(port), FORGE_LOG_LEVEL: process.env.FORGE_LOG_LEVEL ?? 'warn' },
+    stdout: process.env.FORGE_LOG_LEVEL ? 'inherit' : 'ignore',
     stderr: 'inherit',
   })
   current = { proc, dbPath }
 
   const base = `http://127.0.0.1:${port}`
-  let ready: Promise<void> | undefined
-  const waitReady = () =>
-    (ready ??= (async () => {
-      for (let i = 0; i < 400; i++) {
-        try {
-          if ((await fetch(`${base}/api/health`)).ok) return
-        } catch {
-          // not listening yet
-        }
-        await Bun.sleep(25)
-      }
-      throw new Error(`forge-server did not start on port ${port}`)
-    })())
+
+  // Block until the server is listening. Startup deletes expired derivation locks
+  // (like the TS server's recoverStaleLocks), so a test that seeds an already-expired
+  // row right after createTestApp() would otherwise race the server's boot and lose it.
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  let up = false
+  for (let i = 0; i < 400 && !up; i++) {
+    up = Bun.spawnSync(['curl', '-sf', '-o', '/dev/null', `${base}/api/health`]).exitCode === 0
+    if (!up) Atomics.wait(pause, 0, 0, 25)
+  }
+  if (!up) throw new Error(`forge-server did not start on port ${port}`)
 
   const app: AppLike = {
     async request(input, init) {
-      await waitReady()
       const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, 'http://localhost')
       const rest = typeof input === 'object' && 'method' in input ? input : undefined
       return fetch(base + url.pathname + url.search, rest ?? init)

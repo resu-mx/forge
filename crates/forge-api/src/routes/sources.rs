@@ -7,7 +7,7 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use forge_core::{
     CreateSource, PaginationParams, SourceFilter, SourceType, SourceWithExtension, UpdateSource,
@@ -16,7 +16,7 @@ use forge_sdk::db::SourceStore;
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{ApiData, ApiList, Created, NoContent};
+use crate::response::{not_implemented, ApiData, ApiList, Created, NoContent};
 use crate::state::SharedState;
 
 // ── Query params ────────────────────────────────────────────────────
@@ -138,6 +138,12 @@ async fn delete_source(
     Ok(NoContent)
 }
 
+async fn derive_bullets_replaced() -> axum::response::Response {
+    not_implemented(
+        "This endpoint has been replaced. Use POST /api/derivations/prepare with entity_type \"source\".",
+    )
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -147,4 +153,5 @@ pub fn router() -> Router<SharedState> {
             "/sources/{id}",
             get(get_source).patch(update_source).delete(delete_source),
         )
+        .route("/sources/{id}/derive-bullets", post(derive_bullets_replaced))
 }
