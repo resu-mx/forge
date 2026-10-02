@@ -54,6 +54,10 @@ release *package="":
 api:
     bun run --filter '@forge/core' dev
 
+# Start the Rust API server (forge-server) on :3000 against FORGE_DB_PATH
+server:
+    {{cargo}} run -p forge-server
+
 # Start only the WebUI dev server (needs 'just api' in another tab)
 webui:
     @echo "Note: API server must be running on :3000 (run 'just api' in another tab)"

@@ -78,6 +78,12 @@ Build a throwaway harness in `crates/forge-wasm/examples/` (it extends `browser-
 Record the outcome as an ADR.
 
 ## M2: `forge-api` crate (transport-agnostic router) and a native server that runs
+
+**Status: done 2026-10-02.** `forge-api` holds the router and compiles for wasm32 without tokio; `forge-server` is a thin native host.
+Verified: 11 new tests (6 router, 5 server over a real socket), the real binary serving all UI load-time GETs with 200, and a
+derivation prepare → commit producing an `in_review` bullet with the TS payload shapes. Not verified: the Svelte UI itself and the
+TS SDK (no `bun` on the dev machine), and a wasm32 CI job for `forge-api` (needs a wasm-capable clang on the runner).
+Deviations: the server binds 127.0.0.1 by default (`FORGE_HOST` to change) because the API has no auth; the TS server listens on all interfaces.
 - New crate `crates/forge-api`:
   - Move `forge-server/src/routes/*` and `error.rs` into it.
   - Write the lost glue:

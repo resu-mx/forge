@@ -2,33 +2,27 @@
 name = "forge-server"
 version = "0.1.0"
 edition = "2021"
-description = "Axum HTTP API server for Forge"
+description = "Native Axum host for the Forge API (forge-api)"
 
-# [lib]                       # forge-2qns: lib.rs untracked on main, blocks fresh checkouts. Re-enable when committed.
-# name = "forge_server"       # forge-2qns
-# path = "src/lib.rs"         # forge-2qns
+[lib]
+name = "forge_server"
+path = "src/lib.rs"
 
 [[bin]]
 name = "forge-server"
 path = "src/main.rs"
 
 [dependencies]
+forge-api = { workspace = true, features = ["tokio"] }
 forge-sdk = { workspace = true }
 forge-core = { workspace = true, features = ["rusqlite"] }
-forge-ai = { workspace = true }
-chrono = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
-serde = { workspace = true }
+tower-http = { workspace = true, features = ["catch-panic"] }
 serde_json = { workspace = true }
-figment = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true }
-rusqlite = { workspace = true }
 anyhow = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
-axum-test = "20"
+tower = { workspace = true, features = ["util"] }
