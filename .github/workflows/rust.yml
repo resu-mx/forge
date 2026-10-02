@@ -85,6 +85,45 @@ jobs:
       - run: bun test
         working-directory: packages/sdk
 
+  # The browser-first acceptance spec (roadmap M7): the real UI in Chromium, with the Rust API and
+  # the Typst compiler running inside the page and no server. It drives profile → organization →
+  # source → bullet → approve → perspective → approve → resume → PDF.
+  e2e-wasm:
+    name: core loop in the browser (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: extractions/setup-just@v2
+      # Must match the wasm-bindgen version in Cargo.lock.
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+      - run: bun install --frozen-lockfile
+      - name: Build the wasm bundles
+        run: just wasm-bundle typst-bundle
+      - name: Install Chromium
+        run: bun --bun x playwright install --with-deps chromium
+        working-directory: packages/webui
+      - name: Run the spec against the production build
+        run: bun run test:e2e:wasm
+        working-directory: packages/webui
+        env:
+          FORGE_E2E_PREVIEW: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            packages/webui/playwright-report
+            packages/webui/test-results
+          retention-days: 7
+
   # Advisory until the codebase is formatted and the todo!() stubs are gone:
   # the repo has never been through rustfmt (~10k diff lines) and clippy reports
   # ~200 warnings, mostly unused variables in stub services. Promote to blocking

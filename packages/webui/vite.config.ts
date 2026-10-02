@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url'
 // FORGE_API_URL when running in Docker (where core is at http://core:3000).
 const apiTarget = process.env.FORGE_API_URL ?? 'http://localhost:3000'
 
-// VITE_FORGE_MODE=wasm serves the API from the Rust runtime inside the browser
-// (build it first: `just wasm-bundle`). Otherwise the Worker factory is replaced by a
-// stub so an ordinary build neither needs nor bundles the generated wasm.
-const wasmMode = process.env.VITE_FORGE_MODE === 'wasm'
+// By default the API is the Rust runtime inside the browser (build it first:
+// `just wasm-bundle typst-bundle`). With VITE_FORGE_MODE=api the Worker factory is replaced by
+// a stub, so a build against an API server neither needs nor bundles the generated wasm.
+// Keep this in step with the default in src/lib/sdk.ts.
+const wasmMode = process.env.VITE_FORGE_MODE !== 'api'
 
 export default defineConfig({
   plugins: [sveltekit()],

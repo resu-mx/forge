@@ -19,7 +19,7 @@ in the UI.
 - Load the Chrome tools in one `ToolSearch` call (`tabs_context_mcp`, `javascript_tool`,
   `navigate`, `get_page_text`), call `tabs_context_mcp`, and find the tab whose URL is the Forge
   app. Open it with `tabs_create_mcp` only if none exists.
-- The UI must be in wasm mode (`VITE_FORGE_MODE=wasm`). Check:
+- The UI must be in wasm mode (the default; `VITE_FORGE_MODE=api` turns it off). Check:
   `typeof window.forge?.derivations?.prepare` should be `'object'`/`'function'` — not `undefined`.
 - Only one tab owns the database. If calls return `STORAGE_BUSY`, another Forge tab owns it:
   switch to that tab, or ask the person to close the other one.

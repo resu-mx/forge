@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:wasm": "playwright test -c playwright.wasm.config.ts"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",

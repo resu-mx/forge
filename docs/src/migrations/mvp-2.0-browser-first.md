@@ -4,6 +4,40 @@
 > Goal: CF-deployed minimal browser-first example ASAP, then iterate
 > Self-destruct: Delete this file when migration is complete
 
+## What shipped (minimal Rust version, M0-M7)
+
+The browser-first app now exists, built differently from the plan below. Read this section first;
+the phases that follow are the original plan and are kept for the parts that did not ship.
+
+**Shipped.** The web UI runs with no server by default. The Rust API (`forge-api`, an axum `Router`
+over `forge-sdk`) runs in a dedicated Worker, storing a SQLite database in the browser's OPFS
+through `rusqlite` on `sqlite-wasm-rs`, not wa-sqlite
+([ADR 0001](../dev/adrs/rust-wasm/0001-rusqlite-and-axum-in-a-browser-worker.md)).
+
+- **Owner tab.** One tab owns the database; a second tab waits and takes over when the first
+  closes. Export and import of the database file are in Settings → Storage
+  ([ADR 0002](../dev/adrs/rust-wasm/0002-browser-runtime-ownership-and-transport.md)).
+- **PDFs.** Typst, compiled in the browser by a separate 25 MB module that is only fetched on the
+  first PDF ([ADR 0003](../dev/adrs/rust-wasm/0003-typst-pdf-in-both-hosts.md)).
+- **Derivation.** There is no server-side model call. Claude in Chrome drives the open tab through
+  `window.forge` (the UI's own client), and the UI refetches on a `forge:changed` event. The skill is
+  `.claude/skills/forge-in-chrome/SKILL.md`.
+- **Default mode is the browser runtime.** `VITE_FORGE_MODE=api` selects the HTTP API (the TypeScript
+  server, or `forge-server`) instead; `just dev` and the Docker stacks do. The TypeScript server is not
+  deleted. `just app` builds the wasm bundles and starts the browser-first UI.
+- **Acceptance.** `packages/webui/e2e/wasm/core-loop.spec.ts` drives profile, organization, source,
+  bullet, approve, perspective, approve, resume from a template and PDF in Chromium, with no server. It
+  runs in CI (`core loop in the browser`).
+
+**Not part of the minimal version.** wa-sqlite, the CDN snapshot, the Cloudflare deployment, D1 and
+sync, HelixDB, and the extension sync service (phases 1 and 3 to 6 below). Only the dual-mode
+application (phase 2) was done, and as a build-time default rather than a runtime switch.
+
+**Known gaps.** Chrome is the only browser verified. A resume's `latex_override` is not compiled in the
+browser (the PDF is generated from the resume content, with a notice). Several list pages other than
+sources and bullets/perspectives do not yet refetch on `forge:changed`. No real `forge.db` has been
+imported by the project's automated checks; that is a manual step (Settings → Storage → Import).
+
 ## Overview
 
 Migrate from the current server-first architecture (Hono API as primary, browser as thin client) to browser-first (wa-sqlite as primary, server as optional SaaS enhancement).

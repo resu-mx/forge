@@ -39,8 +39,9 @@ Other recipes:
 
 ## Gotchas
 
-- The stacks run only the TypeScript services. The Rust server (`just server`) and the wasm
-  runtime (`just wasm-bundle`) build and run on the host.
+- The stacks run only the TypeScript services, and their web UI is built with
+  `VITE_FORGE_MODE=api` (the UI's default is the browser runtime). The Rust server
+  (`just server`) and the wasm runtime (`just app`) build and run on the host.
 - `just docker test` runs only `bun test` inside `test-core`. For other packages use
   `just test` on the host.
 - Container data is separate from the host's `data/forge.db`. `just docker reset` never touches

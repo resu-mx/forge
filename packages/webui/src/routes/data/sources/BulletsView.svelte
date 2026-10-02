@@ -72,24 +72,29 @@
     }
   })
 
+  /**
+   * A card was dropped on a status column. A status is changed through its transition endpoint
+   * (PATCH on the item ignores `status`), so only the moves that have one are supported:
+   * Approved, and Rejected (which needs a reason, so it opens the reject dialog). The card
+   * snaps back when this throws.
+   */
   async function handleBoardDrop(itemId: string, newStatus: string) {
-    if (contentType === 'bullet') {
-      const result = await forge.bullets.update(itemId, { status: newStatus } as any)
-      if (!result.ok) {
-        addToast({ type: 'error', message: friendlyError(result.error, 'Status update failed') })
-        throw new Error('Status update failed')
-      }
-      items = items.map(i => i.id === itemId ? result.data : i)
-      addToast({ type: 'success', message: `Bullet moved to ${newStatus.replace('_', ' ')}` })
-    } else {
-      const result = await forge.perspectives.update(itemId, { status: newStatus } as any)
-      if (!result.ok) {
-        addToast({ type: 'error', message: friendlyError(result.error, 'Status update failed') })
-        throw new Error('Status update failed')
-      }
-      items = items.map(i => i.id === itemId ? result.data : i)
-      addToast({ type: 'success', message: `Perspective moved to ${newStatus.replace('_', ' ')}` })
+    if (newStatus === 'rejected') {
+      openReject(itemId)
+      throw new Error('Rejecting needs a reason')
     }
+    if (newStatus !== 'approved') {
+      addToast({ type: 'error', message: `Moving to ${newStatus.replace('_', ' ')} is not supported from the board.` })
+      throw new Error('Unsupported move')
+    }
+
+    const result = contentType === 'bullet' ? await forge.bullets.approve(itemId) : await forge.perspectives.approve(itemId)
+    if (!result.ok) {
+      addToast({ type: 'error', message: friendlyError(result.error, 'Approve failed') })
+      throw new Error('Approve failed')
+    }
+    items = items.map(i => i.id === itemId ? result.data : i)
+    addToast({ type: 'success', message: `${contentType === 'bullet' ? 'Bullet' : 'Perspective'} approved` })
   }
 
   // Bullet detail modal

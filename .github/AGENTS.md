@@ -12,6 +12,8 @@ Runs on every PR and on pushes to `main`. Jobs:
 - **TS route tests vs Rust server:** `just parity-tier0`.
 - **runtime + SDK tests (bun):** `packages/runtime` typecheck and tests, plus `packages/sdk`
   tests.
+- **core loop in the browser (Playwright):** builds the wasm bundles, installs Chromium and runs
+  `packages/webui/e2e/wasm` against the production build.
 - **fmt + clippy (advisory):** reports problems but does not block.
 
 ### `extension-publish.yml`
