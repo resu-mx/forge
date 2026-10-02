@@ -9,7 +9,7 @@ Pick up the Forge storage abstraction work at **Phase 1.1**. Phase 0 (entity lif
 **Before starting, check memory:**
 - `project_storage_abstraction_2026_04_10.md` — Phase 0 architecture
 - `project_storage_phase1_0_2026_04_11.md` — Phase 1.0 context and Phase 1.1 scope
-- `.claude/plans/forge-resume-builder/refs/specs/2026-04-10-phase1-service-rewiring-plan.md` — full decomposition
+- `.agents/plans/forge-resume-builder/refs/specs/2026-04-10-phase1-service-rewiring-plan.md` — full decomposition
 
 **Set up the worktree:**
 1. If not already inside, enter the worktree at `.claude/worktrees/forge-storage` (it already exists — do not create a new one)

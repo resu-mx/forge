@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, HelixDB (Rust/LMDB), HQL, helix-ts (npm), Docker, Bun test runner
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-14-helix-adapter-design.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-14-helix-adapter-design.md`
 
 ---
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust 2021, wasm-bindgen 0.2, wa-sqlite 1.0.0 (npm, Asyncify build, `IDBBatchAtomicVFS`), rustup-stable wasm32 toolchain, rusqlite (native side, unchanged).
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-28-browserstore-adapter-vertical-slice.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-28-browserstore-adapter-vertical-slice.md`
 
 **Bead:** forge-lu5s (parent: forge-6z5l)
 
@@ -1114,7 +1114,7 @@ Create `crates/forge-wasm/src/stores/mod.rs`:
 //! Browser-side data-access stores. Mirror the interfaces of
 //! `forge-sdk::db::stores::*` but implemented over `&Database` (wa-sqlite)
 //! instead of `&Connection` (rusqlite). Purely additive — see the spec
-//! at `.claude/plans/forge-resume-builder/refs/specs/2026-04-28-browserstore-adapter-vertical-slice.md`.
+//! at `.agents/plans/forge-resume-builder/refs/specs/2026-04-28-browserstore-adapter-vertical-slice.md`.
 
 pub mod skill;
 

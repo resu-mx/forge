@@ -12,7 +12,7 @@ Continue implementing the Forge resume builder. Pick up where the last session l
 
 1. **Read the memory:** Check `.claude/projects/-Users-adam-notes-job-hunting/memory/project_forge_session_2026_03_28.md` for detailed session state.
 
-2. **Read the plan:** `.claude/plans/forge-resume-builder/PLAN.md` is the top-level plan. Phase plans are in `.claude/plans/forge-resume-builder/phase/`. Reference materials (contracts, schemas, strategies, examples) are in `.claude/plans/forge-resume-builder/refs/`.
+2. **Read the plan:** `.agents/plans/forge-resume-builder/PLAN.md` is the top-level plan. Phase plans are in `.agents/plans/forge-resume-builder/phase/`. Reference materials (contracts, schemas, strategies, examples) are in `.agents/plans/forge-resume-builder/refs/`.
 
 3. **Read the spec:** `docs/superpowers/specs/2026-03-28-forge-resume-builder-design.md` is the design spec.
 
@@ -75,7 +75,7 @@ All services follow this pattern (established in the plan):
 // See phase/3 for the createServices() factory pattern
 ```
 
-The service instantiation pattern is documented in `.claude/plans/forge-resume-builder/phase/3-core-services-and-ai-module.md` under "Service Instantiation Pattern".
+The service instantiation pattern is documented in `.agents/plans/forge-resume-builder/phase/3-core-services-and-ai-module.md` under "Service Instantiation Pattern".
 
 ### Important Notes
 

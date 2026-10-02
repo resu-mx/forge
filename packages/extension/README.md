@@ -8,7 +8,7 @@ into the Forge resume builder.
 **Prototype P1** — pure extraction proof. Works on LinkedIn job pages, displays
 extracted data in an in-page debug modal. No backend integration yet (added in P4).
 
-See `.claude/plans/forge-resume-browser-extension/SPEC.md` for the full design.
+See `.agents/plans/forge-resume-browser-extension/SPEC.md` for the full design.
 
 ## Development
 

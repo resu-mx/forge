@@ -11,7 +11,7 @@ I want to work on Forge development backlog items. Check memory for `project_for
 The priorities are:
 
 ### Priority 1: MCP Tool Gaps (blocking resume building workflow)
-Pick up the MCP feature requests in `.claude/plans/forge-resume-builder/.feats/mcp/`. Start with:
+Pick up the MCP feature requests in `.agents/plans/forge-resume-builder/.feats/mcp/`. Start with:
 1. `forge_delete_resume_section` - most blocking, no way to remove sections via MCP
 2. `forge_search_skills` - required DB queries every time we build a resume
 3. `forge_add_education_entry` - education entries can't be added via MCP (needs source_id support)

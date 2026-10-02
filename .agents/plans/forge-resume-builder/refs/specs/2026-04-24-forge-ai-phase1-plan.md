@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust, serde/serde_json (JSON parsing), regex (JD parser), thiserror (errors), tracing (warning emission)
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-24-forge-ai-phase1-design.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-24-forge-ai-phase1-design.md`
 
 ---
 

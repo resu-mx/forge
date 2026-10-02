@@ -3,7 +3,7 @@
 **Date:** 2026-04-05
 **Beads:** `job-hunting-x03.2` (T95.2: Summary import into resume, P1)
 **Parent epic:** Phase 95 — Resume Builder Polish
-**Related plan:** `.claude/plans/forge-resume-builder/phase/95-resume-builder-polish.md` (T95.2)
+**Related plan:** `.agents/plans/forge-resume-builder/phase/95-resume-builder-polish.md` (T95.2)
 **Status:** Approved, ready for implementation plan
 
 ## Summary

@@ -8,7 +8,7 @@
 
 **Tech Stack:** git filter-repo, GitHub Actions, Chrome Web Store API, web-ext (Mozilla), just
 
-**Spec:** `.claude/plans/forge-resume-browser-extension/refs/specs/2026-04-21-store-publishing-design.md`
+**Spec:** `.agents/plans/forge-resume-browser-extension/refs/specs/2026-04-21-store-publishing-design.md`
 
 ---
 
@@ -75,8 +75,8 @@ git filter-repo \
   --path .gitignore \
   --path CLAUDE.md \
   --path .claude/rules/ \
-  --path .claude/plans/forge-resume-browser-extension/ \
-  --path .claude/plans/forge-resume-builder/
+  --path .agents/plans/forge-resume-browser-extension/ \
+  --path .agents/plans/forge-resume-builder/
 ```
 
 Expected: Rewrites history. Only commits touching those paths remain.
@@ -98,11 +98,11 @@ cat CLAUDE.md
 
 If CLAUDE.md contains personal references (specific resume names, personal goals, etc.), edit it to keep only project structure documentation. Commit the cleanup.
 
-- [ ] **Step 6: Review .claude/plans/ for personal data**
+- [ ] **Step 6: Review .agents/plans/ for personal data**
 
 Run:
 ```bash
-find .claude/plans/ -name "*.md" | head -30
+find .agents/plans/ -name "*.md" | head -30
 ```
 
 Check spec files for personal career data (company names in examples are fine — actual salary figures, personal assessments, etc. are not). Remove or redact any files with personal data.

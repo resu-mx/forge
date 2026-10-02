@@ -52,7 +52,7 @@ Use a worktree (`git worktree add .claude/worktrees/notes-normalization -b feat/
 - `packages/core/src/services/note-service.ts` — existing NoteService
 - `packages/core/src/db/migrations/002_schema_evolution.sql` — user_notes + note_references schema
 - `packages/core/src/types/index.ts` — filter types that reference notes
-- Feature spec: `.claude/plans/forge-resume-builder/.feats/data-model/consolidate_inline_notes.md`
+- Feature spec: `.agents/plans/forge-resume-builder/.feats/data-model/consolidate_inline_notes.md`
 
 ## Dev Commands
 

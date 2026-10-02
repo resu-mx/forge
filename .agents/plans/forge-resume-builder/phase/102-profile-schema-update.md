@@ -8,7 +8,7 @@
 
 **Tech Stack:** SQLite, Bun, Hono, TypeScript, Svelte 5
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-15-profile-schema-update-design.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-15-profile-schema-update-design.md`
 
 ---
 

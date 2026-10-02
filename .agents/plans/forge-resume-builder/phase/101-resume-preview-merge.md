@@ -8,7 +8,7 @@
 
 **Tech Stack:** Svelte 5, Hono, Bun, tectonic, CodeMirror, marked (already installed)
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-08-resume-preview-merge-design.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-08-resume-preview-merge-design.md`
 
 ## File Structure
 

@@ -2,8 +2,8 @@
 
 **Status:** Phases 0-2 COMPLETE (2026-04-15). Phase 0 (adapter interface), Phase 1 (SQLite adapter + ELM rewiring), Phase 2 (HelixDB adapter + codegen + migration + Docker). Phases 3-5 (GraphQLite, DuckPGQ, benchmarks) pending.
 
-**Specs:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-08-storage-abstraction-spike-design.md`, `2026-04-14-helix-adapter-design.md`
-**Plan:** `.claude/plans/forge-resume-builder/phase/2026-04-14-helix-adapter.md`
+**Specs:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-08-storage-abstraction-spike-design.md`, `2026-04-14-helix-adapter-design.md`
+**Plan:** `.agents/plans/forge-resume-builder/phase/2026-04-14-helix-adapter.md`
 **Code:** `packages/core/src/storage/` (adapter interface, ELM, SQLite adapter, HelixDB adapter, migration)
 
 ## Decision Context

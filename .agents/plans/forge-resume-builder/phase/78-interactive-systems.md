@@ -14,7 +14,7 @@
 - Global CSS: `packages/webui/src/lib/styles/base.css`
 - Design tokens: `packages/webui/src/lib/styles/tokens.css`
 - Tests: `packages/webui/src/__tests__/interactive-systems.test.ts` (new)
-- Spec: `.claude/plans/forge-resume-builder/refs/specs/2026-04-04-design-system-interactive-systems.md`
+- Spec: `.agents/plans/forge-resume-builder/refs/specs/2026-04-04-design-system-interactive-systems.md`
 
 **Non-goals:**
 - Don't migrate ALL modals to GenericModal -- just create the component and migrate BulletDetailModal as reference

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Vite, SQLite, MCP SDK
 
-**Spec:** `.claude/plans/forge-resume-browser-extension/refs/specs/2026-04-20-M5a-parser-wiring-design.md`
+**Spec:** `.agents/plans/forge-resume-browser-extension/refs/specs/2026-04-20-M5a-parser-wiring-design.md`
 
 ---
 

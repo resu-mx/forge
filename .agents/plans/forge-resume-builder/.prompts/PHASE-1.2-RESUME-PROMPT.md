@@ -17,8 +17,8 @@ committed branches in `.claude/worktrees/forge-storage`.
 - `project_storage_phase1_1_2026_04_11.md` — Phase 1.1 context (if
   present — it may be named differently depending on what the previous
   session wrote)
-- `.claude/plans/forge-resume-builder/refs/specs/2026-04-10-phase1-service-rewiring-plan.md` — full decomposition
-- `.claude/plans/forge-resume-builder/refs/HOWTO-migrate-service.md` —
+- `.agents/plans/forge-resume-builder/refs/specs/2026-04-10-phase1-service-rewiring-plan.md` — full decomposition
+- `.agents/plans/forge-resume-builder/refs/HOWTO-migrate-service.md` —
   the canonical migration recipe from Phase 1.1
 
 **Set up the worktree:**
@@ -79,7 +79,7 @@ wrinkles. Migrate in order:
    breadth. Save for last in this sub-phase.
 
 **Per-service workflow:** Follow
-`.claude/plans/forge-resume-builder/refs/HOWTO-migrate-service.md`
+`.agents/plans/forge-resume-builder/refs/HOWTO-migrate-service.md`
 exactly. It has the canonical skeleton, the checklist, the gotchas, and
 the non-goals.
 

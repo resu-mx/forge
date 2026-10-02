@@ -28,18 +28,18 @@ tsconfig.json      — TypeScript config
 .gitignore         — ignore rules
 CLAUDE.md          — project instructions (review for personal data before including)
 .claude/rules/     — extension cross-browser rules, UI component rules
-.claude/plans/forge-resume-browser-extension/  — extension specs + plans
-.claude/plans/forge-resume-builder/            — Forge app specs + plans (review for personal data)
+.agents/plans/forge-resume-browser-extension/  — extension specs + plans
+.agents/plans/forge-resume-builder/            — Forge app specs + plans (review for personal data)
 ```
 
 **Paths stripped (personal data):**
 ```
 data/              — forge.db (personal resume data)
 .beads/            — personal issue tracker
-.claude/plans/claude-code-telemetry/  — personal tooling
-.claude/plans/forge-prod-infra/       — personal infra
-.claude/plans/job-hunting-pipeline/   — personal pipeline
-.claude/plans/ast-grep/               — personal tooling
+.agents/plans/claude-code-telemetry/  — personal tooling
+.agents/plans/forge-prod-infra/       — personal infra
+.agents/plans/job-hunting-pipeline/   — personal pipeline
+.agents/plans/ast-grep/               — personal tooling
 *.md files with personal career data
 ```
 
@@ -70,8 +70,8 @@ git filter-repo \
   --path .gitignore \
   --path CLAUDE.md \
   --path .claude/rules/ \
-  --path .claude/plans/forge-resume-browser-extension/ \
-  --path .claude/plans/forge-resume-builder/
+  --path .agents/plans/forge-resume-browser-extension/ \
+  --path .agents/plans/forge-resume-builder/
 
 # 4. Review for any remaining personal data
 git log --all --diff-filter=A --name-only --pretty=format: | sort -u | head -100

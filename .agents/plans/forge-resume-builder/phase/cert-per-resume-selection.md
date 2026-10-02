@@ -8,7 +8,7 @@
 
 **Tech Stack:** SQLite, TypeScript, Svelte 5, Hono
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-05-cert-per-resume-selection.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-05-cert-per-resume-selection.md`
 
 ---
 

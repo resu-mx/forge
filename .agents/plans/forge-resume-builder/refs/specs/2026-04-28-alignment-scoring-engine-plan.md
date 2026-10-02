@@ -10,7 +10,7 @@
 
 **Branching note:** Branch from `forge-afyg`, NOT `main`. Main lacks the migrations module (lu5s) and skill_graph runtime (afyg). Once those land on main, rebase. The 7e4f workarounds carried by forge-afyg stay until forge-7e4f closes.
 
-**Spec:** `.claude/plans/forge-resume-builder/refs/specs/2026-04-28-alignment-scoring-engine.md`
+**Spec:** `.agents/plans/forge-resume-builder/refs/specs/2026-04-28-alignment-scoring-engine.md`
 
 ---
 

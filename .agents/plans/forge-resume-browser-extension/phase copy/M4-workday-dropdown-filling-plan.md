@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun test runner, JSDOM, Vite (IIFE content scripts)
 
-**Spec:** `.claude/plans/forge-resume-browser-extension/phase/M4-workday-dropdown-filling.md`
+**Spec:** `.agents/plans/forge-resume-browser-extension/phase/M4-workday-dropdown-filling.md`
 
 ---
 

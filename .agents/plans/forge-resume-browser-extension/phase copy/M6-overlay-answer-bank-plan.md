@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun/Hono (API), SQLite (DB), TypeScript SDK, Svelte (WebUI), Vite (extension build), shadow DOM (overlay), chrome.storage.local (confidence config)
 
-**Spec:** `.claude/plans/forge-resume-browser-extension/phase/M6-overlay-answer-bank.md`
+**Spec:** `.agents/plans/forge-resume-browser-extension/phase/M6-overlay-answer-bank.md`
 
 ---
 

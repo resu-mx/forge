@@ -13,7 +13,7 @@ complete. Extension is at v0.0.9 with 58 tests passing.
    epic state (12 closed, 11 open beads), key discoveries (shared chunk
    constraint, React _valueTracker fix), and MVP scope from SPEC §9.
 
-2. Read SPEC §9 (MVP section): `.claude/plans/forge-resume-browser-extension/SPEC.md`
+2. Read SPEC §9 (MVP section): `.agents/plans/forge-resume-browser-extension/SPEC.md`
    — defines MVP deliverables beyond prototype.
 
 3. Verify state:

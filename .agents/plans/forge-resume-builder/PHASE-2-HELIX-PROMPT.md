@@ -16,13 +16,13 @@ adapter implementation.
 ## Key references
 
 - Storage abstraction design spec:
-  `.claude/plans/forge-resume-builder/refs/specs/2026-04-08-storage-abstraction-spike-design.md`
+  `.agents/plans/forge-resume-builder/refs/specs/2026-04-08-storage-abstraction-spike-design.md`
   (Section "Phase 2: HelixDB Adapter + Two-Way Migration")
 - Existing HQL schema drafts:
-  `.claude/plans/forge-prod-infra/.feats/dbs/helix/schemas/`
+  `.agents/plans/forge-prod-infra/.feats/dbs/helix/schemas/`
   (12 schema files covering nodes for all major entities)
 - Existing HQL query drafts:
-  `.claude/plans/forge-prod-infra/.feats/dbs/helix/queries.hql`
+  `.agents/plans/forge-prod-infra/.feats/dbs/helix/queries.hql`
 - Storage layer code:
   `packages/core/src/storage/` (adapter interface, entity map, lifecycle manager)
 - Entity map with all 47 entities:

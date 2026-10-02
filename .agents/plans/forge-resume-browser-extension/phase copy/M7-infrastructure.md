@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun/Hono (API), SQLite (storage), TypeScript SDK, Svelte 5 (WebUI), Chrome Extension MV3
 
-**Spec:** `.claude/plans/forge-resume-browser-extension/refs/specs/2026-04-21-m7-infrastructure-design.md`
+**Spec:** `.agents/plans/forge-resume-browser-extension/refs/specs/2026-04-21-m7-infrastructure-design.md`
 
 ---
 
