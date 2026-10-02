@@ -4,7 +4,7 @@
 # compiles the WASM bundles, builds the static UI and checks the result.
 #
 # Pages runs it after `bun install`, with a 20-minute limit. It is also runnable by hand on a
-# Linux x86_64 machine. Every step prints what it found so a failed build is diagnosable.
+# Linux x86_64 machine. Every step prints what it found, so a failed build names its cause.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
