@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  // The browser-first spec has its own config (playwright.wasm.config.ts).
+  testIgnore: '**/wasm/**',
   timeout: 30000,
   retries: 0,
   use: {
