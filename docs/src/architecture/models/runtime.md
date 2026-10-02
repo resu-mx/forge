@@ -3,6 +3,17 @@
 > Epic: forge-6r2y (Skill Graph Browser Runtime)
 > Status: Design
 
+> **As built (minimal Rust version, M0-M7).** What runs in the browser today is the data API, not the
+> skill-graph runtime this page designs. `forge-wasm` hosts the `forge-api` router and `forge-sdk`
+> stores in a dedicated Worker, over `rusqlite` and the OPFS `sahpool` VFS (so the "wa-sqlite
+> Binding" section below did not happen). The page's UI talks to it through a `fetch` that posts to
+> the Worker, and `window.forge` exposes the same client to an agent. PDFs come from a second,
+> lazily loaded Typst module. Decisions and measurements:
+> [ADR 0001](../../dev/adrs/rust-wasm/0001-rusqlite-and-axum-in-a-browser-worker.md),
+> [0002](../../dev/adrs/rust-wasm/0002-browser-runtime-ownership-and-transport.md),
+> [0003](../../dev/adrs/rust-wasm/0003-typst-pdf-in-both-hosts.md). Everything below this note,
+> including snapshots, HNSW and the embedding model, is design that has not been built.
+
 ## Overview
 
 Skill intelligence runs in two modes: server-side (build-time, full capability) and browser-side (runtime, snapshot-based). The architecture is a distillation pattern — LLM knowledge gets compressed into graph structures and embeddings that run cheaply on the client.

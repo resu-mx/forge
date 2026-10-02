@@ -185,6 +185,11 @@ tests); Firefox/Safari. Endpoints not yet in the Rust API answer 501 in the brow
 - Dogfood: import the real `data/forge.db`, build one real resume end to end, and export the PDF.
 - Switch `VITE_FORGE_MODE` to default to `wasm`. Keep `api` mode working, and **don't delete the TS server.**
 - Update `docs/src/migrations/mvp-2.0-browser-first.md` and `docs/src/architecture/models/runtime.md` with what actually shipped.
+- **Status:** done in the PR for `feat/m7-acceptance`, except the dogfood run, which needs the real database (none exists on the machine this was built on) and is left as a manual step: open the app, Settings → Storage → Import `forge.db`, build a resume, export the PDF.
+  - Spec: `packages/webui/e2e/wasm/core-loop.spec.ts` (`bun run test:e2e:wasm` in `packages/webui`), CI job `core loop in the browser`. The agent's steps use `window.forge`; approving the bullet and perspective, creating the resume and the PDF preview are real UI interactions.
+  - The spec found three bugs, fixed here: the Rust API rejected the boolean the UI sends for `worked`, `is_current` and the other 0/1 flags; and the board's drag-to-approve called an endpoint that ignores `status` (in the TypeScript server too), so a perspective could not be approved in the UI at all.
+  - Default: `VITE_FORGE_MODE` now defaults to `wasm`; `just dev`, `just webui`, `just debug`, the Docker dev/test stacks and the Docker image build set `api`.
+  - Left for follow-up: `PATCH /organizations/:id` requires `name` (update reuses the create input); `ResumesResource.listEntries` has no server route; Firefox/Safari; the other list pages refetching on `forge:changed`.
 
 ## Ordering
 - **Main path:** M0 → M1 (gate) → M2 → M3 → M4 → M6 → M7.

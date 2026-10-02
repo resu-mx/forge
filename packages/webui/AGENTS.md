@@ -1,20 +1,32 @@
 # `packages/webui/`: web UI
 
 SvelteKit 2 + Svelte 5 on Vite, built with `adapter-static`. The dev server listens on `:5173`
-(`just webui` starts it, but it needs `just api` running alongside).
+(`just app` starts it in the default mode; `just webui` starts it against an API server, which
+needs `just api` running alongside).
 
 ## Modes
 
-- **api** (the default): Vite proxies `/api` to `FORGE_API_URL`, which defaults to
-  `http://localhost:3000`. In Docker it is `http://core:3000`.
-- **wasm**: `VITE_FORGE_MODE=wasm` serves the API from the Rust runtime inside a browser Worker
-  (`@forge/runtime`).
-  - Build the runtime first with `just wasm-bundle`, plus `just typst-bundle` if you need PDFs.
-  - Outside wasm mode, `@forge/runtime/worker-factory` is aliased to `src/lib/runtime-stub.ts`,
-    so an ordinary build never bundles the wasm.
+- **wasm** (the default): the API is the Rust runtime inside a browser Worker (`@forge/runtime`).
+  There is no server. A plain `bun run dev` or `build` needs the bundles first:
+  `just wasm-bundle typst-bundle` (or `just app`, which builds them and starts the UI).
+- **api**: `VITE_FORGE_MODE=api`. Vite proxies `/api` to `FORGE_API_URL`, which defaults to
+  `http://localhost:3000`. In Docker it is `http://core:3000`. `just dev`, `just debug`,
+  `just webui`, the Docker stacks and the image build all set it.
+  - In api mode `@forge/runtime/worker-factory` is aliased to `src/lib/runtime-stub.ts`, so the
+    build never bundles the wasm. The default lives in `src/lib/sdk.ts` and `vite.config.ts`; keep
+    them in step.
   - The runtime fires `forge:changed` after every write. A list page that listens for it
     (`src/lib/forge-changed.ts`) shows agent writes made through `window.forge` without a
     reload. So far only `SourcesView` and `BulletsView` listen.
+
+## Acceptance spec
+
+`e2e/wasm/core-loop.spec.ts` drives the browser-first core loop in Chromium with no server
+(`bun run test:e2e:wasm`; `FORGE_E2E_PREVIEW=1` serves the production build, as CI does). The
+agent's steps go through `window.forge`; approving, creating the resume and the preview are UI
+steps. It runs with one worker because the board drag is driven by animation frames. Playwright's
+own browser download can hang under Node 26: use `bun --bun x playwright install chromium`.
+The older `e2e/*.spec.ts` files use `playwright.config.ts` and need the TypeScript server.
 
 ## Checks
 

@@ -39,7 +39,8 @@ just docker test    # ephemeral: build → seed → test → teardown
 just docker down    # stop every profile
 
 just setup          # host: bun install, .env from .env.example
-just dev            # host: TS API :3000 + MCP :5174 + web UI :5173
+just dev            # host: TS API :3000 + MCP :5174 + web UI :5173 (UI in api mode)
+just app            # browser-first: build the wasm bundles, run the UI with the Rust API in the browser
 just test           # all TS package tests + cargo test (or: just test core|sdk|mcp|cli|rust)
 just data migrate   # SQLite migrations
 just server         # Rust API server (forge-server) on :3000
