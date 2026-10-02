@@ -9,6 +9,7 @@ use forge_core::ForgeError;
 
 /// Entity type discriminator for drift reports.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DriftedEntityType {
     Bullet,
     Perspective,
