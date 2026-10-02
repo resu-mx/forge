@@ -3,16 +3,16 @@
 //! Mirrors `packages/core/src/routes/bullets.ts`.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use forge_core::{BulletFilter, BulletStatus, Bullet, PaginationParams, UpdateBulletInput};
+use forge_core::{Bullet, BulletFilter, BulletStatus, PaginationParams, Skill, UpdateBulletInput};
 use forge_sdk::db::BulletStore;
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{ApiData, ApiList, Created, NoContent};
+use crate::response::{not_implemented, ApiData, ApiList, Created, NoContent};
 use crate::state::SharedState;
 
 // ── Query params ────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ async fn reopen_bullet(
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Bullet>>, ApiError> {
     let result = with_conn(&state, move |conn| {
-        BulletStore::transition_status(conn, &id, BulletStatus::Draft, None)
+        BulletStore::transition_status(conn, &id, BulletStatus::InReview, None)
     })
     .await?;
     Ok(Json(ApiData { data: result }))
@@ -170,11 +170,82 @@ async fn submit_bullet(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Bullet>>, ApiError> {
-    let result = with_conn(&state, move |conn| {
-        BulletStore::transition_status(conn, &id, BulletStatus::InReview, None)
+    let result = with_conn(&state, move |conn| BulletStore::submit(conn, &id)).await?;
+    Ok(Json(ApiData { data: result }))
+}
+
+// ── Skills ──────────────────────────────────────────────────────────
+
+async fn list_bullet_skills(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<Skill>>>, ApiError> {
+    let data = with_conn(&state, move |conn| BulletStore::list_skills(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// `{ skill_id }` links an existing skill; `{ name, category? }` finds or creates one.
+#[derive(Debug, Deserialize)]
+pub struct LinkSkillBody {
+    pub skill_id: Option<String>,
+    pub name: Option<String>,
+    pub category: Option<String>,
+}
+
+async fn link_bullet_skill(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(body): Json<LinkSkillBody>,
+) -> Result<Created<Skill>, ApiError> {
+    let skill = with_conn(&state, move |conn| {
+        if let Some(skill_id) = body.skill_id.as_deref().filter(|s| !s.is_empty()) {
+            BulletStore::link_skill(conn, &id, skill_id)
+        } else if let Some(name) = body.name.as_deref().filter(|n| !n.trim().is_empty()) {
+            BulletStore::link_skill_by_name(conn, &id, name, body.category.as_deref())
+        } else {
+            Err(forge_core::ForgeError::Validation {
+                message: "skill_id or name is required".into(),
+                field: None,
+            })
+        }
     })
     .await?;
-    Ok(Json(ApiData { data: result }))
+    Ok(Created(skill))
+}
+
+async fn unlink_bullet_skill(
+    State(state): State<SharedState>,
+    Path((bullet_id, skill_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| BulletStore::unlink_skill(conn, &bullet_id, &skill_id)).await?;
+    Ok(NoContent)
+}
+
+// ── Sources ─────────────────────────────────────────────────────────
+
+/// Sources the bullet was derived from: the source row plus `is_primary` (0/1).
+async fn list_bullet_sources(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<serde_json::Value>>>, ApiError> {
+    let rows = with_conn(&state, move |conn| BulletStore::list_sources(conn, &id)).await?;
+    let data = rows
+        .into_iter()
+        .map(|(source, is_primary)| {
+            let mut value = serde_json::to_value(&source).unwrap_or(serde_json::Value::Null);
+            if let Some(map) = value.as_object_mut() {
+                map.insert("is_primary".into(), is_primary.into());
+            }
+            value
+        })
+        .collect();
+    Ok(Json(ApiData { data }))
+}
+
+async fn derive_perspectives_replaced() -> axum::response::Response {
+    not_implemented(
+        "This endpoint has been replaced. Use POST /api/derivations/prepare with entity_type \"bullet\".",
+    )
 }
 
 // ── Router ──────────────────────────────────────────────────────────
@@ -190,4 +261,8 @@ pub fn router() -> Router<SharedState> {
         .route("/bullets/{id}/reject", patch(reject_bullet))
         .route("/bullets/{id}/reopen", patch(reopen_bullet))
         .route("/bullets/{id}/submit", patch(submit_bullet))
+        .route("/bullets/{id}/derive-perspectives", post(derive_perspectives_replaced))
+        .route("/bullets/{id}/skills", get(list_bullet_skills).post(link_bullet_skill))
+        .route("/bullets/{bullet_id}/skills/{skill_id}", delete(unlink_bullet_skill))
+        .route("/bullets/{id}/sources", get(list_bullet_sources))
 }
