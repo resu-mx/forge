@@ -1,5 +1,5 @@
 export { ForgeClient } from './client'
-export type { ForgeClientOptions } from './client'
+export type { FetchFn, ForgeClientOptions } from './client'
 
 // Debug store + utilities
 export { DebugStore, isDevMode } from './debug'

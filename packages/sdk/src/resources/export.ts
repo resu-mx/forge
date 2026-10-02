@@ -6,10 +6,13 @@ import type {
   Result,
 } from '../types'
 
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 export class ExportResource {
   constructor(
     private request: RequestFn,
     private baseUrl: string,
+    private fetchImpl: FetchFn = (input, init) => globalThis.fetch(input, init),
   ) {}
 
   /** Export a resume as JSON (returns the full IR document). */
@@ -31,7 +34,7 @@ export class ExportResource {
     format: 'pdf' | 'markdown' | 'latex',
   ): Promise<Result<Blob>> {
     try {
-      const response = await fetch(
+      const response = await this.fetchImpl(
         `${this.baseUrl}/api/export/resume/${id}?format=${format}`,
       )
 
@@ -80,7 +83,7 @@ export class ExportResource {
    */
   async dumpDatabase(): Promise<Result<Blob>> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/export/dump`)
+      const response = await this.fetchImpl(`${this.baseUrl}/api/export/dump`)
 
       if (!response.ok) {
         try {
