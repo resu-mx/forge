@@ -1,0 +1,129 @@
+name: Deploy app
+
+# Builds the browser-first app (Rust API compiled to WASM + the Svelte UI) and uploads it to the
+# Cloudflare Pages project `resumx-app` (app.resu.mx). The project, hostname and DNS are owned by
+# Terraform in resu-mx/infra; this workflow only uploads files.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Cloudflare Pages rejects any single file over 25 MiB. The Typst module is the large one.
+  MAX_FILE_BYTES: 26214400
+
+jobs:
+  # No secrets here, so it runs for fork PRs too and proves the bundle builds.
+  build:
+    name: build static app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: extractions/setup-just@v2
+
+      # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock exactly.
+      - name: Read the wasm-bindgen version from Cargo.lock
+        id: wbg
+        run: |
+          v=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "could not read wasm-bindgen version from Cargo.lock"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "wasm-bindgen $v"
+      - uses: actions/cache@v4
+        id: wbg-cache
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ steps.wbg.outputs.version }}
+      - name: Install wasm-bindgen-cli
+        if: steps.wbg-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "${{ steps.wbg.outputs.version }}" --locked
+
+      - run: bun install --frozen-lockfile
+      - name: Build the wasm bundles
+        run: just wasm-bundle typst-bundle
+      - name: Build the web UI (browser runtime mode)
+        run: bun run --filter '@forge/webui' build
+        env:
+          VITE_FORGE_MODE: wasm
+
+      - name: Size guard (Pages allows 25 MiB per file)
+        run: |
+          set -e
+          find packages/webui/build -type f -name '*.wasm' -exec ls -l {} \; | awk '{print $5, $9}'
+          over=$(find packages/webui/build -type f -size +"${MAX_FILE_BYTES}c")
+          if [ -n "$over" ]; then
+            echo "files over ${MAX_FILE_BYTES} bytes:"; echo "$over"
+            exit 1
+          fi
+      - name: Assert the build is wasm-mode and has the expected shape
+        run: |
+          set -e
+          test -f packages/webui/build/index.html
+          test -f packages/webui/build/_headers
+          test -f packages/webui/build/_app/version.json
+          # Both modules must be present, or the app would build "successfully" without its runtime.
+          n=$(find packages/webui/build -name '*.wasm' | wc -l)
+          [ "$n" -ge 2 ] || { echo "expected the data-layer and Typst wasm, found $n"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-static
+          path: packages/webui/build
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: deploy to Cloudflare Pages
+    needs: build
+    # Fork PRs get no secrets; they stop after `build`.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: cf-pages-app
+    steps:
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-static
+          path: build
+
+      # Same 1Password pattern as resu-mx/infra's tf-apply-cf.yml. The Environment must export
+      # CLOUDFLARE_API_TOKEN (account-scoped Pages: Edit) and CLOUDFLARE_ACCOUNT_ID.
+      - name: Load Cloudflare credentials from 1Password
+        uses: aRustyDev/load-secrets-action@52cfbba5e153fe5e335e94c31ec0e176a7f2d7fd
+        with:
+          environment-id: ${{ vars.OP_ENVIRONMENT_ID }}
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      - name: Check credentials were loaded (lengths only)
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "CLOUDFLARE_API_TOKEN not set"; exit 1; }
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "CLOUDFLARE_ACCOUNT_ID not set"; exit 1; }
+          echo "token length ${#CLOUDFLARE_API_TOKEN}, account id length ${#CLOUDFLARE_ACCOUNT_ID}"
+
+      # Production is the `main` branch of the Pages project; PRs get a stable preview alias.
+      - name: Deploy
+        run: >
+          bun --bun x wrangler@4 pages deploy build
+          --project-name resumx-app
+          --branch "${{ github.event_name == 'push' && 'main' || format('pr-{0}', github.event.pull_request.number) }}"
+          --commit-hash "${{ github.event.pull_request.head.sha || github.sha }}"
+          --commit-dirty=true
