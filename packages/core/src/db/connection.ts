@@ -25,5 +25,9 @@ export function getDatabase(dbPath: string): Database {
   // DML that could reference FK constraints.
   db.exec("PRAGMA foreign_keys = ON");
 
+  // Wait for a competing writer instead of failing immediately with SQLITE_BUSY.
+  // The Rust server (forge-server) can open the same file and sets the same 5s.
+  db.exec("PRAGMA busy_timeout = 5000");
+
   return db;
 }

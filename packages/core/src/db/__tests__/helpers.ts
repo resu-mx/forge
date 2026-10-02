@@ -9,9 +9,9 @@ import { resolve } from 'path'
 
 const MIGRATIONS_DIR = resolve(import.meta.dir, '../migrations')
 
-/** Create a fresh in-memory database with all migrations applied */
-export function createTestDb(): Database {
-  const db = getDatabase(':memory:')
+/** Create a fresh database (in-memory unless `path` is given) with all migrations applied */
+export function createTestDb(path: string = ':memory:'): Database {
+  const db = getDatabase(path)
   runMigrations(db, MIGRATIONS_DIR)
   return db
 }
