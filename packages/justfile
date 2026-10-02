@@ -1,0 +1,27 @@
+# Test module — `just test` runs everything; `just test <recipe>` runs one part.
+# Recipes run with the working directory set to packages/.
+
+default: all
+
+# Run all TypeScript package tests plus the Rust workspace tests
+all: core sdk mcp cli rust
+
+# Core API tests (bun)
+core:
+    bun run --filter '@forge/core' test
+
+# SDK tests (bun)
+sdk:
+    bun run --filter '@forge/sdk' test
+
+# MCP server tests (bun; integration tests skip themselves if the API is down)
+mcp:
+    cd mcp && bun test
+
+# CLI tests (bun)
+cli:
+    bun run --filter '@forge/cli' test
+
+# Rust workspace tests
+rust:
+    cd .. && rustup run stable cargo test --workspace
