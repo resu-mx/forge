@@ -7,6 +7,7 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
+use serde_json::{Map, Value};
 
 use forge_core::{
     CreateSource, PaginationParams, SourceFilter, SourceType, SourceWithExtension, UpdateSource,
@@ -31,20 +32,60 @@ pub struct SourceListQuery {
     pub search: Option<String>,
 }
 
+// ── Wire shape ──────────────────────────────────────────────────────
+//
+// The TS API takes extension fields nested under `role` / `project` /
+// `education` / `presentation` and returns them under the same key; internally
+// they are flat (`CreateSource`) and the response carries `extension`.
+
+const EXTENSION_KEYS: [&str; 4] = ["role", "project", "education", "presentation"];
+
+/// Merge nested extension objects into the top level (nested values win, as in TS).
+fn flatten_extensions(body: Value) -> Value {
+    let Value::Object(mut map) = body else { return body };
+    for key in EXTENSION_KEYS {
+        if let Some(Value::Object(nested)) = map.remove(key) {
+            map.extend(nested);
+        }
+    }
+    Value::Object(map)
+}
+
+/// Decode a flattened body, reporting problems in the standard error envelope.
+fn decode<T: serde::de::DeserializeOwned>(body: Value) -> Result<T, ApiError> {
+    serde_json::from_value(flatten_extensions(body)).map_err(|e| {
+        ApiError(forge_core::ForgeError::Validation { message: e.to_string(), field: None })
+    })
+}
+
+/// Serialize a source, renaming `extension` to the typed key for its source type.
+fn to_wire(source: SourceWithExtension) -> Value {
+    let mut value = serde_json::to_value(&source).unwrap_or(Value::Null);
+    if let Value::Object(map) = &mut value {
+        let extension = map.remove("extension").unwrap_or(Value::Null);
+        let key = map.get("source_type").and_then(Value::as_str).filter(|k| EXTENSION_KEYS.contains(k)).map(str::to_string);
+        if let (Some(key), false) = (key, extension.is_null()) {
+            map.insert(key, extension);
+        }
+    }
+    value
+}
+
 // ── Handlers ────────────────────────────────────────────────────────
 
 async fn create_source(
     State(state): State<SharedState>,
-    Json(input): Json<CreateSource>,
-) -> Result<Created<SourceWithExtension>, ApiError> {
+    Json(body): Json<Value>,
+) -> Result<Created<Value>, ApiError> {
+    let input: CreateSource = decode(body)?;
     let result = with_conn(&state, move |conn| SourceStore::create(conn, &input)).await?;
-    Ok(Created(result))
+    Ok(Created(to_wire(result)))
 }
 
 async fn list_sources(
     State(state): State<SharedState>,
     Query(q): Query<SourceListQuery>,
-) -> Result<Json<ApiList<SourceWithExtension>>, ApiError> {
+) -> Result<Json<ApiList<Value>>, ApiError> {
     let filter = SourceFilter {
         source_type: q.source_type.and_then(|s| s.parse::<SourceType>().ok()),
         organization_id: q.organization_id,
@@ -60,13 +101,13 @@ async fn list_sources(
     let (data, pagination) =
         with_conn(&state, move |conn| SourceStore::list(conn, &filter, &pg)).await?;
 
-    Ok(Json(ApiList { data, pagination }))
+    Ok(Json(ApiList { data: data.into_iter().map(to_wire).collect(), pagination }))
 }
 
 async fn get_source(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-) -> Result<Json<ApiData<SourceWithExtension>>, ApiError> {
+) -> Result<Json<ApiData<Value>>, ApiError> {
     let result = with_conn(&state, move |conn| {
         SourceStore::get_hydrated(conn, &id)?
             .ok_or_else(|| forge_core::ForgeError::NotFound {
@@ -75,17 +116,18 @@ async fn get_source(
             })
     })
     .await?;
-    Ok(Json(ApiData { data: result }))
+    Ok(Json(ApiData { data: to_wire(result) }))
 }
 
 async fn update_source(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-    Json(input): Json<UpdateSource>,
-) -> Result<Json<ApiData<SourceWithExtension>>, ApiError> {
+    Json(body): Json<Value>,
+) -> Result<Json<ApiData<Value>>, ApiError> {
+    let input: UpdateSource = decode(body)?;
     let result =
         with_conn(&state, move |conn| SourceStore::update(conn, &id, &input)).await?;
-    Ok(Json(ApiData { data: result }))
+    Ok(Json(ApiData { data: to_wire(result) }))
 }
 
 async fn delete_source(

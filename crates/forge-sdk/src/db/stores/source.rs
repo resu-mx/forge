@@ -20,11 +20,21 @@ impl SourceStore {
 
     /// Insert a source base row + extension row. Returns the full hydrated source.
     pub fn create(conn: &Connection, input: &CreateSource) -> Result<SourceWithExtension, ForgeError> {
+        if input.title.trim().is_empty() {
+            return Err(ForgeError::Validation { message: "Title must not be empty".into(), field: Some("title".into()) });
+        }
+        if input.description.trim().is_empty() {
+            return Err(ForgeError::Validation { message: "Description must not be empty".into(), field: Some("description".into()) });
+        }
+
         let id = new_id();
         let now = now_iso();
         let source_type = input.source_type.unwrap_or(SourceType::General);
 
-        conn.execute(
+        // Base row and extension row succeed or fail together.
+        let tx = conn.unchecked_transaction()?;
+
+        tx.execute(
             "INSERT INTO sources (id, title, description, source_type, start_date, end_date, status, updated_by, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', 'human', ?7, ?7)",
             params![
@@ -38,7 +48,8 @@ impl SourceStore {
             ],
         )?;
 
-        Self::insert_extension(conn, &id, source_type, input)?;
+        Self::insert_extension(&tx, &id, source_type, input)?;
+        tx.commit()?;
 
         Self::get_hydrated(conn, &id)?
             .ok_or_else(|| ForgeError::Internal("Source created but not found".into()))
@@ -145,6 +156,13 @@ impl SourceStore {
 
     /// Update a source's base row and extension row.
     pub fn update(conn: &Connection, id: &str, input: &UpdateSource) -> Result<SourceWithExtension, ForgeError> {
+        if matches!(&input.title, Some(v) if v.trim().is_empty()) {
+            return Err(ForgeError::Validation { message: "Title must not be empty".into(), field: Some("title".into()) });
+        }
+        if matches!(&input.description, Some(v) if v.trim().is_empty()) {
+            return Err(ForgeError::Validation { message: "Description must not be empty".into(), field: Some("description".into()) });
+        }
+
         let source = Self::get(conn, id)?
             .ok_or_else(|| ForgeError::NotFound { entity_type: "source".into(), id: id.into() })?;
 
@@ -186,8 +204,74 @@ impl SourceStore {
             )?;
         }
 
+        Self::update_extension(conn, id, source.source_type, input)?;
+
         Self::get_hydrated(conn, id)?
             .ok_or_else(|| ForgeError::Internal("Source updated but not found".into()))
+    }
+
+    /// Patch the type-specific extension row. Only fields present in `input` are
+    /// written (an explicit `null` clears the column). `source_type` is immutable,
+    /// so there is no insert path here. Port of TS `buildExtensionPatch`.
+    fn update_extension(conn: &Connection, id: &str, source_type: SourceType, input: &UpdateSource) -> Result<(), ForgeError> {
+        let mut patch = ColumnPatch::default();
+        let table = match source_type {
+            SourceType::Role => {
+                patch.set_opt("organization_id", &input.organization_id);
+                patch.set_flag("is_current", input.is_current);
+                patch.set_opt("work_arrangement", &input.work_arrangement);
+                patch.set_opt("base_salary", &input.base_salary);
+                patch.set_opt("total_comp_notes", &input.total_comp_notes);
+                patch.set_opt("start_date", &input.start_date);
+                patch.set_opt("end_date", &input.end_date);
+                "source_roles"
+            }
+            SourceType::Project => {
+                patch.set_opt("organization_id", &input.organization_id);
+                patch.set_flag("is_personal", input.is_personal);
+                patch.set_flag("open_source", input.open_source);
+                patch.set_opt("url", &input.url);
+                patch.set_opt("start_date", &input.start_date);
+                patch.set_opt("end_date", &input.end_date);
+                "source_projects"
+            }
+            SourceType::Education => {
+                patch.set("education_type", input.education_type.map(|e| e.to_string()));
+                patch.set_opt("organization_id", &input.education_organization_id);
+                patch.set_opt("campus_id", &input.campus_id);
+                patch.set_opt("field", &input.field);
+                patch.set_flag("is_in_progress", input.is_in_progress);
+                patch.set_opt("credential_id", &input.credential_id);
+                patch.set_opt("expiration_date", &input.expiration_date);
+                patch.set_opt("url", &input.url);
+                patch.set_opt("start_date", &input.start_date);
+                patch.set_opt("end_date", &input.end_date);
+                patch.set_opt("degree_level", &input.degree_level.map(|d| d.map(|v| v.to_string())));
+                patch.set_opt("degree_type", &input.degree_type);
+                patch.set_opt("certificate_subtype", &input.certificate_subtype.map(|c| c.map(|v| v.to_string())));
+                patch.set_opt("gpa", &input.gpa);
+                patch.set_opt("location", &input.location);
+                patch.set_opt("edu_description", &input.edu_description);
+                "source_education"
+            }
+            SourceType::Presentation => {
+                patch.set("venue", input.venue.clone());
+                patch.set("presentation_type", input.presentation_type.map(|p| p.to_string()));
+                patch.set_opt("url", &input.url);
+                patch.set("coauthors", input.coauthors.clone());
+                "source_presentations"
+            }
+            SourceType::General => return Ok(()),
+        };
+
+        if patch.is_empty() {
+            return Ok(());
+        }
+        let sql = format!("UPDATE {table} SET {} WHERE source_id = ?{}", patch.sets.join(", "), patch.binds.len() + 1);
+        let mut binds = patch.binds;
+        binds.push(Box::new(id.to_string()));
+        conn.execute(&sql, rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())))?;
+        Ok(())
     }
 
     // ── Delete ───────────────────────────────────────────────────────
@@ -388,6 +472,43 @@ impl SourceStore {
     }
 }
 
+/// Accumulates `col = ?N` assignments for a partial UPDATE.
+#[derive(Default)]
+struct ColumnPatch {
+    sets: Vec<String>,
+    binds: Vec<Box<dyn rusqlite::types::ToSql>>,
+}
+
+impl ColumnPatch {
+    fn push(&mut self, col: &str, value: Box<dyn rusqlite::types::ToSql>) {
+        self.sets.push(format!("{col} = ?{}", self.binds.len() + 1));
+        self.binds.push(value);
+    }
+
+    /// Set when the field is present (`Some`). A present `None` writes NULL.
+    fn set<T: rusqlite::types::ToSql + 'static>(&mut self, col: &str, value: Option<T>) {
+        if let Some(v) = value {
+            self.push(col, Box::new(v));
+        }
+    }
+
+    /// For double-option fields: absent leaves the column alone, `null` clears it.
+    fn set_opt<T: rusqlite::types::ToSql + Clone + 'static>(&mut self, col: &str, value: &Option<Option<T>>) {
+        if let Some(inner) = value {
+            self.push(col, Box::new(inner.clone()));
+        }
+    }
+
+    /// 0/1 integer flag fields.
+    fn set_flag(&mut self, col: &str, value: Option<i32>) {
+        self.set(col, value);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.sets.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,6 +516,65 @@ mod tests {
 
     fn setup() -> Forge {
         Forge::open_memory().unwrap()
+    }
+
+    /// Reads on the creating connection see uncommitted rows, so this must check
+    /// from a second connection that the create really committed.
+    #[test]
+    fn create_is_visible_to_another_connection() {
+        let path = std::env::temp_dir().join(format!("forge-src-commit-{}.db", new_id()));
+        let path_str = path.to_str().unwrap();
+        let id = {
+            let forge = Forge::open(path_str).unwrap();
+            let created = SourceStore::create(forge.conn(), &CreateSource {
+                title: "T".into(),
+                description: "D".into(),
+                source_type: Some(SourceType::Education),
+                ..Default::default()
+            }).unwrap();
+            created.base.id
+        };
+        let other = Forge::open(path_str).unwrap();
+        let found = SourceStore::get_hydrated(other.conn(), &id).unwrap();
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{path_str}{suffix}"));
+        }
+        assert!(found.is_some(), "source was not committed");
+        assert!(found.unwrap().extension.is_some(), "extension row was not committed");
+    }
+
+    #[test]
+    fn empty_title_or_description_is_rejected() {
+        let forge = setup();
+        for (title, description) in [(" ", "d"), ("t", "  ")] {
+            let r = SourceStore::create(forge.conn(), &CreateSource {
+                title: title.into(),
+                description: description.into(),
+                ..Default::default()
+            });
+            assert!(matches!(r, Err(ForgeError::Validation { .. })), "{title:?}/{description:?}");
+        }
+    }
+
+    #[test]
+    fn update_patches_extension_and_null_clears() {
+        let forge = setup();
+        let created = SourceStore::create(forge.conn(), &CreateSource {
+            title: "T".into(),
+            description: "D".into(),
+            source_type: Some(SourceType::Education),
+            field: Some("Physics".into()),
+            location: Some("Pasadena".into()),
+            ..Default::default()
+        }).unwrap();
+
+        let patch: UpdateSource =
+            serde_json::from_str(r#"{"location": null, "gpa": "3.9"}"#).unwrap();
+        let updated = SourceStore::update(forge.conn(), &created.base.id, &patch).unwrap();
+        let Some(SourceExtension::Education(edu)) = updated.extension else { panic!("no education ext") };
+        assert_eq!(edu.location, None, "null clears");
+        assert_eq!(edu.gpa.as_deref(), Some("3.9"));
+        assert_eq!(edu.field.as_deref(), Some("Physics"), "absent fields are untouched");
     }
 
     #[test]
