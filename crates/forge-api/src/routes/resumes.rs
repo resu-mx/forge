@@ -56,11 +56,26 @@ pub struct CreateSectionBody {
 
 // ── Handlers ────────────────────────────────────────────────────────
 
+/// `POST /resumes` body: a plain `CreateResume`, optionally with `template_id` to
+/// pre-populate sections from a template (matches the TS route).
+#[derive(Debug, serde::Deserialize)]
+struct CreateResumeBody {
+    #[serde(flatten)]
+    input: CreateResume,
+    template_id: Option<String>,
+}
+
 async fn create_resume(
     State(state): State<SharedState>,
-    Json(input): Json<CreateResume>,
+    Json(body): Json<CreateResumeBody>,
 ) -> Result<Created<Resume>, ApiError> {
-    let result = with_conn(&state, move |conn| ResumeStore::create(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| match &body.template_id {
+        Some(template_id) => {
+            forge_sdk::db::TemplateStore::create_resume_from_template(conn, template_id, &body.input)
+        }
+        None => ResumeStore::create(conn, &body.input),
+    })
+    .await?;
     Ok(Created(result))
 }
 
