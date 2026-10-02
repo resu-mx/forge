@@ -1,6 +1,6 @@
 # Beads Categories (Forge)
 
-Project-specific bead categories for Forge. See `~/.claude/rules/beads-taxonomy.md` for the universal Type/Scope/Tags dimensions.
+Project-specific bead categories for Forge. Read this before creating or labelling a bead.
 
 ## Category (where it belongs)
 
