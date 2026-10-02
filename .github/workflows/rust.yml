@@ -48,6 +48,23 @@ jobs:
       - name: Control — the probe must be able to fail
         run: just wasm-deps-check-control
 
+  # The contract check: the TypeScript API's own route tests, run against the Rust
+  # server over real HTTP (roadmap M3). `just parity-tier0` lists the files the Rust
+  # server is expected to pass today; widen that list as more of the API is ported.
+  parity:
+    name: TS route tests vs Rust server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: extractions/setup-just@v2
+      - run: bun install --frozen-lockfile
+      - run: just parity-tier0
+
   # Advisory until the codebase is formatted and the todo!() stubs are gone:
   # the repo has never been through rustfmt (~10k diff lines) and clippy reports
   # ~200 warnings, mostly unused variables in stub services. Promote to blocking

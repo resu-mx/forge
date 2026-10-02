@@ -41,7 +41,17 @@ function stopCurrent() {
   for (const suffix of ['', '-wal', '-shm']) rmSync(current.dbPath + suffix, { force: true })
   current = undefined
 }
-process.on('exit', stopCurrent)
+
+// `process.on('exit')` never fires under `bun test`, so nothing in this process can be
+// relied on to clean up after the last test. Instead the server runs under a small shell
+// watchdog that kills it as soon as this process is gone (or the watchdog is terminated).
+// Args: $0 = server binary, $1 = this process's pid.
+const WATCHDOG = [
+  'trap \'kill "$srv" 2>/dev/null\' TERM',
+  '"$0" & srv=$!',
+  'while kill -0 "$1" 2>/dev/null && kill -0 "$srv" 2>/dev/null; do sleep 0.3; done',
+  'kill "$srv" 2>/dev/null',
+].join('; ')
 
 function createRustTestApp(bin: string): TestContext {
   // Tests run sequentially and each wants a fresh database, so the previous
@@ -50,8 +60,12 @@ function createRustTestApp(bin: string): TestContext {
 
   const dbPath = join(tmpdir(), `forge-parity-${process.pid}-${++counter}.db`)
   const db = createTestDb(dbPath)
-  const port = 30000 + Math.floor(Math.random() * 30000)
-  const proc = Bun.spawn([bin], {
+  // Ask the OS for a free port. A random pick can collide with the ephemeral range
+  // that outgoing connections (the previous test's requests) are still using.
+  const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+  const port = probe.port
+  probe.stop(true)
+  const proc = Bun.spawn(['sh', '-c', WATCHDOG, bin, String(process.pid)], {
     env: { ...process.env, FORGE_DB_PATH: dbPath, FORGE_PORT: String(port), FORGE_LOG_LEVEL: process.env.FORGE_LOG_LEVEL ?? 'warn' },
     stdout: process.env.FORGE_LOG_LEVEL ? 'inherit' : 'ignore',
     stderr: 'inherit',
