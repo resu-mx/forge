@@ -6,3 +6,7 @@
 export function createForgeWorker(): never {
   throw new Error('The in-browser runtime is only available with VITE_FORGE_MODE=wasm')
 }
+
+export function createTypstWorker(): never {
+  throw new Error('The in-browser PDF compiler is only available with VITE_FORGE_MODE=wasm')
+}

@@ -17,6 +17,8 @@ export const runtime =
     ? createRuntime({
         // Lazy, so an API-mode build never loads the Worker (or needs the generated wasm).
         createWorker: async () => (await import('@forge/runtime/worker-factory')).createForgeWorker(),
+        // The PDF compiler is a separate 25 MB module: only fetched when a PDF is first asked for.
+        createPdfWorker: async () => (await import('@forge/runtime/worker-factory')).createTypstWorker(),
       })
     : null
 
