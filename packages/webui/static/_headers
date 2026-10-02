@@ -6,10 +6,9 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
-  # window.forge exposes the user's data to any script on this origin, so a CSP matters.
-  # Report-Only until it is checked against the SPA fallback page's inline bootstrap script;
-  # enforcing needs kit.csp hash mode (follow-up). 'wasm-unsafe-eval' is required by WebAssembly.
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'
+  # The Content-Security-Policy is not here: SvelteKit's hash mode (svelte.config.js) adds it to
+  # the page, because the SPA fallback has an inline bootstrap script whose hash only the build
+  # knows.
 
 # Content-hashed build output never changes, so the ~9.5 MB gzipped Typst module is a one-time download.
 /_app/immutable/*
