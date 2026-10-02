@@ -6,7 +6,7 @@ The user asked how far along the TS → Rust rewrite is. This was a read-only qu
 
 Sources: `Cargo.toml` and `crates/**`, `packages/**`, the beads export at
 `.beads/issues.jsonl` (the Dolt server returned "database beads_forge not found", so the
-export is the only tracker data and may be stale), `.claude/plans/forge-resume-builder/refs/specs/2026-04-23-rust-implementation-phases.md`,
+export is the only tracker data and may be stale), `.agents/plans/forge-resume-builder/refs/specs/2026-04-23-rust-implementation-phases.md`,
 and `docs/src/migrations/mvp-2.0-browser-first.md`.
 
 ## Findings

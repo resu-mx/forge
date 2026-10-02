@@ -1,40 +1,63 @@
-# Agent Instructions
+# Forge
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+Resume builder and job-application toolkit: career data (sources, bullets, perspectives,
+skills) in, targeted resumes out.
 
-## Quick Reference
+> **Forge is a SaaS product + OSS distribution**, not a solo/personal tool. The current single-user local deployment is the MVP/dogfooding phase. All architectural decisions must account for multi-tenancy, auth, feature flags, observability, and data isolation. Do not make decisions that paint the project into a single-user corner.
+
+## Start here — every conversation, and again after every compaction
+
+Read `.agents/AGENTS.md` before doing anything else. It is the index of all agent context in
+this repo and names the `AGENTS.md` to read before you touch each part of the tree. After a
+compaction, read it again rather than working from a summary of it. (Claude Code also gets it
+through the import below.)
+
+@.agents/AGENTS.md
+
+## Layout
+
+| Path | What | Context |
+|---|---|---|
+| `packages/` | Bun/TypeScript workspace — the product as it runs today | `packages/AGENTS.md` |
+| `crates/` | Rust workspace — the browser-first TS → Rust port | `crates/AGENTS.md` |
+| `docs/` | Durable reference: architecture, ADRs, migrations | `docs/AGENTS.md` |
+| `.docker/` | Compose stacks (dev / test / prod) behind Traefik | `.docker/AGENTS.md` |
+| `.github/` | CI and release workflows | `.github/AGENTS.md` |
+| `data/` | Local SQLite database (`data/forge.db`, gitignored) and the `just data` module | — |
+| `.agents/` | Vendor-neutral agent context: the index, shared context, plans | `.agents/AGENTS.md` |
+| `.claude/` | Claude Code-only config: rules, skills, subagents, hooks | `.agents/AGENTS.md` |
+
+## Develop
+
+**Use Docker by default.** The containerized stack gives isolated data, a consistent
+environment and Traefik routing. Use the host-local recipes only when debugging host-level
+issues.
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+just docker dev     # dev stack, hot reload, http://forge.localhost/ui/
+just docker test    # ephemeral: build → seed → test → teardown
+just docker down    # stop every profile
+
+just setup          # host: bun install, .env from .env.example
+just dev            # host: TS API :3000 + MCP :5174 + web UI :5173
+just test           # all TS package tests + cargo test (or: just test core|sdk|mcp|cli|rust)
+just data migrate   # SQLite migrations
+just server         # Rust API server (forge-server) on :3000
 ```
 
-## Non-Interactive Shell Commands
+## Invariants
 
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
+- **Two runtimes, one contract.** The TypeScript API (`packages/core/src/routes`) and the Rust
+  API (`crates/forge-api`) serve the same JSON contract, and the TS route tests are the
+  contract tests (`just parity-tier0`, also in CI). A route change lands in both or the parity
+  job fails.
+- **Plans and specs go in `.agents/plans/`**, never `docs/superpowers/`. Layout in the index.
 
-Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
+## Shell
 
-**Use these forms instead:**
-```bash
-# Force overwrite without prompting
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
-
-# For recursive operations
-rm -rf directory            # NOT: rm -r directory
-cp -rf source dest          # NOT: cp -r source dest
-```
-
-**Other commands that may prompt:**
-- `scp` - use `-o BatchMode=yes` for non-interactive
-- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
-- `apt-get` - use `-y` flag
-- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
+`cp`, `mv` and `rm` may be aliased to `-i` and hang the agent waiting for y/n. Always pass
+non-interactive flags: `cp -f`, `mv -f`, `rm -f`, `rm -rf`, `cp -rf`; `ssh`/`scp -o
+BatchMode=yes`; `apt-get -y`; `HOMEBREW_NO_AUTO_UPDATE=1 brew …`.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
