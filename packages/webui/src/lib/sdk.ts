@@ -4,12 +4,12 @@ import { createRuntime, installApiFetch } from '@forge/runtime'
 
 /**
  * Where the API lives:
- * - `api` (default): an HTTP server (the TS server or `forge-server`), reached through
- *   the dev proxy or the same origin.
- * - `wasm`: the Rust API running in this browser, in a Worker, over OPFS storage. Set
- *   `VITE_FORGE_MODE=wasm` and build the runtime first (`just wasm-bundle`).
+ * - `wasm` (default): the Rust API running in this browser, in a Worker, over OPFS storage.
+ *   Build the runtime first (`just wasm-bundle typst-bundle`, or `just app`).
+ * - `api`: an HTTP server (the TS server or `forge-server`), reached through the dev proxy or
+ *   the same origin. Set `VITE_FORGE_MODE=api`.
  */
-export const forgeMode: 'api' | 'wasm' = import.meta.env.VITE_FORGE_MODE === 'wasm' ? 'wasm' : 'api'
+export const forgeMode: 'api' | 'wasm' = import.meta.env.VITE_FORGE_MODE === 'api' ? 'api' : 'wasm'
 
 /** The in-browser runtime; null in `api` mode (and when rendering without a window). */
 export const runtime =

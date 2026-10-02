@@ -35,7 +35,7 @@ dev:
     sleep 1
     bun run --filter '@forge/mcp' dev &
     sleep 1
-    bun run --filter '@forge/webui' dev
+    VITE_FORGE_MODE=api bun run --filter '@forge/webui' dev
 
 # Start dev + MCP Inspector for debugging
 debug:
@@ -45,7 +45,7 @@ debug:
     sleep 1
     bun run --filter '@forge/mcp' dev &
     sleep 1
-    bun run --filter '@forge/webui' dev &
+    VITE_FORGE_MODE=api bun run --filter '@forge/webui' dev &
     sleep 1
     bun run --filter '@forge/mcp' inspect:http
 
@@ -67,9 +67,14 @@ api:
 server:
     {{cargo}} run -p forge-server
 
-# Start only the WebUI dev server (needs 'just api' in another tab)
+# Start only the WebUI dev server against an API server (needs 'just api' in another tab)
 webui:
     @echo "Note: API server must be running on :3000 (run 'just api' in another tab)"
+    VITE_FORGE_MODE=api bun run --filter '@forge/webui' dev
+
+# Start the browser-first app: the Rust API runs in the browser, no server. Builds the wasm
+# bundles first (needs wasm-bindgen-cli at the version in Cargo.lock).
+app: wasm-bundle typst-bundle
     bun run --filter '@forge/webui' dev
 
 # Start the MCP server on STDIO

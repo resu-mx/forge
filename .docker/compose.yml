@@ -137,6 +137,7 @@ services:
     command: ["bun", "run", "--filter", "@forge/webui", "dev", "--", "--host", "0.0.0.0"]
     environment:
       FORGE_API_URL: http://core:3000
+      VITE_FORGE_MODE: api
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.webui.rule=Host(`forge.localhost`) && PathPrefix(`/ui`)"
@@ -249,6 +250,7 @@ services:
     command: ["bun", "run", "--filter", "@forge/webui", "dev", "--", "--host", "0.0.0.0"]
     environment:
       FORGE_API_URL: http://test-core:3000
+      VITE_FORGE_MODE: api
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.test-webui.rule=Host(`test.localhost`) && PathPrefix(`/ui`)"

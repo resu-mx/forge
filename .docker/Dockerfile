@@ -89,7 +89,7 @@ COPY . .
 
 RUN bun run --filter @forge/core build && \
     bun run --filter @forge/mcp build && \
-    bun run --filter @forge/webui build
+    VITE_FORGE_MODE=api bun run --filter @forge/webui build
 
 # ───────────── prod runtime ─────────────
 # Minimal image with only compiled artifacts. No source code, no dev
