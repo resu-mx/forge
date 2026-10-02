@@ -32,8 +32,19 @@ async fn get_profile(
 
 async fn update_profile(
     State(state): State<SharedState>,
-    Json(input): Json<UpdateProfile>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiData<forge_core::UserProfile>>, ApiError> {
+    // `UpdateProfile.name` cannot tell `null` from absent, but the TS API rejects
+    // an explicit null, so look at the raw body.
+    if body.get("name").is_some_and(serde_json::Value::is_null) {
+        return Err(ApiError(forge_core::ForgeError::Validation {
+            message: "Name cannot be null".into(),
+            field: Some("name".into()),
+        }));
+    }
+    let input: UpdateProfile = serde_json::from_value(body).map_err(|e| {
+        ApiError(forge_core::ForgeError::Validation { message: e.to_string(), field: None })
+    })?;
     let result =
         with_conn(&state, move |conn| ProfileStore::update_profile(conn, &input)).await?;
     Ok(Json(ApiData { data: result }))
