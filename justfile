@@ -3,13 +3,21 @@
 set dotenv-load := true
 
 # Resolve DB path relative to workspace root (bun --filter changes CWD to package dir)
-export PATH := env("HOME") / ".bun/bin:" + env("PATH")
+export PATH := env("HOME") / ".cargo/bin:" + env("HOME") / ".bun/bin:" + env("PATH")
 export FORGE_DB_PATH := absolute_path(env("FORGE_DB_PATH", "./data/forge.db"))
 
 # Cargo via rustup so the stable toolchain is used even when another Rust
 # (e.g. Homebrew) comes first on PATH. RUSTC is set explicitly because that
 # other rustc can still win the PATH lookup inside `rustup run`.
 cargo := "RUSTC=$(rustup which rustc --toolchain stable) rustup run stable cargo"
+
+# SQLite is compiled from C for wasm32 (sqlite-wasm-rs), which needs a clang with the
+# WebAssembly backend. Apple clang has none: on macOS `brew install llvm` and set
+# LLVM_BIN=/opt/homebrew/opt/llvm/bin (the directory holding clang and llvm-ar).
+# Linux CI's clang works unchanged.
+llvm := env("LLVM_BIN", "")
+export CC_wasm32_unknown_unknown := if llvm == "" { "clang" } else { llvm / "clang" }
+export AR_wasm32_unknown_unknown := if llvm == "" { "ar" } else { llvm / "llvm-ar" }
 
 # ─── Modules ──────────────────────────────────────────────
 
@@ -150,24 +158,33 @@ wasm-build: wasm-target
     @echo "Building forge-wasm for wasm32-unknown-unknown..."
     {{cargo}} build -p forge-wasm --target wasm32-unknown-unknown
 
-# Verify forge-wasm's wasm32 dep tree stays free of native-only crates
-# (rusqlite, libsqlite3-sys, openssl-sys, etc.). Use this as a CI gate to
-# catch accidental imports of native deps from the WASM crate.
+# Build the browser runtime and generate its JS glue into packages/runtime/pkg.
+# Needs `cargo install wasm-bindgen-cli --version <the wasm-bindgen in Cargo.lock>`.
+wasm-bundle: wasm-target
+    {{cargo}} build -p forge-wasm --target wasm32-unknown-unknown --profile wasm-release
+    wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir packages/runtime/pkg target/wasm32-unknown-unknown/wasm-release/forge_wasm.wasm
+    @ls -l packages/runtime/pkg/forge_wasm_bg.wasm
+    @gzip -9 -c packages/runtime/pkg/forge_wasm_bg.wasm | wc -c | xargs echo "gzip -9 bytes:"
+
+# Guard the browser build against native-only crates. rusqlite IS expected here (it reaches
+# the browser through sqlite-wasm-rs), but the OS-socket layer (mio), the native SQLite
+# and OpenSSL bindings, must not creep in. (tokio itself appears via sqlite-wasm-vfs's sync
+# primitives, which are fine; mio is what cannot run in a browser.)
 wasm-deps-check: wasm-target
-    @echo "Checking forge-wasm wasm32 deps for native-only crates..."
+    @echo "Checking forge-wasm's wasm32 dependencies for native-only crates..."
     @# `cargo tree -i` exits 0 with empty stdout when the crate is absent, so test the output.
-    @for krate in rusqlite libsqlite3-sys openssl-sys; do \
-        if [ -n "$({{cargo}} tree -p forge-wasm --target wasm32-unknown-unknown -i $krate 2>/dev/null)" ]; then \
+    @for krate in mio libsqlite3-sys openssl-sys; do \
+        if [ -n "$({{cargo}} tree -p forge-wasm --target wasm32-unknown-unknown -e normal -i $krate 2>/dev/null)" ]; then \
           echo "FAIL: $krate found in forge-wasm wasm32 deps"; exit 1; \
         fi; \
       done; \
       echo "OK: no native-only crates in forge-wasm wasm32 deps"
 
-# Negative control for wasm-deps-check: the same probe MUST find rusqlite in forge-sdk.
+# Negative control for wasm-deps-check: the same probe MUST find mio in forge-server.
 wasm-deps-check-control:
-    @test -n "$({{cargo}} tree -p forge-sdk -i rusqlite 2>/dev/null)" \
-      && echo "OK: probe detects rusqlite in forge-sdk (check can fail)" \
-      || { echo "FAIL: probe found nothing in forge-sdk; wasm-deps-check is vacuous"; exit 1; }
+    @test -n "$({{cargo}} tree -p forge-server -e normal -i mio 2>/dev/null)" \
+      && echo "OK: probe detects mio in forge-server (check can fail)" \
+      || { echo "FAIL: probe found nothing in forge-server; wasm-deps-check is vacuous"; exit 1; }
 
 # Produce a loadable .wasm + JS glue via wasm-pack. Output goes to
 # crates/forge-wasm/pkg/. Requires `cargo install wasm-pack`.

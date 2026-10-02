@@ -39,3 +39,12 @@ tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "util
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 strum = { version = "0.27", features = ["derive"] }
+
+# Size-optimised build for the browser runtime only (`just wasm-bundle`). Kept off
+# the default release profile so the native server is not built for size.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

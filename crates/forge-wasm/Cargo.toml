@@ -2,46 +2,47 @@
 name = "forge-wasm"
 version = "0.1.0"
 edition = "2021"
-description = "Forge browser-side data layer (Rust → WASM). Survives Svelte → Tauri → Dioxus migrations."
+description = "Forge browser runtime: the forge-api router and forge-sdk over SQLite on OPFS, compiled to WebAssembly."
 
-# `cdylib` produces the .wasm artifact that wasm-pack post-processes into JS bindings.
-# `rlib` keeps the crate usable from native test harnesses and from future
-# Tauri / Dioxus consumers that link against it natively.
+# `cdylib` produces the .wasm artifact that wasm-bindgen post-processes into JS bindings.
+# `rlib` keeps the crate usable from native test harnesses and future Tauri / Dioxus consumers.
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# `default-features = false` drops the rusqlite-bound `Database` variant of
-# ForgeError so forge-core compiles to wasm32-unknown-unknown without trying
-# to bundle a C SQLite library. The `WasmDatabase(String)` variant used to
-# surface wa-sqlite JS-boundary errors is always-present in forge-core
-# (no feature gate) so consumers don't need a passthrough feature to
-# handle it in exhaustive matches.
-forge-core = { workspace = true, default-features = false }
+# The same code that runs natively: forge-sdk's stores over rusqlite, behind forge-api's
+# router. rusqlite reaches the browser through sqlite-wasm-rs (see ADR 0001), so forge-core
+# keeps its `rusqlite` feature here too.
+forge-core = { workspace = true, features = ["rusqlite"] }
+forge-sdk = { workspace = true }
+forge-api = { workspace = true }
+rusqlite = { workspace = true }
+# default-features = false: no tokio, so this builds for wasm32-unknown-unknown.
+axum = { version = "0.8", default-features = false, features = ["json", "query"] }
+tower = { workspace = true, features = ["util"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 # WASM/JS interop
 wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"  # required for `async fn` extern blocks (Promise unwrapping)
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 petgraph = { version = "0.8.3", default-features = false }
 
 [dependencies.web-sys]
 version = "0.3"
-features = [
-  "console",
-  # OPFS / wa-sqlite features will be added by the binding successor task.
-]
+features = ["console"]
 
-# Native test harness — wasm-bindgen-test is layered on for in-browser tests
-# in the test-harness successor task.
-# rusqlite is only used on native targets (behind #[cfg(not(target_arch = "wasm32"))]).
-# Listing it here avoids it being pulled into the wasm32 build.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rusqlite = { workspace = true }
+# SQLite for the browser: sqlite-wasm-rs is what rusqlite links on wasm32, and
+# sqlite-wasm-vfs adds the OPFS `sahpool` VFS. 0.2.x of the VFS crate is built against
+# sqlite-wasm-rs 0.5.x (what rusqlite 0.40 pulls in); 0.3.x targets 0.6 and is incompatible.
+# Upgrade the two together. See docs/src/dev/adrs/rust-wasm/0001-*.md.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-vfs = "0.2"
+sqlite-wasm-rs = { version = "0.5", default-features = false }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+tokio = { workspace = true, features = ["rt", "macros"] }
