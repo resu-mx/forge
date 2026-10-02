@@ -2,7 +2,7 @@ import adapter from '@sveltejs/adapter-static'
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 
 // Production builds only: the Vite dev server needs inline scripts and websockets that this
-// policy would block. FORGE_CSP=off skips it for a build too.
+// policy would block. FORGE_CSP=off skips it for a build too (e.g. to bisect a CSP problem).
 const enforceCsp = process.argv.includes('build') && process.env.FORGE_CSP !== 'off'
 
 /**
