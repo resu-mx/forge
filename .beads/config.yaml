@@ -6,12 +6,11 @@
 # (refs/dolt/data), so every bead is public. See AGENTS.md before writing one.
 
 sync:
-  remote: "git+ssh://git@github.com/resu-mx/forge.git"
-
+    remote: "git+ssh://git@github.com/resu-mx/forge.git"
 # The Dolt remote is the only source of truth. No JSONL copy is kept in git:
 # auto-export would churn a large file through every PR, and auto-import from a
 # stale JSONL could overwrite newer bead state.
 import:
-  auto: false
+    auto: false
 export:
-  auto: false
+    auto: false
