@@ -53,6 +53,11 @@ just server         # Rust API server (forge-server) on :3000
   contract tests (`just parity-tier0`, also in CI). A route change lands in both or the parity
   job fails.
 - **Plans and specs go in `.agents/plans/`**, never `docs/superpowers/`. Layout in the index.
+- **The bead database is public.** `bd dolt push` sends it to this public repository's Dolt
+  remote (`refs/dolt/data`), where anyone can read every field of every bead: title,
+  description, design, notes, comments. Never put anything in a bead that must not be public:
+  secrets, credentials or tokens, private hostnames or IPs, personal data, or details of
+  private repositories and internal systems. Storage and sync: `.agents/context/work-tracking.md`.
 
 ## Shell
 

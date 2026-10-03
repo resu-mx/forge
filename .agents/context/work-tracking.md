@@ -43,12 +43,20 @@ Forge tracks work in three layers. Each has one audience, so each says different
 
 ## Beads (for agents)
 
-- **Where they live.** An embedded Dolt store in `.beads/embeddeddolt/` (gitignored), synced to
-  the Dolt remote in this GitHub repository (`refs/dolt/*`, set as `sync.remote` in
-  `.beads/config.toml`). Run `bd dolt pull` before you create beads and `bd dolt push` after. Not
-  the shared Dolt server: a shell that exports `BEADS_DOLT_SERVER_*` overrides the repo config and
-  silently points `bd` at it, so unset those first (`env | grep ^BEADS_DOLT`). `bd` run in a
-  worktree uses the canonical checkout's `.beads/`.
+- **Where they live.**
+  - **Store:** an embedded Dolt store in `.beads/embeddeddolt/` (gitignored). Its mode and
+    database name are set in `.beads/metadata.json`.
+  - **Remote:** synced to the Dolt remote in this GitHub repository (`refs/dolt/data`), which is
+    the only source of truth. No JSONL copy is kept in git.
+  - **Config:** `sync.remote`, `import.auto` and `export.auto` are set in `.beads/config.yaml`.
+    `bd` reads that file, never a `config.toml`.
+  - **Workflow:** run `bd dolt pull` before you create beads and `bd dolt push` after. On a fresh
+    clone, `bd bootstrap` clones the store from the remote.
+  - **Public:** everything you push is public. See the warning in the root `AGENTS.md`.
+  - **Server variables:** embedded mode ignores `BEADS_DOLT_SERVER_*` for data, but `bd` still
+    reads `BEADS_DOLT_SERVER_HOST` when deciding on auto-backup. Unset those variables in forge
+    (`env | grep ^BEADS_DOLT`).
+  - **Worktrees:** `bd` run in a worktree uses the canonical checkout's `.beads/`.
 - Beads are generated from an issue: a parent, a child or a childless one. **Issues and beads are
   1:N.** Hierarchy inside `bd` (`--parent`, `--deps`) is independent of GitHub's.
 - Link each bead to its source issue with the label `gh:<number>` and a

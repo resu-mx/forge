@@ -1,0 +1,17 @@
+# Beads configuration for forge. bd reads this file; it does not read config.toml.
+# Docs: https://gastownhall.github.io/beads/reference/configuration
+#
+# Storage mode and database name live in metadata.json (embedded Dolt in
+# .beads/embeddeddolt/). The Dolt remote below is this public GitHub repository
+# (refs/dolt/data), so every bead is public. See AGENTS.md before writing one.
+
+sync:
+  remote: "git+ssh://git@github.com/resu-mx/forge.git"
+
+# The Dolt remote is the only source of truth. No JSONL copy is kept in git:
+# auto-export would churn a large file through every PR, and auto-import from a
+# stale JSONL could overwrite newer bead state.
+import:
+  auto: false
+export:
+  auto: false
