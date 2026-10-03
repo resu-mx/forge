@@ -43,6 +43,12 @@ Forge tracks work in three layers. Each has one audience, so each says different
 
 ## Beads (for agents)
 
+- **Where they live.** An embedded Dolt store in `.beads/embeddeddolt/` (gitignored), synced to
+  the Dolt remote in this GitHub repository (`refs/dolt/*`, set as `sync.remote` in
+  `.beads/config.toml`). Run `bd dolt pull` before you create beads and `bd dolt push` after. Not
+  the shared Dolt server: a shell that exports `BEADS_DOLT_SERVER_*` overrides the repo config and
+  silently points `bd` at it, so unset those first (`env | grep ^BEADS_DOLT`). `bd` run in a
+  worktree uses the canonical checkout's `.beads/`.
 - Beads are generated from an issue: a parent, a child or a childless one. **Issues and beads are
   1:N.** Hierarchy inside `bd` (`--parent`, `--deps`) is independent of GitHub's.
 - Link each bead to its source issue with the label `gh:<number>` and a
