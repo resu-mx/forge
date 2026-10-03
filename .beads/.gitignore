@@ -2,6 +2,14 @@
 dolt/
 embeddeddolt/
 
+# JSONL copies: the Dolt remote is the source of truth, so none is tracked.
+# issues.jsonl is what `bd export` writes; the marker records the last auto-import.
+issues.jsonl
+.auto-import-issues.jsonl
+
+# Init diagnostics
+dolt-config.log
+
 # Runtime files
 bd.sock
 bd.sock.startlock
