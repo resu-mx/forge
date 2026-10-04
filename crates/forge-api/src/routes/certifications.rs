@@ -3,26 +3,22 @@
 //! Mirrors the TS certification routes — full CRUD plus
 //! certification_skills junction management.
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use forge_core::{Certification, CreateCertification, Skill, UpdateCertification};
+use forge_core::{
+    Certification, CertificationWithSkills, CreateCertification, Skill, UpdateCertification,
+};
 use forge_sdk::db::CertificationStore;
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{ApiData, ApiList, Created, NoContent};
+use crate::response::{ApiData, Created, NoContent};
 use crate::state::SharedState;
 
 // -- Query params ────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize, Default)]
-pub struct CertListQuery {
-    pub offset: Option<i64>,
-    pub limit: Option<i64>,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct AddSkillBody {
@@ -41,31 +37,26 @@ async fn create_certification(
 
 async fn list_certifications(
     State(state): State<SharedState>,
-    Query(q): Query<CertListQuery>,
-) -> Result<Json<ApiList<Certification>>, ApiError> {
-    let offset = q.offset.unwrap_or(0).max(0);
-    let limit = q.limit.unwrap_or(50).clamp(1, 200);
-
-    let (data, pagination) = with_conn(&state, move |conn| {
-        CertificationStore::list(conn, offset, limit)
-    })
-    .await?;
-
-    Ok(Json(ApiList { data, pagination }))
+) -> Result<Json<ApiData<Vec<CertificationWithSkills>>>, ApiError> {
+    // TS returns every row as {data}; offset/limit are not part of the contract.
+    let data = with_conn(&state, move |conn| CertificationStore::list_with_skills(conn)).await?;
+    Ok(Json(ApiData { data }))
 }
 
 async fn get_certification(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-) -> Result<Json<ApiData<Certification>>, ApiError> {
-    let result = with_conn(&state, move |conn| {
-        CertificationStore::get(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
-            entity_type: "Certification".into(),
-            id: id.clone(),
+) -> Result<Json<ApiData<CertificationWithSkills>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        CertificationStore::get_with_skills(conn, &id)?.ok_or_else(|| {
+            forge_core::ForgeError::NotFound {
+                entity_type: "Certification".into(),
+                id: id.clone(),
+            }
         })
     })
     .await?;
-    Ok(Json(ApiData { data: result }))
+    Ok(Json(ApiData { data }))
 }
 
 async fn update_certification(
