@@ -39,6 +39,8 @@ src/
     ├── jd_service.rs
     ├── contact_service.rs
     ├── summary_service.rs
+    ├── tagline/             # Tagline state rules (TS: services/tagline-service.ts, routes/resumes.ts:222-307)
+    │   └── mod.rs           # js_trim, has_override, tagline_state, get_state
     ├── note_service.rs
     ├── profile_service.rs
     ├── compiler_service.rs  # Resume IR compiler
