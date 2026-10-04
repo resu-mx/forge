@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { PageHeader } from '$lib/components'
+  import ExtensionUnavailable from '$lib/components/ExtensionUnavailable.svelte'
+  import { extensionPagesAvailable } from '$lib/extension-gate'
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
 
@@ -46,13 +48,18 @@
     saving = false
   }
 
-  onMount(loadConfig)
+  // In wasm mode nothing may call /api/extension/*; the template branch alone would not stop this.
+  onMount(() => {
+    if (extensionPagesAvailable) loadConfig()
+  })
 </script>
 
 <div class="settings-page">
   <PageHeader title="Extension Config" subtitle="Browser extension settings stored in Forge. The extension fetches this config on startup." />
 
-  {#if loading}
+  {#if !extensionPagesAvailable}
+    <ExtensionUnavailable />
+  {:else if loading}
     <div class="loading">Loading...</div>
   {:else}
     <form class="settings-form" onsubmit={(e) => { e.preventDefault(); saveConfig() }}>

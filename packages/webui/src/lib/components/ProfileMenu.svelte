@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { formatPhone } from '$lib/format'
+  import { extensionPagesAvailable } from '$lib/extension-gate'
 
   /**
    * Profile flyout menu component.
@@ -191,12 +192,14 @@
       <button class="menu-item menu-link" onclick={() => navigateTo('/settings/storage')}>
         Storage
       </button>
-      <button class="menu-item menu-link" onclick={() => navigateTo('/settings/extension')}>
-        Extension Config
-      </button>
-      <button class="menu-item menu-link" onclick={() => navigateTo('/settings/extension-logs')}>
-        Extension Logs
-      </button>
+      {#if extensionPagesAvailable}
+        <button class="menu-item menu-link" onclick={() => navigateTo('/settings/extension')}>
+          Extension Config
+        </button>
+        <button class="menu-item menu-link" onclick={() => navigateTo('/settings/extension-logs')}>
+          Extension Logs
+        </button>
+      {/if}
       <button class="menu-item menu-link" onclick={() => navigateTo('/config/privacy')}>
         Privacy
       </button>
