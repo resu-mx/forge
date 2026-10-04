@@ -146,6 +146,12 @@ export function sourceRoutes(services: Services, db: Database) {
 
     // If name is provided, create new skill and link it
     if (body.name?.trim()) {
+      // Check the source first. Otherwise the skill is inserted, the link insert then
+      // fails the FK, and the request answers 500 with an orphan skill left behind
+      // (resu-mx/forge#21).
+      if (!db.query('SELECT 1 FROM sources WHERE id = ?').get(sourceId)) {
+        return c.json({ error: { code: 'NOT_FOUND', message: 'Source or skill not found' } }, 404)
+      }
       // Capitalize first character only, preserve rest (SAFe stays SAFe, foo→Foo)
       const raw = body.name.trim()
       const name = raw.charAt(0).toUpperCase() + raw.slice(1)
