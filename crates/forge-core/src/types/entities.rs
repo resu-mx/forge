@@ -16,7 +16,9 @@ pub struct OrgLocation {
     pub name: String,
     pub modality: LocationModality,
     pub address_id: Option<String>,
-    pub is_headquarters: i32,
+    /// Stored as INTEGER 0/1; a JSON boolean on the wire, as TS's ELM returns it
+    /// (packages/core/src/storage/entity-map.data.ts).
+    pub is_headquarters: bool,
     pub created_at: String,
 }
 

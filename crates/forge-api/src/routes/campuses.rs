@@ -4,10 +4,12 @@
 //! are scoped under `/organizations/:orgId/`.
 
 use axum::extract::{Path, State};
-use axum::routing::get;
+use axum::routing::{get, patch};
 use axum::{Json, Router};
 
-use forge_core::{CreateOrgAlias, CreateOrgLocation, OrgAlias, OrgLocation, UpdateOrgLocation};
+use forge_core::{
+    CreateOrgAlias, CreateOrgLocation, ForgeError, OrgAlias, OrgLocation, UpdateOrgLocation,
+};
 use forge_sdk::db::CampusStore;
 
 use crate::db::with_conn;
@@ -16,6 +18,18 @@ use crate::response::{ApiData, Created, NoContent};
 use crate::state::SharedState;
 
 // -- Location handlers ───────────────────────────────────────────────
+
+/// TS trims the name and rejects a blank one (org-location-service.ts).
+fn location_name(name: &str) -> Result<String, ForgeError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(ForgeError::Validation {
+            message: "Name must not be empty".into(),
+            field: Some("name".into()),
+        });
+    }
+    Ok(trimmed.to_string())
+}
 
 async fn list_locations(
     State(state): State<SharedState>,
@@ -30,23 +44,23 @@ async fn create_location(
     Path(org_id): Path<String>,
     Json(mut input): Json<CreateOrgLocation>,
 ) -> Result<Created<OrgLocation>, ApiError> {
-    input.organization_id = org_id;
-    let result = with_conn(&state, move |conn| {
-        CampusStore::create_location(conn, &input)
-    })
-    .await?;
+    input.organization_id = org_id; // the path wins over any body value, as in TS
+    input.name = location_name(&input.name)?;
+    let result =
+        with_conn(&state, move |conn| CampusStore::create_location(conn, &input)).await?;
     Ok(Created(result))
 }
 
 async fn update_location(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-    Json(input): Json<UpdateOrgLocation>,
+    Json(mut input): Json<UpdateOrgLocation>,
 ) -> Result<Json<ApiData<OrgLocation>>, ApiError> {
-    let result = with_conn(&state, move |conn| {
-        CampusStore::update_location(conn, &id, &input)
-    })
-    .await?;
+    if let Some(name) = input.name.as_deref() {
+        input.name = Some(location_name(name)?);
+    }
+    let result =
+        with_conn(&state, move |conn| CampusStore::update_location(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -97,10 +111,13 @@ pub fn router() -> Router<SharedState> {
             "/organizations/{org_id}/locations",
             get(list_locations).post(create_location),
         )
+        .route("/locations/{id}", patch(update_location).delete(delete_location))
+        // Backward-compatible aliases (migration 047; TS campuses.ts): the same handlers.
         .route(
-            "/locations/{id}",
-            axum::routing::patch(update_location).delete(delete_location),
+            "/organizations/{org_id}/campuses",
+            get(list_locations).post(create_location),
         )
+        .route("/campuses/{id}", patch(update_location).delete(delete_location))
         // Aliases
         .route(
             "/organizations/{org_id}/aliases",

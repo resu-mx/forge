@@ -626,8 +626,13 @@ pub struct UpdateArchetypeInput {
 // ── Org Location ────────────────────────────────────────────────────
 
 /// Input for creating an OrgLocation.
+///
+/// `organization_id` comes from the URL path (`/organizations/{org_id}/locations` or
+/// `/campuses`). The TS contract never sends it (packages/sdk/src/resources/organizations.ts),
+/// so it defaults to empty and the handler fills it in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateOrgLocation {
+    #[serde(default)]
     pub organization_id: String,
     pub name: String,
     pub modality: Option<LocationModality>,
