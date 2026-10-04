@@ -1,5 +1,6 @@
 <script lang="ts">
   import { forge, friendlyError } from '$lib/sdk'
+  import { sharedSummaryWarningName } from '$lib/summary-share'
   import { addToast } from '$lib/stores/toast.svelte'
   import { LoadingSpinner } from '$lib/components'
   import type { Summary } from '@forge/sdk'
@@ -64,18 +65,15 @@
     }
   }
 
-  /** [Link] an existing summary directly */
+  /** [Link] an existing summary. A shared summary always gets the warning first. */
   async function linkSummary(id: string) {
-    // Check if this summary is already linked to another resume
     const summary = summaries.find(s => s.id === id)
     if (summary && summary.linked_resume_count > 0) {
-      // Fetch linked resumes to show the warning
-      const linkedResult = await forge.summaries.linkedResumes(id, { limit: 1 })
-      if (linkedResult.ok && linkedResult.data.length > 0) {
-        warningForId = id
-        warningResumeName = linkedResult.data[0].name
-        return
-      }
+      // The lookup only picks the name; whatever it returns, the warning is shown.
+      const linked = await forge.summaries.linkedResumes(id, { limit: 1 })
+      warningForId = id
+      warningResumeName = sharedSummaryWarningName(linked)
+      return
     }
     onpick(id)
   }
