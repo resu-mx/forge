@@ -5,7 +5,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{new_id, now_iso, CreateDomainInput, Domain, ForgeError};
+use forge_core::{CreateDomainInput, Domain, DomainWithUsage, ForgeError, Pagination, new_id, now_iso};
 
 /// Data-access store for the `domains` table.
 pub struct DomainStore;
@@ -53,6 +53,39 @@ impl DomainStore {
             .query_map([], Self::map_domain)?
             .collect::<Result<_, _>>()?;
         Ok(rows)
+    }
+
+    /// List domains with usage counts, sorted by name, one page at a time.
+    ///
+    /// Mirrors `DomainService.list` (packages/core/src/services/domain-service.ts:56-88).
+    /// `perspective_count` matches perspectives on the domain's *name* (a text
+    /// column, not an FK); `archetype_count` counts `archetype_domains` rows.
+    pub fn list_with_usage(
+        conn: &Connection,
+        offset: i64,
+        limit: i64,
+    ) -> Result<(Vec<DomainWithUsage>, Pagination), ForgeError> {
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM domains", [], |row| row.get(0))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT d.id, d.name, d.description, d.created_at,
+                    (SELECT COUNT(*) FROM perspectives p WHERE p.domain = d.name) AS perspective_count,
+                    (SELECT COUNT(*) FROM archetype_domains ad WHERE ad.domain_id = d.id) AS archetype_count
+             FROM domains d
+             ORDER BY d.name ASC
+             LIMIT ?1 OFFSET ?2",
+        )?;
+        let rows: Vec<DomainWithUsage> = stmt
+            .query_map(params![limit, offset], |row| {
+                Ok(DomainWithUsage {
+                    base: Self::map_domain(row)?, // columns 0..=3
+                    perspective_count: row.get(4)?,
+                    archetype_count: row.get(5)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+
+        Ok((rows, Pagination { total, offset, limit }))
     }
 
     // ── Usage ────────────────────────────────────────────────────────
@@ -148,6 +181,36 @@ mod tests {
 
     fn make(forge: &Forge, name: &str) -> Domain {
         DomainStore::create(forge.conn(), &CreateDomainInput { name: name.into(), description: None }).unwrap()
+    }
+
+    #[test]
+    fn list_with_usage_counts_archetype_links_and_perspectives() {
+        let forge = setup();
+        let (rows, page) = DomainStore::list_with_usage(forge.conn(), 0, 200).unwrap();
+        assert_eq!(page.total as usize, rows.len());
+        let security = rows.iter().find(|d| d.base.name == "security").unwrap();
+        assert_eq!(security.archetype_count, 2); // migration 003: security-engineer, public-sector
+
+        make(&forge, "fresh_dom");
+        perspective_naming(&forge, "fresh_dom");
+        let (rows, _) = DomainStore::list_with_usage(forge.conn(), 0, 200).unwrap();
+        let fresh = rows.iter().find(|d| d.base.name == "fresh_dom").unwrap();
+        assert_eq!((fresh.perspective_count, fresh.archetype_count), (1, 0));
+    }
+
+    #[test]
+    fn list_with_usage_sorts_by_name_and_pages() {
+        let forge = setup();
+        let (all, _) = DomainStore::list_with_usage(forge.conn(), 0, 200).unwrap();
+        let names: Vec<_> = all.iter().map(|d| d.base.name.clone()).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+
+        let (page, p) = DomainStore::list_with_usage(forge.conn(), 1, 2).unwrap();
+        assert_eq!(page.len(), 2);
+        assert_eq!(page[0].base.name, names[1]);
+        assert_eq!((p.offset, p.limit, p.total), (1, 2, all.len() as i64));
     }
 
     #[test]

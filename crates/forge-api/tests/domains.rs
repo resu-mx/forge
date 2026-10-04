@@ -72,6 +72,29 @@ async fn deleting_a_domain_named_by_a_perspective_is_a_409() {
 }
 
 #[tokio::test]
+async fn list_has_usage_counts_and_pagination() {
+    let r = router();
+    let (status, body) = call(&r, "GET", "/api/domains", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["pagination"]["offset"], 0);
+    assert_eq!(body["pagination"]["limit"], 50);
+    let items = body["data"].as_array().unwrap();
+    assert_eq!(body["pagination"]["total"].as_u64().unwrap() as usize, items.len());
+    let security = items.iter().find(|d| d["name"] == "security").unwrap();
+    assert_eq!(security["archetype_count"], 2);
+    assert!(items.iter().all(|d| d["perspective_count"].is_i64() && d["archetype_count"].is_i64()));
+
+    let (_, page) = call(&r, "GET", "/api/domains?offset=1&limit=2", None).await;
+    assert_eq!(page["data"].as_array().unwrap().len(), 2);
+    assert_eq!(page["pagination"]["offset"], 1);
+    assert_eq!(page["pagination"]["limit"], 2);
+
+    let (_, big) = call(&r, "GET", "/api/domains?limit=500&offset=-3", None).await;
+    assert_eq!(big["pagination"]["limit"], 200);
+    assert_eq!(big["pagination"]["offset"], 0);
+}
+
+#[tokio::test]
 async fn deleting_an_unused_domain_is_204_and_unknown_is_404() {
     let r = router();
     let (_, d) = call(&r, "POST", "/api/domains", Some(json!({ "name": "unused_dom" }))).await;
