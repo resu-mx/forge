@@ -194,6 +194,16 @@ pub struct SourceFilter {
     pub search: Option<String>,
 }
 
+/// Filter options for listing extension logs (TS `ExtensionLogFilter`,
+/// extension-log-service.ts:33-38). The store applies the defaults (50 / 0).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ExtensionLogFilter {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub error_code: Option<String>,
+    pub layer: Option<String>,
+}
+
 // ── Gap Analysis ─────────────────────────────────────────────────────
 
 /// Gap analysis report for a resume.
