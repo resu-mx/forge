@@ -140,3 +140,96 @@ async fn remove_skill_is_idempotent() {
     let (_, list) = call(&r, "GET", &format!("/api/summaries/{sid}/skills"), None).await;
     assert_eq!(list["data"], json!([]));
 }
+
+// ── GET /summaries/:id?include=relations (resu-mx/forge#35) ───────────
+
+use forge_core::{CreateIndustryInput, CreateRoleTypeInput, CreateSummary, SkillCategory};
+use forge_sdk::db::{IndustryStore, RoleTypeStore, SkillStore, SummaryStore};
+
+struct Seeded {
+    router: Router,
+    /// Industry "Aero", role type "Tech Lead", keywords RustLang + Kubernetes.
+    full: String,
+    /// No industry, role type or keywords.
+    bare: String,
+}
+
+fn new_summary(title: &str, industry_id: Option<String>, role_type_id: Option<String>) -> CreateSummary {
+    CreateSummary {
+        title: title.into(),
+        role: None,
+        description: None,
+        is_template: None,
+        industry_id,
+        role_type_id,
+        notes: None,
+    }
+}
+
+fn seeded() -> Seeded {
+    let forge = Forge::open_memory().unwrap();
+    let (full, bare) = {
+        let conn = forge.conn();
+        let industry =
+            IndustryStore::create(conn, &CreateIndustryInput { name: "Aero".into(), description: None }).unwrap();
+        let role_type =
+            RoleTypeStore::create(conn, &CreateRoleTypeInput { name: "Tech Lead".into(), description: None })
+                .unwrap();
+        let rust = SkillStore::create(conn, "RustLang", Some(SkillCategory::Language)).unwrap();
+        let k8s = SkillStore::create(conn, "Kubernetes", Some(SkillCategory::Tool)).unwrap();
+        let full = SummaryStore::create(conn, &new_summary("Hydrated", Some(industry.id), Some(role_type.id))).unwrap();
+        SummaryStore::add_skill(conn, &full.id, &rust.id).unwrap();
+        SummaryStore::add_skill(conn, &full.id, &k8s.id).unwrap();
+        let bare = SummaryStore::create(conn, &new_summary("Bare", None, None)).unwrap();
+        (full.id, bare.id)
+    };
+    Seeded { router: app(AppState::new(forge)), full, bare }
+}
+
+#[tokio::test]
+async fn include_relations_hydrates_industry_role_type_and_skills() {
+    let s = seeded();
+    let (status, body) = call(&s.router, "GET", &format!("/api/summaries/{}?include=relations", s.full), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let d = &body["data"];
+    assert_eq!(d["title"], "Hydrated"); // flattened base
+    assert_eq!(d["linked_resume_count"], 0);
+    assert_eq!(d["industry"]["name"], "Aero");
+    assert_eq!(d["role_type"]["name"], "Tech Lead");
+    let names: Vec<&str> = d["skills"].as_array().unwrap().iter().map(|k| k["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Kubernetes", "RustLang"]); // ordered by name
+    let keys: Vec<&String> = d["skills"][0].as_object().unwrap().keys().collect();
+    assert_eq!(keys.len(), 3); // id, name, category
+}
+
+#[tokio::test]
+async fn include_relations_missing_relations_are_null() {
+    let s = seeded();
+    let (status, body) = call(&s.router, "GET", &format!("/api/summaries/{}?include=relations", s.bare), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["data"]["industry"].is_null() && body["data"].get("industry").is_some());
+    assert!(body["data"]["role_type"].is_null() && body["data"].get("role_type").is_some());
+    assert_eq!(body["data"]["skills"], json!([]));
+}
+
+#[tokio::test]
+async fn plain_get_and_other_include_values_do_not_hydrate() {
+    let s = seeded();
+    for q in ["", "?include=", "?include=foo"] {
+        let (status, body) = call(&s.router, "GET", &format!("/api/summaries/{}{q}", s.full), None).await;
+        assert_eq!(status, StatusCode::OK, "{q}");
+        for key in ["industry", "role_type", "skills"] {
+            assert!(body["data"].get(key).is_none(), "{q}: unexpected {key}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn unknown_id_is_404_with_and_without_include() {
+    let s = seeded();
+    for p in ["/api/summaries/nope", "/api/summaries/nope?include=relations"] {
+        let (status, body) = call(&s.router, "GET", p, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{p}");
+        assert_eq!(body["error"]["code"], "NOT_FOUND");
+    }
+}
