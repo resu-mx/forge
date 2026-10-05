@@ -1,13 +1,16 @@
 //! Domain repository — CRUD for the `domains` lookup table.
 //!
-//! Domains are experience domains (e.g. "Cloud Security", "Systems Programming")
-//! used by perspectives and archetypes.
+//! Domains are experience domains (e.g. `cloud_security`, `systems_engineering`)
+//! used by perspectives and archetypes. Names are lowercase slugs.
 
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
     new_id, now_iso, CreateDomainInput, Domain, DomainWithUsage, ForgeError, Pagination,
+    UpdateDomainInput,
 };
+
+use super::lookup::{self, LookupTable};
 
 /// Data-access store for the `domains` table.
 pub struct DomainStore;
@@ -16,7 +19,12 @@ impl DomainStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a new domain row.
+    ///
+    /// TS order (domain-service.ts:22-34): empty, then format; then the ELM's
+    /// uniqueness check (lifecycle-manager.ts:188-195), which is a 409.
     pub fn create(conn: &Connection, input: &CreateDomainInput) -> Result<Domain, ForgeError> {
+        lookup::validate_domain_name(&input.name, lookup::DOMAIN_NAME_FORMAT_ON_CREATE)?;
+        lookup::ensure_name_free(conn, LookupTable::Domains, &input.name, None)?;
         let id = new_id();
         let now = now_iso();
 
@@ -95,6 +103,41 @@ impl DomainStore {
                 limit,
             },
         ))
+    }
+
+    // ── Update ───────────────────────────────────────────────────────
+
+    /// Partially update a domain (`PATCH /domains/:id`).
+    ///
+    /// Same order as TS: the name rules (domain-service.ts:90-99), then 404, then
+    /// uniqueness excluding this row (lifecycle-manager.ts:306-320, :362-370).
+    /// A rename does not touch `perspectives.domain`, which keeps the old name as
+    /// free text; TS doesn't rewrite it either (resu-mx/forge#17).
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateDomainInput,
+    ) -> Result<Domain, ForgeError> {
+        let name = input.name.as_deref();
+        if let Some(name) = name {
+            lookup::validate_domain_name(name, lookup::DOMAIN_NAME_FORMAT_ON_UPDATE)?;
+        }
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "domain".into(),
+            id: id.into(),
+        })?;
+        if let Some(name) = name {
+            lookup::ensure_name_free(conn, LookupTable::Domains, name, Some(id))?;
+        }
+        lookup::update_name_description(
+            conn,
+            LookupTable::Domains,
+            id,
+            name,
+            input.description.as_ref().map(|d| d.as_deref()),
+        )?;
+        Self::get(conn, id)?
+            .ok_or_else(|| ForgeError::Internal("Domain updated but not found".into()))
     }
 
     // ── Usage ────────────────────────────────────────────────────────
@@ -285,11 +328,11 @@ mod tests {
     fn create_and_get() {
         let forge = setup();
         let input = CreateDomainInput {
-            name: "Cloud Security".into(),
+            name: "cloud_security".into(),
             description: Some("Securing cloud infrastructure and services".into()),
         };
         let domain = DomainStore::create(forge.conn(), &input).unwrap();
-        assert_eq!(domain.name, "Cloud Security");
+        assert_eq!(domain.name, "cloud_security");
         assert_eq!(
             domain.description,
             Some("Securing cloud infrastructure and services".into())
@@ -297,7 +340,7 @@ mod tests {
 
         let fetched = DomainStore::get(forge.conn(), &domain.id).unwrap().unwrap();
         assert_eq!(fetched.id, domain.id);
-        assert_eq!(fetched.name, "Cloud Security");
+        assert_eq!(fetched.name, "cloud_security");
     }
 
     #[test]
@@ -309,7 +352,7 @@ mod tests {
         DomainStore::create(
             forge.conn(),
             &CreateDomainInput {
-                name: "Backend".into(),
+                name: "backend".into(),
                 description: None,
             },
         )
@@ -317,7 +360,7 @@ mod tests {
         DomainStore::create(
             forge.conn(),
             &CreateDomainInput {
-                name: "Quantum Computing".into(),
+                name: "quantum_computing".into(),
                 description: Some("Quantum computing and cryptography".into()),
             },
         )
@@ -326,8 +369,8 @@ mod tests {
         let rows = DomainStore::list(forge.conn()).unwrap();
         assert_eq!(rows.len(), baseline + 2);
         // Sorted by name ASC — verify our entries are present
-        assert!(rows.iter().any(|d| d.name == "Backend"));
-        assert!(rows.iter().any(|d| d.name == "Quantum Computing"));
+        assert!(rows.iter().any(|d| d.name == "backend"));
+        assert!(rows.iter().any(|d| d.name == "quantum_computing"));
     }
 
     #[test]
@@ -336,7 +379,7 @@ mod tests {
         let domain = DomainStore::create(
             forge.conn(),
             &CreateDomainInput {
-                name: "To Delete".into(),
+                name: "to_delete".into(),
                 description: None,
             },
         )
@@ -345,6 +388,182 @@ mod tests {
         assert!(DomainStore::get(forge.conn(), &domain.id)
             .unwrap()
             .is_none());
+    }
+
+    fn new_domain(forge: &Forge, name: &str, description: Option<&str>) -> Domain {
+        DomainStore::create(
+            forge.conn(),
+            &CreateDomainInput {
+                name: name.into(),
+                description: description.map(Into::into),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn create_rejects_blank_and_malformed_names() {
+        let forge = setup();
+        let before = DomainStore::list(forge.conn()).unwrap().len();
+        for (name, expected) in [
+            ("", lookup::NAME_EMPTY),
+            ("   ", lookup::NAME_EMPTY),
+            ("Cloud Security", lookup::DOMAIN_NAME_FORMAT_ON_CREATE),
+            ("2fa", lookup::DOMAIN_NAME_FORMAT_ON_CREATE),
+            ("cloud-security", lookup::DOMAIN_NAME_FORMAT_ON_CREATE),
+        ] {
+            let err = DomainStore::create(
+                forge.conn(),
+                &CreateDomainInput {
+                    name: name.into(),
+                    description: None,
+                },
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&err, ForgeError::Validation { message, .. } if message == expected),
+                "{name:?}"
+            );
+        }
+        assert_eq!(DomainStore::list(forge.conn()).unwrap().len(), before);
+    }
+
+    #[test]
+    fn create_duplicate_is_conflict() {
+        let forge = setup();
+        let before = DomainStore::list(forge.conn()).unwrap().len();
+        let err = DomainStore::create(
+            forge.conn(),
+            &CreateDomainInput {
+                name: "security".into(), // seeded by migration 003
+                description: None,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(&err, ForgeError::Conflict { message }
+            if message == "domains.name must be unique: \"security\" already exists"));
+        assert_eq!(DomainStore::list(forge.conn()).unwrap().len(), before);
+    }
+
+    #[test]
+    fn update_renames_and_clears_description() {
+        let forge = setup();
+        let d = new_domain(&forge, "patch_me", Some("Before"));
+        let updated = DomainStore::update(
+            forge.conn(),
+            &d.id,
+            &UpdateDomainInput {
+                name: Some("patch_renamed".into()),
+                description: Some(None),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.name, "patch_renamed");
+        assert_eq!(updated.description, None);
+        assert_eq!(updated.created_at, d.created_at);
+    }
+
+    #[test]
+    fn update_leaves_absent_fields() {
+        let forge = setup();
+        let d = new_domain(&forge, "keep_name", None);
+        let updated = DomainStore::update(
+            forge.conn(),
+            &d.id,
+            &UpdateDomainInput {
+                name: None,
+                description: Some(Some("Now described".into())),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.name, "keep_name");
+        assert_eq!(updated.description.as_deref(), Some("Now described"));
+    }
+
+    #[test]
+    fn update_rejects_blank_and_malformed_names() {
+        let forge = setup();
+        let d = new_domain(&forge, "stays_put", None);
+        for (name, expected) in [
+            ("", lookup::NAME_EMPTY),
+            ("   ", lookup::NAME_EMPTY),
+            ("Cloud Security", lookup::DOMAIN_NAME_FORMAT_ON_UPDATE),
+            ("2fa", lookup::DOMAIN_NAME_FORMAT_ON_UPDATE),
+        ] {
+            let err = DomainStore::update(
+                forge.conn(),
+                &d.id,
+                &UpdateDomainInput {
+                    name: Some(name.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&err, ForgeError::Validation { message, .. } if message == expected),
+                "{name:?}"
+            );
+        }
+        assert_eq!(
+            DomainStore::get(forge.conn(), &d.id).unwrap().unwrap().name,
+            "stays_put"
+        );
+    }
+
+    #[test]
+    fn update_to_taken_name_is_conflict_but_own_name_is_ok() {
+        let forge = setup();
+        let d = new_domain(&forge, "mine", None);
+        let err = DomainStore::update(
+            forge.conn(),
+            &d.id,
+            &UpdateDomainInput {
+                name: Some("security".into()), // seeded by migration 003
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Conflict { .. }));
+        let ok = DomainStore::update(
+            forge.conn(),
+            &d.id,
+            &UpdateDomainInput {
+                name: Some("mine".into()),
+                description: Some(Some("Edited".into())),
+            },
+        )
+        .unwrap();
+        assert_eq!(ok.description.as_deref(), Some("Edited"));
+    }
+
+    #[test]
+    fn update_unknown_id_is_not_found() {
+        let forge = setup();
+        let err = DomainStore::update(
+            forge.conn(),
+            "nonexistent",
+            &UpdateDomainInput {
+                description: Some(Some("x".into())),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::NotFound { .. }));
+    }
+
+    #[test]
+    fn update_validates_before_not_found() {
+        let forge = setup();
+        let err = DomainStore::update(
+            forge.conn(),
+            "nonexistent",
+            &UpdateDomainInput {
+                name: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }));
     }
 
     #[test]

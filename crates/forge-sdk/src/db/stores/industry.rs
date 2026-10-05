@@ -5,6 +5,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+use super::lookup::{self, LookupTable};
 use forge_core::{new_id, now_iso, CreateIndustryInput, ForgeError, Industry};
 
 /// Data-access store for the `industries` table.
@@ -14,14 +15,19 @@ impl IndustryStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a new industry row.
+    ///
+    /// TS trims the name and rejects a blank one; the ELM answers 409 for a taken one.
     pub fn create(conn: &Connection, input: &CreateIndustryInput) -> Result<Industry, ForgeError> {
+        let name = lookup::require_name(&input.name)?;
+        lookup::ensure_name_free(conn, LookupTable::Industries, name, None)?;
+
         let id = new_id();
         let now = now_iso();
 
         conn.execute(
             "INSERT INTO industries (id, name, description, created_at)
              VALUES (?1, ?2, ?3, ?4)",
-            params![id, input.name, input.description, now],
+            params![id, name, input.description, now],
         )?;
 
         Self::get(conn, &id)?
@@ -167,5 +173,60 @@ mod tests {
         let forge = setup();
         let result = IndustryStore::delete(forge.conn(), "nonexistent");
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
+    }
+
+    #[test]
+    fn create_trims_the_name() {
+        let forge = setup();
+        let row = IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: "  Trim Me  ".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(row.name, "Trim Me");
+    }
+
+    #[test]
+    fn create_rejects_a_blank_name() {
+        let forge = setup();
+        let before = IndustryStore::list(forge.conn()).unwrap().len();
+        for name in ["", "   "] {
+            let err = IndustryStore::create(
+                forge.conn(),
+                &CreateIndustryInput {
+                    name: name.into(),
+                    description: None,
+                },
+            )
+            .unwrap_err();
+            assert!(matches!(&err, ForgeError::Validation { message, .. }
+                if message == lookup::NAME_EMPTY));
+        }
+        assert_eq!(IndustryStore::list(forge.conn()).unwrap().len(), before);
+    }
+
+    #[test]
+    fn create_duplicate_is_conflict_after_trimming() {
+        let forge = setup();
+        IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: "Dup Name".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        let err = IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: " Dup Name ".into(),
+                description: None,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Conflict { .. }));
     }
 }

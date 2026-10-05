@@ -1,5 +1,6 @@
 import type {
   Domain,
+  DomainWithUsage,
   PaginatedResult,
   PaginationParams,
   RequestFn,
@@ -27,11 +28,11 @@ export class DomainsResource {
     return this.request<Domain>('POST', '/api/domains', input)
   }
 
-  list(params?: PaginationParams): Promise<PaginatedResult<Domain>> {
+  list(params?: PaginationParams): Promise<PaginatedResult<DomainWithUsage>> {
     const p: Record<string, string> = {}
     if (params?.offset !== undefined) p.offset = String(params.offset)
     if (params?.limit !== undefined) p.limit = String(params.limit)
-    return this.requestList<Domain>('GET', '/api/domains', Object.keys(p).length > 0 ? p : undefined)
+    return this.requestList<DomainWithUsage>('GET', '/api/domains', Object.keys(p).length > 0 ? p : undefined)
   }
 
   get(id: string): Promise<Result<Domain>> {

@@ -889,6 +889,21 @@ pub struct CreateDomainInput {
     pub description: Option<String>,
 }
 
+/// Input for partially updating a Domain (`PATCH /domains/:id`).
+///
+/// `description` is `Option<Option<_>>`: absent leaves it, `null` clears it
+/// (see `crate::serde_util::double_option`). A `null` name reads as absent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateDomainInput {
+    pub name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+}
+
 /// Input for creating an Industry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIndustryInput {
@@ -996,6 +1011,20 @@ pub struct UpsertEmbeddingInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_domain_input_tells_absent_from_null() {
+        let empty: UpdateDomainInput = serde_json::from_str("{}").unwrap();
+        assert!(empty.name.is_none() && empty.description.is_none());
+        let clear: UpdateDomainInput = serde_json::from_str(r#"{"description":null}"#).unwrap();
+        assert_eq!(clear.description, Some(None));
+        let set: UpdateDomainInput =
+            serde_json::from_str(r#"{"name":"x","description":"d"}"#).unwrap();
+        assert_eq!(
+            (set.name.as_deref(), set.description),
+            (Some("x"), Some(Some("d".into())))
+        );
+    }
 
     #[test]
     fn update_organization_input_absent_null_and_value() {

@@ -160,3 +160,147 @@ async fn deleting_an_unused_domain_is_204_and_unknown_is_404() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(err["error"]["code"], "NOT_FOUND");
 }
+
+#[tokio::test]
+async fn patch_renames_and_clears_description() {
+    let r = router();
+    let (_, d) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "patch_me", "description": "Before" })),
+    )
+    .await;
+    let id = d["data"]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/domains/{id}"),
+        Some(json!({ "name": "patch_renamed", "description": null })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["id"], id);
+    assert_eq!(body["data"]["name"], "patch_renamed");
+    assert!(body["data"]["description"].is_null());
+
+    let (_, got) = call(&r, "GET", &format!("/api/domains/{id}"), None).await;
+    assert_eq!(got["data"]["name"], "patch_renamed");
+
+    // Own name plus a new description is fine; an empty body changes nothing.
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/domains/{id}"),
+        Some(json!({ "name": "patch_renamed", "description": "Edited" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["description"], "Edited");
+    let (status, body) = call(&r, "PATCH", &format!("/api/domains/{id}"), Some(json!({}))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["name"], "patch_renamed");
+    assert_eq!(body["data"]["description"], "Edited");
+}
+
+#[tokio::test]
+async fn patch_errors_use_the_envelope() {
+    let r = router();
+    let (_, d) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "patch_errs" })),
+    )
+    .await;
+    let path = format!("/api/domains/{}", d["data"]["id"].as_str().unwrap());
+
+    let (status, err) = call(
+        &r,
+        "PATCH",
+        &path,
+        Some(json!({ "name": "Cloud Security" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Domain name must be lowercase with underscores only"));
+
+    let (status, err) = call(&r, "PATCH", &path, Some(json!({ "name": "   " }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Name must not be empty"));
+
+    let (_, got) = call(&r, "GET", &path, None).await;
+    assert_eq!(got["data"]["name"], "patch_errs");
+
+    let (status, err) = call(&r, "PATCH", &path, Some(json!({ "name": "security" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(err["error"]["code"], "CONFLICT");
+
+    let (status, err) = call(
+        &r,
+        "PATCH",
+        "/api/domains/nonexistent",
+        Some(json!({ "description": "x" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["code"], "NOT_FOUND");
+}
+
+#[tokio::test]
+async fn post_validates_the_name_and_rejects_duplicates() {
+    let r = router();
+    let (status, body) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "new_domain", "description": "A test domain" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["data"]["name"], "new_domain");
+
+    let (status, err) = call(&r, "POST", "/api/domains", Some(json!({ "name": "" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Name must not be empty"));
+
+    let (status, err) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "Cloud Security" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Domain name must be lowercase, start with a letter"));
+
+    let (status, err) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "security" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(err["error"]["code"], "CONFLICT");
+
+    let (status, err) = call(&r, "POST", "/api/domains", Some(json!({}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+}

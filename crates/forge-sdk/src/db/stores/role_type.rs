@@ -3,6 +3,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+use super::lookup::{self, LookupTable};
 use forge_core::{new_id, now_iso, CreateRoleTypeInput, ForgeError, RoleType};
 
 /// Data access for the `role_types` table.
@@ -12,14 +13,19 @@ impl RoleTypeStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a new role type row.
+    ///
+    /// TS trims the name and rejects a blank one; the ELM answers 409 for a taken one.
     pub fn create(conn: &Connection, input: &CreateRoleTypeInput) -> Result<RoleType, ForgeError> {
+        let name = lookup::require_name(&input.name)?;
+        lookup::ensure_name_free(conn, LookupTable::RoleTypes, name, None)?;
+
         let id = new_id();
         let now = now_iso();
 
         conn.execute(
             "INSERT INTO role_types (id, name, description, created_at)
              VALUES (?1, ?2, ?3, ?4)",
-            params![id, input.name, input.description, now],
+            params![id, name, input.description, now],
         )?;
 
         Self::get(conn, &id)?
@@ -155,5 +161,60 @@ mod tests {
         let forge = setup();
         let result = RoleTypeStore::delete(forge.conn(), "nonexistent");
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
+    }
+
+    #[test]
+    fn create_trims_the_name() {
+        let forge = setup();
+        let row = RoleTypeStore::create(
+            forge.conn(),
+            &CreateRoleTypeInput {
+                name: "  Trim Me  ".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(row.name, "Trim Me");
+    }
+
+    #[test]
+    fn create_rejects_a_blank_name() {
+        let forge = setup();
+        let before = RoleTypeStore::list(forge.conn()).unwrap().len();
+        for name in ["", "   "] {
+            let err = RoleTypeStore::create(
+                forge.conn(),
+                &CreateRoleTypeInput {
+                    name: name.into(),
+                    description: None,
+                },
+            )
+            .unwrap_err();
+            assert!(matches!(&err, ForgeError::Validation { message, .. }
+                if message == lookup::NAME_EMPTY));
+        }
+        assert_eq!(RoleTypeStore::list(forge.conn()).unwrap().len(), before);
+    }
+
+    #[test]
+    fn create_duplicate_is_conflict_after_trimming() {
+        let forge = setup();
+        RoleTypeStore::create(
+            forge.conn(),
+            &CreateRoleTypeInput {
+                name: "Dup Name".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        let err = RoleTypeStore::create(
+            forge.conn(),
+            &CreateRoleTypeInput {
+                name: " Dup Name ".into(),
+                description: None,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Conflict { .. }));
     }
 }
