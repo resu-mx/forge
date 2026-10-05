@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -13,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use forge_ai::prompts::jd_skill_extraction;
 use forge_core::{
     ContactLink, CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionStatus,
-    JobDescriptionWithOrg, Skill, SkillRow, UpdateJobDescription,
+    JobDescriptionWithOrg, ResumeLink, Skill, SkillRow, UpdateJobDescription,
 };
-use forge_sdk::db::{ContactStore, JdStore, SkillStore};
+use forge_sdk::db::{ContactStore, JdResumeStore, JdStore, ResumeStore, SkillStore};
 
 use super::bullets::LinkSkillBody;
 use crate::db::with_conn;
@@ -324,6 +325,69 @@ async fn add_job_description_skill(
     Ok(Created(skill))
 }
 
+// ── JD <-> resume links ─────────────────────────────────────────────
+
+/// Body of `POST /job-descriptions/:id/resumes` (TS job-descriptions.ts:221).
+#[derive(Serialize)]
+struct LinkResumeResponse {
+    data: ResumeLink,
+    /// TS `RegenerateResult`. Always `null` until resu-mx/forge#71 regenerates the tagline on
+    /// link. Never omitted: TS always sends the key.
+    tagline: Option<serde_json::Value>,
+}
+
+/// `POST /job-descriptions/:id/resumes` (TS job-descriptions.ts:168-222). 201 for a new link,
+/// 200 if it already existed.
+async fn link_resume(
+    State(state): State<SharedState>,
+    Path(jd_id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<(StatusCode, Json<LinkResumeResponse>), ApiError> {
+    // 1. Body first, as TS does (:173-178).
+    let resume_id = body
+        .get("resume_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| ForgeError::Validation {
+            message: "resume_id is required".into(),
+            field: Some("resume_id".into()),
+        })?;
+
+    let (created, link) = with_conn(&state, move |conn| {
+        // 2. JD, then 3. resume (:180-191).
+        JdStore::get(conn, &jd_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "JobDescription".into(),
+            id: jd_id.clone(),
+        })?;
+        ResumeStore::get(conn, &resume_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "Resume".into(),
+            id: resume_id.clone(),
+        })?;
+        // 4. Idempotent insert; `created` picks 201 or 200 (:193-199, :218-219).
+        let created = JdResumeStore::link(conn, &jd_id, &resume_id)?;
+        // TODO(resu-mx/forge#71): regenerate the resume's generated_tagline from all linked
+        // JDs here, for new links and re-links alike, and return it as `tagline`.
+        let link = JdResumeStore::get_link(conn, &jd_id, &resume_id)?
+            .ok_or_else(|| ForgeError::Internal("JD-resume link written but not found".into()))?;
+        Ok((created, link))
+    })
+    .await?;
+
+    let status = if created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((
+        status,
+        Json(LinkResumeResponse {
+            data: link,
+            tagline: None,
+        }),
+    ))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -347,6 +411,7 @@ pub fn router() -> Router<SharedState> {
             "/job-descriptions/{id}/skills",
             get(list_job_description_skills).post(add_job_description_skill),
         )
+        .route("/job-descriptions/{id}/resumes", post(link_resume))
         .route(
             "/job-descriptions/{id}/contacts",
             get(list_job_description_contacts),
