@@ -202,8 +202,15 @@
   // An agent (or another part of the page) changed data: refresh the list without the spinner.
   $effect(() => onForgeChanged(() => loadSources(true)))
 
+  // Refilling the form discards unsaved edits (e.g. a campus just picked in the modal). A list
+  // reload hands back a new object for the same, unchanged source, so refill only when the
+  // source's content actually differs from what the form was last filled from.
+  let populatedFrom = ''
   $effect(() => {
     if (selectedSource && !editing) {
+      const snapshot = JSON.stringify(selectedSource)
+      if (snapshot === populatedFrom) return
+      populatedFrom = snapshot
       populateFormFromSource(selectedSource)
     }
   })
@@ -396,6 +403,7 @@
   function startNew() {
     selectedId = null
     editing = true
+    populatedFrom = '' // the form is blank now; selecting any source must refill it
     formTitle = ''
     formDescription = ''
     formSourceType = sourceTypeFilter ?? 'general'

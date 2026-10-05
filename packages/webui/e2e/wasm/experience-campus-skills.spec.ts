@@ -38,14 +38,7 @@ async function selectSource(page: Page, title: string) {
 
 const chips = (page: Page) => page.locator('.skill-pills .skill-pill')
 
-// KNOWN PRODUCT BUG, so `test.fail`: SourcesView drops an unsaved campus selection. Creating the
-// campus fires `forge:changed`; ~150 ms later `loadSources(true)` replaces `sources`, the derived
-// `selectedSource` is a new object, and the `$effect` at SourcesView.svelte:205 calls
-// `populateFormFromSource`, resetting `formCampusId` to the saved value (null). The assertion
-// right after "Create & Select" is therefore correct and fails. Remove `.fail` when that is fixed
-// (the test then reports "expected to fail" until you do). With the selection forced past that
-// point, every later step in this test passes.
-test.fail('experience: campus picker, new campus and source skills, in the browser', async ({ page }) => {
+test('experience: campus picker, new campus and source skills, in the browser', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (e) => pageErrors.push(e.message))
   await openApp(page)
@@ -78,8 +71,10 @@ test.fail('experience: campus picker, new campus and source skills, in the brows
   await modal.getByLabel('State').fill('VA')
   await modal.getByRole('button', { name: 'Create & Select' }).click()
   await expect(modal).toBeHidden()
-  // The runtime's `forge:changed` refresh is debounced by 150 ms; let it land so the selection is
-  // checked after the list reload a person would see, not in the instant before it.
+  // Creating the campus fires `forge:changed`; SourcesView reloads its list ~150 ms later, handing
+  // back a new object for the same source. This wait lets that reload land so the selection is
+  // checked after it (regression guard for #173: the reload used to reset the unsaved campus),
+  // not in the instant before it, where the assertion would pass vacuously.
   await page.waitForTimeout(600)
 
   const online = await inPage<{ id: string }>(
