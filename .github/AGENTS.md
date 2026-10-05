@@ -27,7 +27,7 @@ uploads `packages/webui/build` as the `app-static` artifact.
   in `PAGES_PROJECT` with `wrangler pages deploy`: production on `main`, a `pr-<N>` preview for
   same-repo PRs. It runs only when the repository variable `PAGES_DEPLOY_ENABLED` is `true`.
   It reads the Cloudflare token and account id from 1Password through the `cf-pages-app`
-  environment, which needs the secrets `OP_SVC_ACCT_TOKEN` and `OP_ENVIRONMENT_ID_CF_PAGES`.
+  environment, which needs the secrets `OP_SERVICE_ACCOUNT_TOKEN` and `OP_ENVIRONMENT_ID_CF_PAGES`.
 - The Pages project, hostname and DNS are owned by Terraform in `resu-mx/infra`. Until the
   domain moves to the direct-upload project, the Git-integrated `resumx-app` project still builds
   itself with `scripts/pages-build.sh`.

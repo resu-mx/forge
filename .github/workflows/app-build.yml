@@ -128,7 +128,7 @@ jobs:
           environment-id: ${{ secrets.OP_ENVIRONMENT_ID_CF_PAGES }}
           export-env: true
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SVC_ACCT_TOKEN }}
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
       - name: Check credentials were loaded (lengths only)
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "CLOUDFLARE_API_TOKEN not set"; exit 1; }
