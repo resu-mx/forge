@@ -154,7 +154,7 @@ mod tests {
 
     fn jd(f: &Forge, title: &str, org_id: Option<&str>) -> String {
         let input: CreateJobDescription = serde_json::from_value(json!({
-            "title": title, "raw_text": "", "organization_id": org_id,
+            "title": title, "raw_text": "text", "organization_id": org_id,
             "location": "Remote", "salary_range": "$150k-$200k",
         }))
         .unwrap();

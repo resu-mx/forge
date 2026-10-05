@@ -22,6 +22,8 @@ impl JdStore {
         conn: &Connection,
         input: &CreateJobDescription,
     ) -> Result<JobDescription, ForgeError> {
+        require_non_blank(&input.title, "title", TITLE_EMPTY)?;
+        require_non_blank(&input.raw_text, "raw_text", RAW_TEXT_EMPTY)?;
         let id = new_id();
         let now = now_iso();
         let status = input.status.unwrap_or(JobDescriptionStatus::Discovered);
@@ -177,6 +179,12 @@ impl JdStore {
         id: &str,
         input: &UpdateJobDescription,
     ) -> Result<JobDescription, ForgeError> {
+        if let Some(ref v) = input.title {
+            require_non_blank(v, "title", TITLE_EMPTY)?;
+        }
+        if let Some(ref v) = input.raw_text {
+            require_non_blank(v, "raw_text", RAW_TEXT_EMPTY)?;
+        }
         // Verify existence
         Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "job_description".into(),
@@ -417,6 +425,20 @@ impl JdStore {
     }
 }
 
+/// Reject blank title / raw_text, mirroring the TS `JobDescriptionService`.
+fn require_non_blank(value: &str, field: &str, message: &str) -> Result<(), ForgeError> {
+    if value.trim().is_empty() {
+        return Err(ForgeError::Validation {
+            message: message.into(),
+            field: Some(field.into()),
+        });
+    }
+    Ok(())
+}
+
+const TITLE_EMPTY: &str = "Title must not be empty";
+const RAW_TEXT_EMPTY: &str = "Job description text (raw_text) must not be empty";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,6 +476,46 @@ mod tests {
                 params![jd_id, skill_id],
             )
             .unwrap();
+    }
+
+    fn assert_validation_field<T: std::fmt::Debug>(r: Result<T, ForgeError>, expected: &str) {
+        match r {
+            Err(ForgeError::Validation { field, .. }) => {
+                assert_eq!(field.as_deref(), Some(expected))
+            }
+            other => panic!("expected validation error on {expected}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_rejects_blank_title_and_raw_text() {
+        let forge = setup();
+        let mut input = sample_input();
+        input.title = "   ".into();
+        assert_validation_field(JdStore::create(forge.conn(), &input), "title");
+
+        let mut input = sample_input();
+        input.raw_text = " \n".into();
+        assert_validation_field(JdStore::create(forge.conn(), &input), "raw_text");
+    }
+
+    #[test]
+    fn update_rejects_blank_title_and_raw_text() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let blank_title = UpdateJobDescription {
+            title: Some("".into()),
+            ..Default::default()
+        };
+        assert_validation_field(JdStore::update(forge.conn(), &jd.id, &blank_title), "title");
+        let blank_text = UpdateJobDescription {
+            raw_text: Some("  ".into()),
+            ..Default::default()
+        };
+        assert_validation_field(
+            JdStore::update(forge.conn(), &jd.id, &blank_text),
+            "raw_text",
+        );
     }
 
     #[test]

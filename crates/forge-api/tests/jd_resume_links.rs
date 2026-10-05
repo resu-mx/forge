@@ -132,7 +132,7 @@ async fn link_resume_201_then_200_with_null_tagline() {
 #[tokio::test]
 async fn link_resume_validates_body_then_jd_then_resume() {
     let f = Forge::open_memory().unwrap();
-    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let j = jd(&f, json!({"title": "SRE", "raw_text": "text"}));
     let res = resume(&f, "A");
     let r = app(AppState::new(f));
     let path = format!("/api/job-descriptions/{j}/resumes");
@@ -176,7 +176,7 @@ async fn unlink_removes_only_that_link() {
     // with ctx.db.
     let path = std::env::temp_dir().join(format!("forge-unlink-{}.db", forge_core::new_id()));
     let f = Forge::open(path.to_str().unwrap()).unwrap();
-    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let j = jd(&f, json!({"title": "SRE", "raw_text": "text"}));
     let (r1, r2) = (resume(&f, "A"), resume(&f, "B"));
     JdResumeStore::link(f.conn(), &j, &r1).unwrap();
     JdResumeStore::link(f.conn(), &j, &r2).unwrap();
@@ -234,7 +234,7 @@ async fn unlink_removes_only_that_link() {
 #[tokio::test]
 async fn unlink_is_idempotent_204() {
     let f = Forge::open_memory().unwrap();
-    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let j = jd(&f, json!({"title": "SRE", "raw_text": "text"}));
     let res = resume(&f, "A");
     let r = app(AppState::new(f));
     let path = format!("/api/job-descriptions/{j}/resumes/{res}");
@@ -261,7 +261,10 @@ async fn unlink_is_idempotent_204() {
 #[tokio::test]
 async fn jd_resumes_list_resume_link_shape_newest_first() {
     let f = Forge::open_memory().unwrap();
-    let j = jd(&f, json!({"title": "Security Engineer", "raw_text": ""}));
+    let j = jd(
+        &f,
+        json!({"title": "Security Engineer", "raw_text": "text"}),
+    );
     let (first, second) = (resume(&f, "First"), resume(&f, "Second"));
     link_at(&f, &j, &first, "2026-01-01T00:00:00Z");
     link_at(&f, &j, &second, "2026-01-02T00:00:00Z");
@@ -289,7 +292,7 @@ async fn jd_resumes_list_resume_link_shape_newest_first() {
 #[tokio::test]
 async fn jd_resumes_same_second_links_list_later_first() {
     let f = Forge::open_memory().unwrap();
-    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let j = jd(&f, json!({"title": "SRE", "raw_text": "text"}));
     let (a, b) = (resume(&f, "A"), resume(&f, "B"));
     link_at(&f, &j, &a, "2026-01-01T00:00:00Z");
     link_at(&f, &j, &b, "2026-01-01T00:00:00Z");
@@ -308,7 +311,7 @@ async fn jd_resumes_same_second_links_list_later_first() {
 #[tokio::test]
 async fn jd_resumes_empty_for_unlinked_jd() {
     let f = Forge::open_memory().unwrap();
-    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let j = jd(&f, json!({"title": "SRE", "raw_text": "text"}));
     let r = app(AppState::new(f));
     let (status, body) = call(
         &r,
@@ -343,11 +346,11 @@ async fn resume_jds_list_jd_link_shape_with_org_newest_first() {
     let with_org = jd(
         &f,
         json!({
-            "title": "Security Engineer", "raw_text": "", "organization_id": o,
+            "title": "Security Engineer", "raw_text": "text", "organization_id": o,
             "location": "Remote", "salary_range": "$150k-$200k",
         }),
     );
-    let no_org = jd(&f, json!({"title": "No Org JD", "raw_text": ""}));
+    let no_org = jd(&f, json!({"title": "No Org JD", "raw_text": "text"}));
     let res = resume(&f, "A");
     link_at(&f, &no_org, &res, "2026-01-01T00:00:00Z");
     link_at(&f, &with_org, &res, "2026-01-02T00:00:00Z");
@@ -392,8 +395,8 @@ async fn resume_jds_list_jd_link_shape_with_org_newest_first() {
 async fn resume_jds_same_second_links_list_later_first() {
     let f = Forge::open_memory().unwrap();
     let (a, b) = (
-        jd(&f, json!({"title": "A", "raw_text": ""})),
-        jd(&f, json!({"title": "B", "raw_text": ""})),
+        jd(&f, json!({"title": "A", "raw_text": "text"})),
+        jd(&f, json!({"title": "B", "raw_text": "text"})),
     );
     let res = resume(&f, "R");
     link_at(&f, &a, &res, "2026-01-01T00:00:00Z");
