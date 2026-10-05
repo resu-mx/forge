@@ -3,15 +3,19 @@
 //! Mirrors `packages/core/src/routes/resumes.ts`.
 
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    AddResumeCertification, AddResumeEntry, CreateResume, GapAnalysis, Resume, ResumeCertification,
-    ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate, ResumeWithEntries, UpdateResume,
+    AddResumeCertification, AddResumeEntry, ContactLink, CreateResume, GapAnalysis, Resume,
+    ResumeCertification, ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate,
+    ResumeWithEntries, UpdateResume,
 };
-use forge_sdk::db::{ResumeStore, TemplateStore};
+use forge_sdk::db::{ContactStore, ResumeStore, TemplateStore};
+use forge_sdk::services::tagline;
 
 use crate::db::with_conn;
 use crate::error::ApiError;
@@ -480,6 +484,41 @@ async fn resume_pdf(
     ))
 }
 
+/// Contacts linked to a resume (TS resumes.ts:366-372). No parent check: an unknown id gives [].
+async fn list_resume_contacts(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<ContactLink>>>, ApiError> {
+    let data = with_conn(&state, move |conn| ContactStore::list_by_resume(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// The tagline routes answer a missing resume with TS's literal envelope
+/// (`packages/core/src/routes/resumes.ts:232-237`, `:256-261`, `:276-281`), not
+/// `ForgeError::NotFound`'s "resume not found: <id>". Not "Route not found", so the browser
+/// runtime does not rewrite it to 501.
+pub(crate) fn resume_not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(
+            serde_json::json!({ "error": { "code": "NOT_FOUND", "message": "Resume not found" } }),
+        ),
+    )
+        .into_response()
+}
+
+/// `GET /resumes/:id/tagline`. Read-only.
+async fn get_tagline(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let found = with_conn(&state, move |conn| tagline::get_state(conn, &resume_id)).await?;
+    Ok(match found {
+        Some(data) => Json(ApiData { data }).into_response(),
+        None => resume_not_found(),
+    })
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -534,4 +573,6 @@ pub fn router() -> Router<SharedState> {
         )
         .route("/resumes/{id}/latex-override", patch(update_latex_override))
         .route("/resumes/{id}/pdf", post(resume_pdf))
+        .route("/resumes/{id}/contacts", get(list_resume_contacts))
+        .route("/resumes/{id}/tagline", get(get_tagline))
 }

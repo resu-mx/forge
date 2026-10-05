@@ -602,6 +602,69 @@ pub struct CreateOrganizationInput {
     pub status: Option<OrganizationStatus>,
 }
 
+/// Input for partially updating an Organization (`PATCH /organizations/:id`).
+///
+/// Every field is optional. Nullable columns are `Option<Option<T>>`: absent leaves the column
+/// alone, `null` sets it to NULL (see `crate::serde_util::double_option`). The Kanban board
+/// takes an organization off the pipeline with `{"status": null}` (resu-mx/forge#32).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateOrganizationInput {
+    pub name: Option<String>,
+    /// Not nullable: `Organization.org_type` is a `String`, so `null` is treated as absent.
+    pub org_type: Option<String>,
+    pub tags: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub industry: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub size: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::serde_util::int_or_bool")]
+    pub worked: Option<i32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub employment_type: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub website: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub linkedin_url: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub glassdoor_url: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub glassdoor_rating: Option<Option<f64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub status: Option<Option<OrganizationStatus>>,
+}
+
 // ── Archetype ────────────────────────────────────────────────────────
 
 /// Input for creating an Archetype.
@@ -626,8 +689,13 @@ pub struct UpdateArchetypeInput {
 // ── Org Location ────────────────────────────────────────────────────
 
 /// Input for creating an OrgLocation.
+///
+/// `organization_id` comes from the URL path (`/organizations/{org_id}/locations` or
+/// `/campuses`). The TS contract never sends it (packages/sdk/src/resources/organizations.ts),
+/// so it defaults to empty and the handler fills it in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateOrgLocation {
+    #[serde(default)]
     pub organization_id: String,
     pub name: String,
     pub modality: Option<LocationModality>,
@@ -923,4 +991,28 @@ pub struct UpsertEmbeddingInput {
     pub entity_id: String,
     pub content_hash: String,
     pub vector: Vec<f32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_organization_input_absent_null_and_value() {
+        let parse = |j: &str| serde_json::from_str::<UpdateOrganizationInput>(j).unwrap();
+        assert_eq!(parse("{}").status, None);
+        assert!(parse("{}").name.is_none());
+        assert_eq!(parse(r#"{"status":null}"#).status, Some(None));
+        assert_eq!(
+            parse(r#"{"status":"researching"}"#).status,
+            Some(Some(OrganizationStatus::Researching))
+        );
+        assert_eq!(parse(r#"{"website":null}"#).website, Some(None));
+        assert_eq!(parse(r#"{"worked":true}"#).worked, Some(1));
+    }
+
+    #[test]
+    fn update_organization_input_rejects_an_unknown_status() {
+        assert!(serde_json::from_str::<UpdateOrganizationInput>(r#"{"status":"bogus"}"#).is_err());
+    }
 }

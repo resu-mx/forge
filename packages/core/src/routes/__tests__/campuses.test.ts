@@ -181,4 +181,38 @@ describe('Org location routes', () => {
     expect(res.status).toBe(200)
     expect((await res.json()).data.name).toBe('Updated via campuses')
   })
+
+  test('POST /organizations/:orgId/campuses creates a location (backward-compat)', async () => {
+    const org = seedOrg(ctx.db, { name: 'Test Org' })
+    const res = await apiRequest(ctx.app, 'POST', `/organizations/${org.id}/campuses`, {
+      name: 'Via campuses',
+      modality: 'remote',
+    })
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.data.organization_id).toBe(org.id)
+    expect(body.data.is_headquarters).toBe(false)
+  })
+
+  test('DELETE /campuses/:id removes location (backward-compat)', async () => {
+    const org = seedOrg(ctx.db, { name: 'Test Org' })
+    const createRes = await apiRequest(ctx.app, 'POST', `/organizations/${org.id}/locations`, {
+      name: 'Temp',
+      modality: 'remote',
+    })
+    const { data: location } = await createRes.json()
+    const res = await apiRequest(ctx.app, 'DELETE', `/campuses/${location.id}`)
+    expect(res.status).toBe(204)
+    const listRes = await apiRequest(ctx.app, 'GET', `/organizations/${org.id}/campuses`)
+    expect((await listRes.json()).data.length).toBe(0)
+  })
+
+  test('GET /organizations/:orgId/locations sorts by name, not headquarters first', async () => {
+    const org = seedOrg(ctx.db, { name: 'Test Org' })
+    await apiRequest(ctx.app, 'POST', `/organizations/${org.id}/locations`, { name: 'Zeta HQ', is_headquarters: true })
+    await apiRequest(ctx.app, 'POST', `/organizations/${org.id}/locations`, { name: 'Alpha' })
+    const res = await apiRequest(ctx.app, 'GET', `/organizations/${org.id}/locations`)
+    const names = (await res.json()).data.map((l: { name: string }) => l.name)
+    expect(names).toEqual(['Alpha', 'Zeta HQ'])
+  })
 })

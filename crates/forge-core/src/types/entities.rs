@@ -16,7 +16,9 @@ pub struct OrgLocation {
     pub name: String,
     pub modality: LocationModality,
     pub address_id: Option<String>,
-    pub is_headquarters: i32,
+    /// Stored as INTEGER 0/1; a JSON boolean on the wire, as TS's ELM returns it
+    /// (packages/core/src/storage/entity-map.data.ts).
+    pub is_headquarters: bool,
     pub created_at: String,
 }
 
@@ -474,6 +476,16 @@ pub struct SkillWithDomains {
     #[serde(flatten)]
     pub base: Skill,
     pub domains: Vec<Domain>,
+}
+
+/// A full `skills` row, as the TS junction routes return it (`SELECT s.*`).
+/// `Skill` leaves out `created_at`. Serialises to exactly
+/// `{id, name, category, created_at}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillRow {
+    #[serde(flatten)]
+    pub base: Skill,
+    pub created_at: String,
 }
 
 /// A skill extracted from a JD by AI, pending human review.

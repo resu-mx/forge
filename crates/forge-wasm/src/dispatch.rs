@@ -240,4 +240,17 @@ mod tests {
         );
         assert_eq!(json(&resp)["error"]["code"], "NOT_FOUND");
     }
+
+    #[tokio::test]
+    async fn tagline_get_is_ported_not_501() {
+        let resp = dispatch(
+            &router(),
+            req("GET", "/api/resumes/missing/tagline", ""),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status, 404, "a missing resume, not an unported route");
+        assert_eq!(json(&resp)["error"]["message"], "Resume not found");
+    }
 }

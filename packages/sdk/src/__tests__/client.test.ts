@@ -226,6 +226,57 @@ describe('ForgeClient', () => {
   })
 
   // -----------------------------------------------------------------------
+  // request<T> — 2xx with an empty body
+  // -----------------------------------------------------------------------
+
+  describe('request<T> — 2xx with an empty body', () => {
+    it('returns { ok: true, data: undefined } for a 201 with no body', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 201 })))
+
+      const result = await client.request<void>('POST', '/api/contacts/c1/organizations', {
+        organization_id: 'o1',
+        relationship: 'recruiter',
+      })
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data).toBeUndefined()
+    })
+
+    it('treats a 200 with an empty string body as success', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(new Response('', { status: 200 })))
+      expect((await client.request('POST', '/api/x')).ok).toBe(true)
+    })
+
+    it('treats a 201 with a whitespace-only body as success', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(new Response(' \n', { status: 201 })))
+      expect((await client.request('POST', '/api/x')).ok).toBe(true)
+    })
+
+    it('still fails for a 500 with an empty body', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 500 })))
+
+      const result = await client.request('POST', '/api/x')
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error.code).toBe('UNKNOWN_ERROR')
+        expect(result.error.message).toContain('500')
+      }
+    })
+
+    it('still fails for a 200 with an HTML body', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(textResponse('<html>proxy</html>', 200)),
+      )
+
+      const result = await client.request('GET', '/api/x')
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error.code).toBe('UNKNOWN_ERROR')
+    })
+  })
+
+  // -----------------------------------------------------------------------
   // request<T> — network error
   // -----------------------------------------------------------------------
 
@@ -493,6 +544,19 @@ describe('ForgeClient', () => {
       expect(last.path).toBe('/api/sources/abc')
       expect(last.ok).toBe(true)
       expect(last.duration_ms).toBeGreaterThanOrEqual(0)
+    })
+
+    it('logs an empty 201 as ok with the real status', async () => {
+      globalThis.fetch = mock(() =>
+        Promise.resolve(new Response(null, { status: 201 })),
+      ) as typeof fetch
+
+      await debugClient.request('POST', '/api/contacts/c1/organizations', {})
+
+      const entries = debugClient.debug.getAll()
+      const last = entries[entries.length - 1]
+      expect(last.ok).toBe(true)
+      expect(last.status).toBe(201)
     })
 
     it('captures error response in debug store', async () => {

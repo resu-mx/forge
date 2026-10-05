@@ -262,6 +262,20 @@ pub struct CoverageSummary {
     pub domains_missing: Vec<String>,
 }
 
+// ── Tagline ──────────────────────────────────────────────────────────
+
+/// Body of `GET /resumes/:id/tagline` and `PATCH /resumes/:id/tagline-override`
+/// (`packages/sdk/src/types.ts:443-451`). Field order is the TS key order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResumeTaglineState {
+    pub generated_tagline: Option<String>,
+    pub tagline_override: Option<String>,
+    /// `tagline_override ?? generated_tagline ?? ""`, with no trim.
+    pub resolved: String,
+    /// True only for a non-blank override.
+    pub has_override: bool,
+}
+
 // ── Alignment ────────────────────────────────────────────────────────
 
 /// A requirement-to-entry match result.

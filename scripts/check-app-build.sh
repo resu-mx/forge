@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks a built app (default packages/webui/build) before it is published to Cloudflare Pages.
-# Used by scripts/pages-build.sh (the Pages build) and by .github/workflows/app-build.yml.
+# Used by .github/workflows/app-build.yml.
 set -euo pipefail
 
 dir="${1:-packages/webui/build}"

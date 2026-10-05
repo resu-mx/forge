@@ -100,7 +100,7 @@ parity *files="src/routes/__tests__":
 # The route test files the Rust server is expected to pass today (roadmap M3, Tier 0).
 # CI runs exactly these; widen the list as more of the API is ported.
 parity-tier0:
-    just parity src/routes/__tests__/contracts.test.ts src/routes/__tests__/sources.test.ts src/routes/__tests__/bullets.test.ts src/routes/__tests__/perspectives.test.ts src/routes/__tests__/resumes.test.ts src/routes/__tests__/derivations.test.ts src/routes/__tests__/profile.test.ts src/routes/__tests__/export.test.ts src/routes/__tests__/cors.test.ts src/routes/__tests__/server.test.ts src/routes/__tests__/review.test.ts
+    just parity src/routes/__tests__/contracts.test.ts src/routes/__tests__/sources.test.ts src/routes/__tests__/bullets.test.ts src/routes/__tests__/perspectives.test.ts src/routes/__tests__/resumes.test.ts src/routes/__tests__/derivations.test.ts src/routes/__tests__/profile.test.ts src/routes/__tests__/export.test.ts src/routes/__tests__/cors.test.ts src/routes/__tests__/server.test.ts src/routes/__tests__/review.test.ts src/routes/__tests__/jd-extract-skills.test.ts src/routes/__tests__/contacts.test.ts src/routes/__tests__/campuses.test.ts
 
 # Run only the core API tests
 test-core:

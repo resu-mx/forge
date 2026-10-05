@@ -13,7 +13,8 @@
   import { addToast } from '$lib/stores/toast.svelte'
   import { LoadingSpinner, EmptyState, PageHeader, ListSearchInput } from '$lib/components'
   import SummaryDetailModal from '$lib/components/SummaryDetailModal.svelte'
-  import type { Summary, Industry, RoleType, Skill } from '@forge/sdk'
+  import { keywordLoadFailureMessage } from '$lib/summary-keywords'
+  import type { ForgeError, Summary, Industry, RoleType, Skill } from '@forge/sdk'
 
   type GroupBy = 'none' | 'industry' | 'role_type' | 'keyword'
   type SortDirection = 'asc' | 'desc'
@@ -58,13 +59,26 @@
       summaries = summariesRes.data
       // Parallel-fetch keyword skills for each summary so grouping/filtering works client-side
       const keywordMap: Record<string, Skill[]> = {}
+      let failed = 0
+      let firstError: ForgeError | null = null
       await Promise.all(
         summaries.map(async (s) => {
           const r = await forge.summaries.listSkills(s.id)
-          if (r.ok) keywordMap[s.id] = r.data
+          if (r.ok) {
+            keywordMap[s.id] = r.data
+          } else {
+            failed++
+            firstError ??= r.error
+          }
         }),
       )
       summaryKeywords = keywordMap
+      const message = keywordLoadFailureMessage(
+        failed,
+        summaries.length,
+        firstError ? friendlyError(firstError) : undefined,
+      )
+      if (message) addToast({ message, type: 'error' })
     } else {
       addToast({ message: friendlyError(summariesRes.error, 'Failed to load summaries'), type: 'error' })
     }
