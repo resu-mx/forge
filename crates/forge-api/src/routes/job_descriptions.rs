@@ -388,6 +388,22 @@ async fn link_resume(
     ))
 }
 
+/// `DELETE /job-descriptions/:jdId/resumes/:resumeId` (TS job-descriptions.ts:224-239).
+/// Always 204: neither id is checked, and a missing link is not an error.
+async fn unlink_resume(
+    State(state): State<SharedState>,
+    Path((jd_id, resume_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| {
+        JdResumeStore::unlink(conn, &jd_id, &resume_id)?;
+        // TODO(resu-mx/forge#71): regenerate generated_tagline from the remaining links
+        // (NULL when none remain). Never touch tagline_override.
+        Ok(())
+    })
+    .await?;
+    Ok(NoContent)
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -412,6 +428,10 @@ pub fn router() -> Router<SharedState> {
             get(list_job_description_skills).post(add_job_description_skill),
         )
         .route("/job-descriptions/{id}/resumes", post(link_resume))
+        .route(
+            "/job-descriptions/{jd_id}/resumes/{resume_id}",
+            axum::routing::delete(unlink_resume),
+        )
         .route(
             "/job-descriptions/{id}/contacts",
             get(list_job_description_contacts),

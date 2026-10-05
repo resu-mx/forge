@@ -9,7 +9,7 @@ use axum::http::{Request, StatusCode};
 use axum::Router;
 use forge_api::{app, AppState};
 use forge_core::{CreateJobDescription, CreateResume};
-use forge_sdk::db::{JdStore, ResumeStore};
+use forge_sdk::db::{JdResumeStore, JdStore, ResumeStore};
 use forge_sdk::Forge;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -150,4 +150,92 @@ async fn link_resume_validates_body_then_jd_then_resume() {
     // Failed attempts leave nothing behind and a valid link still works.
     let (status, _) = call(&r, "POST", &path, Some(json!({"resume_id": res}))).await;
     assert_eq!(status, StatusCode::CREATED);
+}
+
+// ── DELETE /job-descriptions/:jdId/resumes/:resumeId (forge#28) ──────
+
+#[tokio::test]
+async fn unlink_removes_only_that_link() {
+    // File-backed so a second connection can inspect the rows, as the TS parity harness does
+    // with ctx.db.
+    let path = std::env::temp_dir().join(format!("forge-unlink-{}.db", forge_core::new_id()));
+    let f = Forge::open(path.to_str().unwrap()).unwrap();
+    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let (r1, r2) = (resume(&f, "A"), resume(&f, "B"));
+    JdResumeStore::link(f.conn(), &j, &r1).unwrap();
+    JdResumeStore::link(f.conn(), &j, &r2).unwrap();
+    f.conn()
+        .execute(
+            "UPDATE resumes SET generated_tagline = 'seeded' WHERE id = ?1",
+            [&r1],
+        )
+        .unwrap();
+    let r = app(AppState::new(f));
+
+    let (status, body) = call(
+        &r,
+        "DELETE",
+        &format!("/api/job-descriptions/{j}/resumes/{r1}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body.is_null());
+
+    let probe = rusqlite::Connection::open(&path).unwrap();
+    let left: Vec<String> = JdResumeStore::list_by_jd(&probe, &j)
+        .unwrap()
+        .into_iter()
+        .map(|l| l.resume_id)
+        .collect();
+    assert_eq!(left, vec![r2.clone()]);
+    // Until forge#71, the tagline is left as it was.
+    let tagline: Option<String> = probe
+        .query_row(
+            "SELECT generated_tagline FROM resumes WHERE id = ?1",
+            [&r1],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tagline.as_deref(), Some("seeded"));
+    // The JD and the unlinked resume still exist.
+    assert_eq!(
+        call(&r, "GET", &format!("/api/job-descriptions/{j}"), None)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&r, "GET", &format!("/api/resumes/{r1}"), None).await.0,
+        StatusCode::OK
+    );
+    drop(probe);
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+    }
+}
+
+#[tokio::test]
+async fn unlink_is_idempotent_204() {
+    let f = Forge::open_memory().unwrap();
+    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let res = resume(&f, "A");
+    let r = app(AppState::new(f));
+    let path = format!("/api/job-descriptions/{j}/resumes/{res}");
+    // Not linked, then unknown ids: both 204.
+    assert_eq!(
+        call(&r, "DELETE", &path, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &r,
+            "DELETE",
+            "/api/job-descriptions/nope/resumes/nope",
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
 }
