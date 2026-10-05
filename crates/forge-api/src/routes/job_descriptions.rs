@@ -3,16 +3,19 @@
 //! Mirrors the TS job-description routes — same URL paths,
 //! same JSON shapes, so the webui and MCP server continue working.
 
+use std::collections::BTreeSet;
+
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use forge_ai::prompts::jd_skill_extraction;
 use forge_core::{
-    CreateJobDescription, JobDescriptionFilter, JobDescriptionStatus, JobDescriptionWithOrg,
-    UpdateJobDescription,
+    CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionStatus,
+    JobDescriptionWithOrg, Skill, UpdateJobDescription,
 };
-use forge_sdk::db::JdStore;
+use forge_sdk::db::{JdStore, SkillStore};
 
 use crate::db::with_conn;
 use crate::error::ApiError;
@@ -104,6 +107,177 @@ async fn delete_job_description(
     Ok(NoContent)
 }
 
+// ── Lookup by URL ───────────────────────────────────────────────────
+
+/// `POST /job-descriptions/lookup-by-url` (TS job-descriptions.ts:43-58). The static segment
+/// outranks `{id}` in axum 0.8 / matchit 0.8, so registration order doesn't matter.
+async fn lookup_by_url(
+    State(state): State<SharedState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiData<JobDescriptionWithOrg>>, ApiError> {
+    let url = body
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .filter(|u| !u.trim().is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| ForgeError::Validation {
+            message: "URL must be a non-empty string".into(),
+            field: Some("url".into()),
+        })?;
+    let data = with_conn(&state, move |conn| {
+        let jd = JdStore::find_by_url(conn, &url)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "JobDescription".into(),
+            id: url.clone(), // TS: "No job description found for URL: <url>"
+        })?;
+        JdStore::get_with_org(conn, &jd.id)?
+            .ok_or_else(|| ForgeError::Internal("JD found by URL but not by id".into()))
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+// ── Extract skills (context only) ───────────────────────────────────
+
+/// Verbatim from TS job-descriptions.ts:276-284. `domain` and `certification` aren't skill
+/// categories, so they never select a skill; kept for parity.
+const CATEGORY_KEYWORDS: &[(&str, &[&str])] = &[
+    (
+        "language",
+        &[
+            "python",
+            "java",
+            "go",
+            "rust",
+            "typescript",
+            "javascript",
+            "c++",
+            "scala",
+            "ruby",
+            "kotlin",
+        ],
+    ),
+    (
+        "framework",
+        &[
+            "fastapi",
+            "django",
+            "flask",
+            "react",
+            "next.js",
+            "express",
+            "spring",
+            "pytorch",
+            "tensorflow",
+        ],
+    ),
+    (
+        "tool",
+        &[
+            "docker",
+            "kubernetes",
+            "terraform",
+            "helm",
+            "git",
+            "jenkins",
+            "grafana",
+            "prometheus",
+        ],
+    ),
+    (
+        "platform",
+        &["aws", "gcp", "azure", "vercel", "heroku", "cloudflare"],
+    ),
+    (
+        "methodology",
+        &[
+            "agile",
+            "scrum",
+            "kanban",
+            "devops",
+            "devsecops",
+            "ci/cd",
+            "tdd",
+            "sre",
+        ],
+    ),
+    (
+        "domain",
+        &[
+            "machine learning",
+            "deep learning",
+            "nlp",
+            "computer vision",
+            "distributed systems",
+            "security",
+        ],
+    ),
+    (
+        "certification",
+        &["cka", "ckad", "aws certified", "security+", "cissp"],
+    ),
+];
+
+/// Verbatim from TS job-descriptions.ts:309.
+const EXTRACT_INSTRUCTIONS: &str = "Execute the prompt_template to extract skills from the JD text. For each extracted skill, check existing_skills for a match by name before creating new ones. Call forge_tag_jd_skill (or POST /api/job-descriptions/:id/skills) for each accepted skill.";
+
+/// Categories whose keywords appear in `lower` (already lowercased), plus `other` and
+/// `soft_skill`.
+fn matched_categories(lower: &str) -> BTreeSet<&'static str> {
+    let mut cats: BTreeSet<&'static str> = CATEGORY_KEYWORDS
+        .iter()
+        .filter(|(_, keywords)| keywords.iter().any(|kw| lower.contains(kw)))
+        .map(|(cat, _)| *cat)
+        .collect();
+    cats.insert("other");
+    cats.insert("soft_skill");
+    cats
+}
+
+/// The SDK's `JDSkillExtractionContext` (packages/sdk/src/types.ts:1741-1746).
+#[derive(Debug, Serialize)]
+pub struct JdSkillExtractionContext {
+    pub jd_raw_text: String,
+    pub existing_skills: Vec<Skill>,
+    pub prompt_template: String,
+    pub instructions: &'static str,
+}
+
+/// `POST /job-descriptions/:id/extract-skills` (TS job-descriptions.ts:249-312).
+/// Context for client-side extraction: no AI call, no writes.
+async fn extract_skills(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<JdSkillExtractionContext>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        let jd = JdStore::get(conn, &id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "JobDescription".into(),
+            id: id.clone(),
+        })?;
+        if jd.raw_text.trim().is_empty() {
+            return Err(ForgeError::Validation {
+                message: "Job description has no text to extract skills from".into(),
+                field: Some("raw_text".into()),
+            });
+        }
+        let cats = matched_categories(&jd.raw_text.to_lowercase());
+        let existing_skills = SkillStore::list(conn, None, None, None)?
+            .into_iter()
+            .filter(|s| cats.contains(s.category.as_ref()))
+            .collect();
+        let p = jd_skill_extraction::render(&jd.raw_text);
+        // Same join as derivations.rs; byte-equal to TS renderJDSkillExtractionPrompt.
+        let prompt_template = format!("{}\n\n{}", p.system, p.user);
+        Ok(JdSkillExtractionContext {
+            jd_raw_text: jd.raw_text,
+            existing_skills,
+            prompt_template,
+            instructions: EXTRACT_INSTRUCTIONS,
+        })
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -118,4 +292,27 @@ pub fn router() -> Router<SharedState> {
                 .patch(update_job_description)
                 .delete(delete_job_description),
         )
+        .route("/job-descriptions/lookup-by-url", post(lookup_by_url))
+        .route(
+            "/job-descriptions/{id}/extract-skills",
+            post(extract_skills),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matched_categories_follows_the_ts_table() {
+        let set = |s: &str| matched_categories(s).into_iter().collect::<Vec<_>>();
+        assert_eq!(
+            set("we write rust and ship with docker."),
+            ["language", "other", "soft_skill", "tool"]
+        );
+        assert_eq!(set("machine learning"), ["domain", "other", "soft_skill"]);
+        assert_eq!(set(""), ["other", "soft_skill"]);
+        // "go" is a substring match, as in TS.
+        assert!(matched_categories("a good fit").contains("language"));
+    }
 }
