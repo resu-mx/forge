@@ -74,6 +74,17 @@ fn set(items: &[&str]) -> BTreeSet<String> {
     items.iter().map(|s| s.to_string()).collect()
 }
 
+/// Insert a link with a fixed `created_at`, as the TS ordering tests do.
+fn link_at(f: &Forge, jd_id: &str, resume_id: &str, at: &str) {
+    f.conn()
+        .execute(
+            "INSERT INTO job_description_resumes (job_description_id, resume_id, created_at)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![jd_id, resume_id, at],
+        )
+        .unwrap();
+}
+
 const RESUME_LINK_KEYS: [&str; 8] = [
     "archetype",
     "created_at",
@@ -238,4 +249,82 @@ async fn unlink_is_idempotent_204() {
         .0,
         StatusCode::NO_CONTENT
     );
+}
+
+// ── GET /job-descriptions/:id/resumes (forge#26) ─────────────────────
+
+#[tokio::test]
+async fn jd_resumes_list_resume_link_shape_newest_first() {
+    let f = Forge::open_memory().unwrap();
+    let j = jd(&f, json!({"title": "Security Engineer", "raw_text": ""}));
+    let (first, second) = (resume(&f, "First"), resume(&f, "Second"));
+    link_at(&f, &j, &first, "2026-01-01T00:00:00Z");
+    link_at(&f, &j, &second, "2026-01-02T00:00:00Z");
+    let r = app(AppState::new(f));
+
+    let (status, body) = call(
+        &r,
+        "GET",
+        &format!("/api/job-descriptions/{j}/resumes"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("pagination").is_none());
+    let items = body["data"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["resume_name"], "Second");
+    assert_eq!(items[1]["resume_name"], "First");
+    assert_eq!(keys(&items[0]), set(&RESUME_LINK_KEYS));
+    assert_eq!(items[0]["resume_id"], second.as_str());
+    assert_eq!(items[0]["status"], "draft");
+    assert_eq!(items[0]["created_at"], "2026-01-02T00:00:00Z");
+}
+
+#[tokio::test]
+async fn jd_resumes_same_second_links_list_later_first() {
+    let f = Forge::open_memory().unwrap();
+    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let (a, b) = (resume(&f, "A"), resume(&f, "B"));
+    link_at(&f, &j, &a, "2026-01-01T00:00:00Z");
+    link_at(&f, &j, &b, "2026-01-01T00:00:00Z");
+    let r = app(AppState::new(f));
+    let (_, body) = call(
+        &r,
+        "GET",
+        &format!("/api/job-descriptions/{j}/resumes"),
+        None,
+    )
+    .await;
+    assert_eq!(body["data"][0]["resume_name"], "B");
+    assert_eq!(body["data"][1]["resume_name"], "A");
+}
+
+#[tokio::test]
+async fn jd_resumes_empty_for_unlinked_jd() {
+    let f = Forge::open_memory().unwrap();
+    let j = jd(&f, json!({"title": "SRE", "raw_text": ""}));
+    let r = app(AppState::new(f));
+    let (status, body) = call(
+        &r,
+        "GET",
+        &format!("/api/job-descriptions/{j}/resumes"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"data": []}));
+}
+
+#[tokio::test]
+async fn jd_resumes_unknown_jd_is_404() {
+    let r = app(AppState::new(Forge::open_memory().unwrap()));
+    let (status, body) = call(&r, "GET", "/api/job-descriptions/nope/resumes", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
+    // The wasm dispatcher rewrites only "Route not found" 404s to 501.
+    assert!(!body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("Route not found"));
 }

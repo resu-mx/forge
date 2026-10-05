@@ -336,6 +336,23 @@ struct LinkResumeResponse {
     tagline: Option<serde_json::Value>,
 }
 
+/// `GET /job-descriptions/:id/resumes` (TS job-descriptions.ts:146-166). 404 for an unknown JD
+/// (checked first, as in TS); `[]` for a JD with no links.
+async fn list_jd_resumes(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<ResumeLink>>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        JdStore::get(conn, &id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "JobDescription".into(),
+            id: id.clone(),
+        })?;
+        JdResumeStore::list_by_jd(conn, &id)
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
 /// `POST /job-descriptions/:id/resumes` (TS job-descriptions.ts:168-222). 201 for a new link,
 /// 200 if it already existed.
 async fn link_resume(
@@ -427,7 +444,10 @@ pub fn router() -> Router<SharedState> {
             "/job-descriptions/{id}/skills",
             get(list_job_description_skills).post(add_job_description_skill),
         )
-        .route("/job-descriptions/{id}/resumes", post(link_resume))
+        .route(
+            "/job-descriptions/{id}/resumes",
+            get(list_jd_resumes).post(link_resume),
+        )
         .route(
             "/job-descriptions/{jd_id}/resumes/{resume_id}",
             axum::routing::delete(unlink_resume),
