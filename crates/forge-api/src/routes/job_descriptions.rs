@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -13,10 +14,11 @@ use serde::{Deserialize, Serialize};
 use forge_ai::prompts::jd_skill_extraction;
 use forge_core::{
     ContactLink, CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionStatus,
-    JobDescriptionWithOrg, Skill, UpdateJobDescription,
+    JobDescriptionWithOrg, ResumeLink, Skill, SkillRow, UpdateJobDescription,
 };
-use forge_sdk::db::{ContactStore, JdStore, SkillStore};
+use forge_sdk::db::{ContactStore, JdResumeStore, JdStore, ResumeStore, SkillStore};
 
+use super::bullets::LinkSkillBody;
 use crate::db::with_conn;
 use crate::error::ApiError;
 use crate::response::{ApiData, ApiList, Created, NoContent};
@@ -290,6 +292,135 @@ async fn list_job_description_contacts(
     Ok(Json(ApiData { data }))
 }
 
+/// Skills linked to a JD (TS job-descriptions.ts:84-92). No JD check: an unknown id gives [].
+async fn list_job_description_skills(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<SkillRow>>>, ApiError> {
+    let data = with_conn(&state, move |conn| JdStore::list_skills(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// `POST /job-descriptions/:id/skills` (TS job-descriptions.ts:94-134). `{ skill_id }` links an
+/// existing skill; `{ name, category? }` finds or creates one. `skill_id` wins when both are
+/// present. Both paths answer 201 with the full skill row, also when the link already existed.
+async fn add_job_description_skill(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(body): Json<LinkSkillBody>,
+) -> Result<Created<SkillRow>, ApiError> {
+    let skill = with_conn(&state, move |conn| {
+        if let Some(skill_id) = body.skill_id.as_deref().filter(|s| !s.is_empty()) {
+            JdStore::add_skill(conn, &id, skill_id)
+        } else if let Some(name) = body.name.as_deref().filter(|n| !n.trim().is_empty()) {
+            JdStore::add_skill_by_name(conn, &id, name, body.category.as_deref())
+        } else {
+            Err(ForgeError::Validation {
+                message: "skill_id or name is required".into(),
+                field: None,
+            })
+        }
+    })
+    .await?;
+    Ok(Created(skill))
+}
+
+// ── JD <-> resume links ─────────────────────────────────────────────
+
+/// Body of `POST /job-descriptions/:id/resumes` (TS job-descriptions.ts:221).
+#[derive(Serialize)]
+struct LinkResumeResponse {
+    data: ResumeLink,
+    /// TS `RegenerateResult`. Always `null` until resu-mx/forge#71 regenerates the tagline on
+    /// link. Never omitted: TS always sends the key.
+    tagline: Option<serde_json::Value>,
+}
+
+/// `GET /job-descriptions/:id/resumes` (TS job-descriptions.ts:146-166). 404 for an unknown JD
+/// (checked first, as in TS); `[]` for a JD with no links.
+async fn list_jd_resumes(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<ResumeLink>>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        JdStore::get(conn, &id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "JobDescription".into(),
+            id: id.clone(),
+        })?;
+        JdResumeStore::list_by_jd(conn, &id)
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// `POST /job-descriptions/:id/resumes` (TS job-descriptions.ts:168-222). 201 for a new link,
+/// 200 if it already existed.
+async fn link_resume(
+    State(state): State<SharedState>,
+    Path(jd_id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<(StatusCode, Json<LinkResumeResponse>), ApiError> {
+    // 1. Body first, as TS does (:173-178).
+    let resume_id = body
+        .get("resume_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| ForgeError::Validation {
+            message: "resume_id is required".into(),
+            field: Some("resume_id".into()),
+        })?;
+
+    let (created, link) = with_conn(&state, move |conn| {
+        // 2. JD, then 3. resume (:180-191).
+        JdStore::get(conn, &jd_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "JobDescription".into(),
+            id: jd_id.clone(),
+        })?;
+        ResumeStore::get(conn, &resume_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "Resume".into(),
+            id: resume_id.clone(),
+        })?;
+        // 4. Idempotent insert; `created` picks 201 or 200 (:193-199, :218-219).
+        let created = JdResumeStore::link(conn, &jd_id, &resume_id)?;
+        // TODO(resu-mx/forge#71): regenerate the resume's generated_tagline from all linked
+        // JDs here, for new links and re-links alike, and return it as `tagline`.
+        let link = JdResumeStore::get_link(conn, &jd_id, &resume_id)?
+            .ok_or_else(|| ForgeError::Internal("JD-resume link written but not found".into()))?;
+        Ok((created, link))
+    })
+    .await?;
+
+    let status = if created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((
+        status,
+        Json(LinkResumeResponse {
+            data: link,
+            tagline: None,
+        }),
+    ))
+}
+
+/// `DELETE /job-descriptions/:jdId/resumes/:resumeId` (TS job-descriptions.ts:224-239).
+/// Always 204: neither id is checked, and a missing link is not an error.
+async fn unlink_resume(
+    State(state): State<SharedState>,
+    Path((jd_id, resume_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| {
+        JdResumeStore::unlink(conn, &jd_id, &resume_id)?;
+        // TODO(resu-mx/forge#71): regenerate generated_tagline from the remaining links
+        // (NULL when none remain). Never touch tagline_override.
+        Ok(())
+    })
+    .await?;
+    Ok(NoContent)
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -308,6 +439,18 @@ pub fn router() -> Router<SharedState> {
         .route(
             "/job-descriptions/{id}/extract-skills",
             post(extract_skills),
+        )
+        .route(
+            "/job-descriptions/{id}/skills",
+            get(list_job_description_skills).post(add_job_description_skill),
+        )
+        .route(
+            "/job-descriptions/{id}/resumes",
+            get(list_jd_resumes).post(link_resume),
+        )
+        .route(
+            "/job-descriptions/{jd_id}/resumes/{resume_id}",
+            axum::routing::delete(unlink_resume),
         )
         .route(
             "/job-descriptions/{id}/contacts",

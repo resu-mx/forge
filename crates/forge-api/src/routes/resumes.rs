@@ -10,11 +10,11 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    AddResumeCertification, AddResumeEntry, ContactLink, CreateResume, GapAnalysis, Resume,
+    AddResumeCertification, AddResumeEntry, ContactLink, CreateResume, GapAnalysis, JDLink, Resume,
     ResumeCertification, ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate,
     ResumeWithEntries, UpdateResume,
 };
-use forge_sdk::db::{ContactStore, ResumeStore, TemplateStore};
+use forge_sdk::db::{ContactStore, JdResumeStore, ResumeStore, TemplateStore};
 use forge_sdk::services::tagline;
 
 use crate::db::with_conn;
@@ -538,6 +538,23 @@ async fn update_tagline_override(
 
 // ── Router ──────────────────────────────────────────────────────────
 
+/// `GET /resumes/:id/job-descriptions` (TS resumes.ts:343-364). 404 for an unknown resume
+/// (checked first, as in TS); `[]` for a resume with no links.
+async fn list_resume_job_descriptions(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<JDLink>>>, ApiError> {
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::get(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
+            entity_type: "Resume".into(),
+            id: id.clone(),
+        })?;
+        JdResumeStore::list_by_resume(conn, &id)
+    })
+    .await?;
+    Ok(Json(ApiData { data }))
+}
+
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/resumes", post(create_resume).get(list_resumes))
@@ -591,6 +608,10 @@ pub fn router() -> Router<SharedState> {
         .route("/resumes/{id}/latex-override", patch(update_latex_override))
         .route("/resumes/{id}/pdf", post(resume_pdf))
         .route("/resumes/{id}/contacts", get(list_resume_contacts))
+        .route(
+            "/resumes/{id}/job-descriptions",
+            get(list_resume_job_descriptions),
+        )
         .route("/resumes/{id}/tagline", get(get_tagline))
         .route(
             "/resumes/{id}/tagline-override",
