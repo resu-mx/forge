@@ -370,3 +370,79 @@ async fn unknown_id_is_404_with_and_without_include() {
         assert_eq!(body["error"]["code"], "NOT_FOUND");
     }
 }
+
+#[tokio::test]
+async fn create_with_blank_title_is_400() {
+    let r = router();
+    let (status, body) = call(
+        &r,
+        "POST",
+        "/api/summaries",
+        Some(json!({ "title": "   " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn update_with_blank_title_is_400() {
+    let r = router();
+    let (_, created) = call(&r, "POST", "/api/summaries", Some(json!({ "title": "A" }))).await;
+    let id = created["data"]["id"].as_str().unwrap();
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/summaries/{id}"),
+        Some(json!({ "title": "  " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn list_ignores_a_non_numeric_is_template() {
+    let r = router();
+    call(
+        &r,
+        "POST",
+        "/api/summaries",
+        Some(json!({ "title": "A", "is_template": 1 })),
+    )
+    .await;
+    call(&r, "POST", "/api/summaries", Some(json!({ "title": "B" }))).await;
+    let (status, body) = call(&r, "GET", "/api/summaries?is_template=invalid", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"].as_array().unwrap().len(), 2);
+    let (_, body) = call(&r, "GET", "/api/summaries?is_template=1", None).await;
+    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn list_rejects_unknown_sort_by_and_direction() {
+    let r = router();
+    for q in ["sort_by=bogus", "direction=sideways"] {
+        let (status, body) = call(&r, "GET", &format!("/api/summaries?{q}"), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{q}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    }
+    let (status, _) = call(&r, "GET", "/api/summaries?sort_by=&direction=", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &r,
+        "GET",
+        "/api/summaries?sort_by=title&direction=asc",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn clone_of_unknown_summary_is_summary_not_found() {
+    let r = router();
+    let (status, body) = call(&r, "POST", "/api/summaries/nope/clone", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "SUMMARY_NOT_FOUND");
+}
