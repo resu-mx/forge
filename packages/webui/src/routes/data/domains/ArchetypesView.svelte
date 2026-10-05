@@ -314,6 +314,7 @@
 
 {#if deleteConfirm && deleteTarget}
   <ConfirmDialog
+    open={deleteConfirm}
     title="Delete Archetype"
     message={`Are you sure you want to delete '${deleteTarget.name}'? This will also remove all domain associations.`}
     onconfirm={handleDelete}
