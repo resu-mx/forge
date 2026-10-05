@@ -582,6 +582,49 @@ describe('Resource clients', () => {
   // organizations
   // -----------------------------------------------------------------------
 
+  describe('contacts', () => {
+    beforeEach(() => {
+      // The contact link routes answer 201 with an empty body.
+      fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 201 })))
+    })
+
+    it('linkOrganization POSTs the target id and resolves ok on an empty 201', async () => {
+      const result = await client.contacts.linkOrganization('c1', 'o1', 'recruiter')
+
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/contacts/c1/organizations')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        organization_id: 'o1',
+        relationship: 'recruiter',
+      })
+    })
+
+    it('linkJobDescription POSTs the target id and resolves ok on an empty 201', async () => {
+      const result = await client.contacts.linkJobDescription('c1', 'j1', 'hiring_manager')
+
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/contacts/c1/job-descriptions')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        job_description_id: 'j1',
+        relationship: 'hiring_manager',
+      })
+    })
+
+    it('linkResume POSTs the target id and resolves ok on an empty 201', async () => {
+      const result = await client.contacts.linkResume('c1', 'r1', 'reference')
+
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/contacts/c1/resumes')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        resume_id: 'r1',
+        relationship: 'reference',
+      })
+    })
+  })
+
   describe('organizations', () => {
     it('create sends POST /api/organizations with body', async () => {
       const org = { id: 'org1', name: 'Anthropic', org_type: 'company' }

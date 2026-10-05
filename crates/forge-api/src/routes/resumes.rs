@@ -8,10 +8,11 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    AddResumeCertification, AddResumeEntry, CreateResume, GapAnalysis, Resume, ResumeCertification,
-    ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate, ResumeWithEntries, UpdateResume,
+    AddResumeCertification, AddResumeEntry, ContactLink, CreateResume, GapAnalysis, Resume,
+    ResumeCertification, ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate,
+    ResumeWithEntries, UpdateResume,
 };
-use forge_sdk::db::{ResumeStore, TemplateStore};
+use forge_sdk::db::{ContactStore, ResumeStore, TemplateStore};
 
 use crate::db::with_conn;
 use crate::error::ApiError;
@@ -480,6 +481,15 @@ async fn resume_pdf(
     ))
 }
 
+/// Contacts linked to a resume (TS resumes.ts:366-372). No parent check: an unknown id gives [].
+async fn list_resume_contacts(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<ContactLink>>>, ApiError> {
+    let data = with_conn(&state, move |conn| ContactStore::list_by_resume(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -534,4 +544,5 @@ pub fn router() -> Router<SharedState> {
         )
         .route("/resumes/{id}/latex-override", patch(update_latex_override))
         .route("/resumes/{id}/pdf", post(resume_pdf))
+        .route("/resumes/{id}/contacts", get(list_resume_contacts))
 }
