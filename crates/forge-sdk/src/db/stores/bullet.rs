@@ -6,8 +6,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Bullet, BulletFilter, BulletStatus, ForgeError, Pagination, PaginationParams, Skill,
-    SkillCategory, Source, UpdateBulletInput, new_id, now_iso,
+    new_id, now_iso, Bullet, BulletFilter, BulletStatus, ForgeError, Pagination, PaginationParams,
+    Skill, SkillCategory, Source, UpdateBulletInput,
 };
 
 use super::source::SourceStore;
@@ -74,22 +74,27 @@ impl BulletStore {
              FROM bullets WHERE id = ?1",
         )?;
 
-        let bullet = stmt.query_row(params![id], |row| {
-            Ok(Bullet {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                source_content_snapshot: row.get(2)?,
-                technologies: Vec::new(), // hydrated below
-                metrics: row.get(3)?,
-                domain: row.get(4)?,
-                status: row.get::<_, String>(5)?.parse().unwrap_or(BulletStatus::Draft),
-                rejection_reason: row.get(6)?,
-                prompt_log_id: row.get(7)?,
-                approved_at: row.get(8)?,
-                approved_by: row.get(9)?,
-                created_at: row.get(10)?,
+        let bullet = stmt
+            .query_row(params![id], |row| {
+                Ok(Bullet {
+                    id: row.get(0)?,
+                    content: row.get(1)?,
+                    source_content_snapshot: row.get(2)?,
+                    technologies: Vec::new(), // hydrated below
+                    metrics: row.get(3)?,
+                    domain: row.get(4)?,
+                    status: row
+                        .get::<_, String>(5)?
+                        .parse()
+                        .unwrap_or(BulletStatus::Draft),
+                    rejection_reason: row.get(6)?,
+                    prompt_log_id: row.get(7)?,
+                    approved_at: row.get(8)?,
+                    approved_by: row.get(9)?,
+                    created_at: row.get(10)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         match bullet {
             Some(mut b) => {
@@ -172,7 +177,10 @@ impl BulletStore {
                         technologies: Vec::new(),
                         metrics: row.get(3)?,
                         domain: row.get(4)?,
-                        status: row.get::<_, String>(5)?.parse().unwrap_or(BulletStatus::Draft),
+                        status: row
+                            .get::<_, String>(5)?
+                            .parse()
+                            .unwrap_or(BulletStatus::Draft),
                         rejection_reason: row.get(6)?,
                         prompt_log_id: row.get(7)?,
                         approved_at: row.get(8)?,
@@ -189,16 +197,29 @@ impl BulletStore {
             hydrated.push(b);
         }
 
-        Ok((hydrated, Pagination { total, offset, limit }))
+        Ok((
+            hydrated,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
 
     /// Update bullet content/metrics/domain fields.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateBulletInput) -> Result<Bullet, ForgeError> {
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateBulletInput,
+    ) -> Result<Bullet, ForgeError> {
         // Verify exists
-        Self::get_hydrated(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() })?;
+        Self::get_hydrated(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "bullet".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -223,7 +244,10 @@ impl BulletStore {
                 bind_values.len() + 1
             );
             bind_values.push(Box::new(id.to_string()));
-            conn.execute(&sql, rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())))?;
+            conn.execute(
+                &sql,
+                rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
+            )?;
         }
 
         if let Some(ref techs) = input.technologies {
@@ -241,8 +265,10 @@ impl BulletStore {
         new_status: BulletStatus,
         rejection_reason: Option<&str>,
     ) -> Result<Bullet, ForgeError> {
-        let bullet = Self::get_hydrated(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() })?;
+        let bullet = Self::get_hydrated(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "bullet".into(),
+            id: id.into(),
+        })?;
 
         if new_status == BulletStatus::Rejected
             && rejection_reason.map_or(true, |r| r.trim().is_empty())
@@ -295,8 +321,10 @@ impl BulletStore {
     /// Submit a draft for review. Unlike `transition_status` this accepts only
     /// drafts: a rejected bullet is sent back with `reopen`, not `submit`.
     pub fn submit(conn: &Connection, id: &str) -> Result<Bullet, ForgeError> {
-        let bullet = Self::get_hydrated(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() })?;
+        let bullet = Self::get_hydrated(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "bullet".into(),
+            id: id.into(),
+        })?;
         if bullet.status != BulletStatus::Draft {
             return Err(ForgeError::Validation {
                 message: "Only draft bullets can be submitted for review".into(),
@@ -321,7 +349,10 @@ impl BulletStore {
         }
         let deleted = conn.execute("DELETE FROM bullets WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "bullet".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "bullet".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -343,7 +374,11 @@ impl BulletStore {
     }
 
     /// Link an existing skill. Linking twice is a no-op.
-    pub fn link_skill(conn: &Connection, bullet_id: &str, skill_id: &str) -> Result<Skill, ForgeError> {
+    pub fn link_skill(
+        conn: &Connection,
+        bullet_id: &str,
+        skill_id: &str,
+    ) -> Result<Skill, ForgeError> {
         match conn.execute(
             "INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?1, ?2)",
             params![bullet_id, skill_id],
@@ -414,7 +449,11 @@ impl BulletStore {
     }
 
     /// Remove a skill link. 404 if the link does not exist.
-    pub fn unlink_skill(conn: &Connection, bullet_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+    pub fn unlink_skill(
+        conn: &Connection,
+        bullet_id: &str,
+        skill_id: &str,
+    ) -> Result<(), ForgeError> {
         let deleted = conn.execute(
             "DELETE FROM bullet_skills WHERE bullet_id = ?1 AND skill_id = ?2",
             params![bullet_id, skill_id],
@@ -442,14 +481,20 @@ impl BulletStore {
         Ok(Skill {
             id: row.get(0)?,
             name: row.get(1)?,
-            category: row.get::<_, String>(2)?.parse().unwrap_or(SkillCategory::Other),
+            category: row
+                .get::<_, String>(2)?
+                .parse()
+                .unwrap_or(SkillCategory::Other),
         })
     }
 
     // ── Source links ─────────────────────────────────────────────────
 
     /// Sources a bullet was derived from, primary first, with the `is_primary` flag.
-    pub fn list_sources(conn: &Connection, bullet_id: &str) -> Result<Vec<(Source, i32)>, ForgeError> {
+    pub fn list_sources(
+        conn: &Connection,
+        bullet_id: &str,
+    ) -> Result<Vec<(Source, i32)>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT bs.source_id, bs.is_primary
              FROM bullet_sources bs
@@ -458,7 +503,9 @@ impl BulletStore {
              ORDER BY bs.is_primary DESC, s.title ASC",
         )?;
         let links = stmt
-            .query_map(params![bullet_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)))?
+            .query_map(params![bullet_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut out = Vec::with_capacity(links.len());
@@ -487,8 +534,15 @@ impl BulletStore {
     }
 
     /// Replace all technologies for a bullet (clear + re-insert).
-    fn replace_technologies(conn: &Connection, bullet_id: &str, technologies: &[String]) -> Result<(), ForgeError> {
-        conn.execute("DELETE FROM bullet_skills WHERE bullet_id = ?1", params![bullet_id])?;
+    fn replace_technologies(
+        conn: &Connection,
+        bullet_id: &str,
+        technologies: &[String],
+    ) -> Result<(), ForgeError> {
+        conn.execute(
+            "DELETE FROM bullet_skills WHERE bullet_id = ?1",
+            params![bullet_id],
+        )?;
 
         for tech in technologies {
             let trimmed = tech.trim().to_lowercase();
@@ -535,12 +589,16 @@ mod tests {
     }
 
     fn create_source(conn: &Connection) -> String {
-        let src = SourceStore::create(conn, &CreateSource {
-            title: "Test Source".into(),
-            description: "Test description".into(),
-            source_type: Some(SourceType::General),
-            ..Default::default()
-        }).unwrap();
+        let src = SourceStore::create(
+            conn,
+            &CreateSource {
+                title: "Test Source".into(),
+                description: "Test description".into(),
+                source_type: Some(SourceType::General),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         src.base.id
     }
 
@@ -556,7 +614,8 @@ mod tests {
             Some("backend"),
             &[(source_id, true)],
             &["rust".into(), "axum".into()],
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(bullet.content, "Built high-performance REST APIs");
         assert_eq!(bullet.status, BulletStatus::Draft);
@@ -568,7 +627,9 @@ mod tests {
     #[test]
     fn get_returns_none_for_missing() {
         let forge = setup();
-        assert!(BulletStore::get_hydrated(forge.conn(), "nonexistent").unwrap().is_none());
+        assert!(BulletStore::get_hydrated(forge.conn(), "nonexistent")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -577,14 +638,36 @@ mod tests {
         let s1 = create_source(forge.conn());
         let s2 = create_source(forge.conn());
 
-        BulletStore::create(forge.conn(), "Bullet A", None, None, None, &[(s1.clone(), true)], &[]).unwrap();
-        BulletStore::create(forge.conn(), "Bullet B", None, None, None, &[(s2, true)], &[]).unwrap();
+        BulletStore::create(
+            forge.conn(),
+            "Bullet A",
+            None,
+            None,
+            None,
+            &[(s1.clone(), true)],
+            &[],
+        )
+        .unwrap();
+        BulletStore::create(
+            forge.conn(),
+            "Bullet B",
+            None,
+            None,
+            None,
+            &[(s2, true)],
+            &[],
+        )
+        .unwrap();
 
         let (bullets, _) = BulletStore::list(
             forge.conn(),
-            &BulletFilter { source_id: Some(s1), ..Default::default() },
+            &BulletFilter {
+                source_id: Some(s1),
+                ..Default::default()
+            },
             &PaginationParams::default(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(bullets.len(), 1);
         assert_eq!(bullets[0].content, "Bullet A");
     }
@@ -594,15 +677,25 @@ mod tests {
         let forge = setup();
         let source_id = create_source(forge.conn());
         let bullet = BulletStore::create(
-            forge.conn(), "Test bullet", None, None, None, &[(source_id, true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "Test bullet",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap();
 
         // draft → in_review
-        let b = BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None).unwrap();
+        let b =
+            BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None)
+                .unwrap();
         assert_eq!(b.status, BulletStatus::InReview);
 
         // in_review → approved
-        let b = BulletStore::transition_status(forge.conn(), &b.id, BulletStatus::Approved, None).unwrap();
+        let b = BulletStore::transition_status(forge.conn(), &b.id, BulletStatus::Approved, None)
+            .unwrap();
         assert_eq!(b.status, BulletStatus::Approved);
         assert!(b.approved_at.is_some());
 
@@ -616,13 +709,25 @@ mod tests {
         let forge = setup();
         let source_id = create_source(forge.conn());
         let bullet = BulletStore::create(
-            forge.conn(), "Test", None, None, None, &[(source_id, true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "Test",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap();
 
-        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None).unwrap();
+        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None)
+            .unwrap();
         let b = BulletStore::transition_status(
-            forge.conn(), &bullet.id, BulletStatus::Rejected, Some("Too vague"),
-        ).unwrap();
+            forge.conn(),
+            &bullet.id,
+            BulletStatus::Rejected,
+            Some("Too vague"),
+        )
+        .unwrap();
         assert_eq!(b.status, BulletStatus::Rejected);
         assert_eq!(b.rejection_reason, Some("Too vague".into()));
     }
@@ -632,14 +737,26 @@ mod tests {
         let forge = setup();
         let source_id = create_source(forge.conn());
         let bullet = BulletStore::create(
-            forge.conn(), "Test", None, None, None, &[(source_id, true)], &["python".into()],
-        ).unwrap();
+            forge.conn(),
+            "Test",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &["python".into()],
+        )
+        .unwrap();
         assert_eq!(bullet.technologies, vec!["python"]);
 
-        let updated = BulletStore::update(forge.conn(), &bullet.id, &UpdateBulletInput {
-            technologies: Some(vec!["rust".into(), "go".into()]),
-            ..Default::default()
-        }).unwrap();
+        let updated = BulletStore::update(
+            forge.conn(),
+            &bullet.id,
+            &UpdateBulletInput {
+                technologies: Some(vec!["rust".into(), "go".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.technologies, vec!["go", "rust"]);
     }
 
@@ -648,10 +765,19 @@ mod tests {
         let forge = setup();
         let source_id = create_source(forge.conn());
         let bullet = BulletStore::create(
-            forge.conn(), "To delete", None, None, None, &[(source_id, true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "To delete",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap();
 
         BulletStore::delete(forge.conn(), &bullet.id).unwrap();
-        assert!(BulletStore::get_hydrated(forge.conn(), &bullet.id).unwrap().is_none());
+        assert!(BulletStore::get_hydrated(forge.conn(), &bullet.id)
+            .unwrap()
+            .is_none());
     }
 }

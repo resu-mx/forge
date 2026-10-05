@@ -34,10 +34,12 @@ where
         Bool(bool),
         Int(i32),
     }
-    Ok(Option::<IntOrBool>::deserialize(deserializer)?.map(|v| match v {
-        IntOrBool::Bool(b) => i32::from(b),
-        IntOrBool::Int(n) => n,
-    }))
+    Ok(
+        Option::<IntOrBool>::deserialize(deserializer)?.map(|v| match v {
+            IntOrBool::Bool(b) => i32::from(b),
+            IntOrBool::Int(n) => n,
+        }),
+    )
 }
 
 #[cfg(test)]

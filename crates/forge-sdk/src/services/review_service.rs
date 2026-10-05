@@ -54,7 +54,8 @@ impl ReviewService {
                     technologies: Vec::new(), // populated below
                     metrics: row.get(3)?,
                     domain: row.get(4)?,
-                    status: row.get::<_, String>(5)?
+                    status: row
+                        .get::<_, String>(5)?
                         .parse()
                         .unwrap_or(BulletStatus::Draft),
                     rejection_reason: row.get(6)?,
@@ -91,7 +92,9 @@ impl ReviewService {
         Ok(result)
     }
 
-    fn get_pending_perspectives(conn: &Connection) -> Result<Vec<PerspectiveReviewItem>, ForgeError> {
+    fn get_pending_perspectives(
+        conn: &Connection,
+    ) -> Result<Vec<PerspectiveReviewItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT p.id, p.bullet_id, p.content, p.bullet_content_snapshot,
                     p.target_archetype, p.domain, p.framing, p.status,
@@ -116,10 +119,12 @@ impl ReviewService {
                     bullet_content_snapshot: row.get(3)?,
                     target_archetype: row.get(4)?,
                     domain: row.get(5)?,
-                    framing: row.get::<_, String>(6)?
+                    framing: row
+                        .get::<_, String>(6)?
                         .parse()
                         .unwrap_or(Framing::Responsibility),
-                    status: row.get::<_, String>(7)?
+                    status: row
+                        .get::<_, String>(7)?
                         .parse()
                         .unwrap_or(PerspectiveStatus::Draft),
                     rejection_reason: row.get(8)?,
@@ -195,13 +200,8 @@ mod tests {
         .unwrap();
 
         // Move to in_review
-        BulletStore::transition_status(
-            forge.conn(),
-            &bullet.id,
-            BulletStatus::InReview,
-            None,
-        )
-        .unwrap();
+        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None)
+            .unwrap();
 
         let queue = ReviewService::get_pending_review(forge.conn()).unwrap();
         assert_eq!(queue.bullets.count, 1);
@@ -264,13 +264,21 @@ mod tests {
         let source_id = create_source(forge.conn());
 
         let bullet = BulletStore::create(
-            forge.conn(), "Test bullet", None, None, None,
-            &[(source_id, true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "Test bullet",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap();
 
         // Move to in_review then approved
-        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None).unwrap();
-        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::Approved, None).unwrap();
+        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::InReview, None)
+            .unwrap();
+        BulletStore::transition_status(forge.conn(), &bullet.id, BulletStatus::Approved, None)
+            .unwrap();
 
         let queue = ReviewService::get_pending_review(forge.conn()).unwrap();
         assert_eq!(queue.bullets.count, 0);

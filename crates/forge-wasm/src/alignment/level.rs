@@ -86,43 +86,67 @@ mod tests {
     #[test]
     fn jd_missing_returns_missing_multiplier() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Senior), None, &m), 0.8);
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Senior), None, &m),
+            0.8
+        );
     }
 
     #[test]
     fn resume_missing_returns_missing_multiplier() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(None, Some(SkillLevel::Senior), &m), 0.8);
+        assert_eq!(
+            compute_level_multiplier(None, Some(SkillLevel::Senior), &m),
+            0.8
+        );
     }
 
     #[test]
     fn exceeds_returns_exceeds_when_resume_above_jd() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Staff), Some(SkillLevel::Senior), &m), 1.0);
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Staff), Some(SkillLevel::Senior), &m),
+            1.0
+        );
     }
 
     #[test]
     fn meets_returns_meets_on_equal() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Senior), Some(SkillLevel::Senior), &m), 1.0);
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Senior), Some(SkillLevel::Senior), &m),
+            1.0
+        );
     }
 
     #[test]
     fn partial_one_rung() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Mid), Some(SkillLevel::Senior), &m), 0.7);
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Mid), Some(SkillLevel::Senior), &m),
+            0.7
+        );
     }
 
     #[test]
     fn partial_two_rungs() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Junior), Some(SkillLevel::Senior), &m), 0.5);
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Junior), Some(SkillLevel::Senior), &m),
+            0.5
+        );
     }
 
     #[test]
     fn partial_three_plus() {
         let m = LevelMultipliers::default();
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Junior), Some(SkillLevel::Staff), &m), 0.3);
-        assert_eq!(compute_level_multiplier(Some(SkillLevel::Junior), Some(SkillLevel::Principal), &m), 0.3);
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Junior), Some(SkillLevel::Staff), &m),
+            0.3
+        );
+        assert_eq!(
+            compute_level_multiplier(Some(SkillLevel::Junior), Some(SkillLevel::Principal), &m),
+            0.3
+        );
     }
 }

@@ -47,14 +47,21 @@ pub async fn dispatch(
     let mut builder = Request::builder().method(method.clone()).uri(&req.path);
     for (name, value) in &req.headers {
         // The Fetch API owns these; forwarding them would only confuse axum.
-        if matches!(name.to_ascii_lowercase().as_str(), "host" | "content-length" | "connection") {
+        if matches!(
+            name.to_ascii_lowercase().as_str(),
+            "host" | "content-length" | "connection"
+        ) {
             continue;
         }
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| format!("invalid header {name:?}: {e}"))?;
-        let value = HeaderValue::from_str(value).map_err(|e| format!("invalid header value for {name}: {e}"))?;
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| format!("invalid header {name:?}: {e}"))?;
+        let value = HeaderValue::from_str(value)
+            .map_err(|e| format!("invalid header value for {name}: {e}"))?;
         builder = builder.header(name, value);
     }
-    let request = builder.body(Body::from(req.body)).map_err(|e| format!("invalid request: {e}"))?;
+    let request = builder
+        .body(Body::from(req.body))
+        .map_err(|e| format!("invalid request: {e}"))?;
 
     // The router's error type is Infallible, so this pattern is irrefutable.
     let Ok(response) = router.clone().oneshot(request).await;
@@ -62,7 +69,11 @@ pub async fn dispatch(
     let headers: Vec<(String, String)> = response
         .headers()
         .iter()
-        .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_string(), v.to_string())))
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (k.as_str().to_string(), v.to_string()))
+        })
         .collect();
     let body = axum::body::to_bytes(response.into_body(), MAX_BODY)
         .await
@@ -70,18 +81,29 @@ pub async fn dispatch(
         .to_vec();
 
     if unported_as_501 && status == 404 && is_route_not_found(&body) {
-        let message = format!("{method} {} is not available in the browser runtime yet", req.path);
-        let body = serde_json::json!({ "error": { "code": "NOT_IMPLEMENTED", "message": message } })
-            .to_string()
-            .into_bytes();
+        let message = format!(
+            "{method} {} is not available in the browser runtime yet",
+            req.path
+        );
+        let body =
+            serde_json::json!({ "error": { "code": "NOT_IMPLEMENTED", "message": message } })
+                .to_string()
+                .into_bytes();
         return Ok(DispatchResponse {
             status: 501,
-            headers: vec![(header::CONTENT_TYPE.as_str().to_string(), "application/json".to_string())],
+            headers: vec![(
+                header::CONTENT_TYPE.as_str().to_string(),
+                "application/json".to_string(),
+            )],
             body,
         });
     }
 
-    Ok(DispatchResponse { status, headers, body })
+    Ok(DispatchResponse {
+        status,
+        headers,
+        body,
+    })
 }
 
 /// The router's fallback is `{"error":{"code":"NOT_FOUND","message":"Route not found: …"}}`.
@@ -89,7 +111,11 @@ pub async fn dispatch(
 fn is_route_not_found(body: &[u8]) -> bool {
     serde_json::from_slice::<serde_json::Value>(body)
         .ok()
-        .and_then(|v| v["error"]["message"].as_str().map(|m| m.starts_with("Route not found")))
+        .and_then(|v| {
+            v["error"]["message"]
+                .as_str()
+                .map(|m| m.starts_with("Route not found"))
+        })
         .unwrap_or(false)
 }
 
@@ -107,7 +133,11 @@ mod tests {
         DispatchRequest {
             method: method.into(),
             path: path.into(),
-            headers: if body.is_empty() { vec![] } else { vec![("content-type".into(), "application/json".into())] },
+            headers: if body.is_empty() {
+                vec![]
+            } else {
+                vec![("content-type".into(), "application/json".into())]
+            },
             body: body.as_bytes().to_vec(),
         }
     }
@@ -118,7 +148,9 @@ mod tests {
 
     #[tokio::test]
     async fn serves_health() {
-        let resp = dispatch(&router(), req("GET", "/api/health", ""), false).await.unwrap();
+        let resp = dispatch(&router(), req("GET", "/api/health", ""), false)
+            .await
+            .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(json(&resp)["data"]["server"], "ok");
     }
@@ -126,10 +158,18 @@ mod tests {
     #[tokio::test]
     async fn round_trips_a_json_body_and_query_string() {
         let r = router();
-        let created = dispatch(&r, req("POST", "/api/sources", r#"{"title":"T","description":"D"}"#), false).await.unwrap();
+        let created = dispatch(
+            &r,
+            req("POST", "/api/sources", r#"{"title":"T","description":"D"}"#),
+            false,
+        )
+        .await
+        .unwrap();
         assert_eq!(created.status, 201);
 
-        let listed = dispatch(&r, req("GET", "/api/sources?limit=1&offset=0", ""), false).await.unwrap();
+        let listed = dispatch(&r, req("GET", "/api/sources?limit=1&offset=0", ""), false)
+            .await
+            .unwrap();
         assert_eq!(listed.status, 200);
         assert_eq!(json(&listed)["pagination"]["total"], 1);
         assert_eq!(json(&listed)["pagination"]["limit"], 1);
@@ -137,41 +177,67 @@ mod tests {
 
     #[tokio::test]
     async fn response_headers_are_returned() {
-        let resp = dispatch(&router(), req("GET", "/api/health", ""), false).await.unwrap();
-        assert!(resp.headers.iter().any(|(k, v)| k == "content-type" && v.starts_with("application/json")));
+        let resp = dispatch(&router(), req("GET", "/api/health", ""), false)
+            .await
+            .unwrap();
+        assert!(resp
+            .headers
+            .iter()
+            .any(|(k, v)| k == "content-type" && v.starts_with("application/json")));
     }
 
     #[tokio::test]
     async fn method_is_case_insensitive_and_bad_input_is_an_error() {
-        let ok = dispatch(&router(), req("get", "/api/health", ""), false).await.unwrap();
+        let ok = dispatch(&router(), req("get", "/api/health", ""), false)
+            .await
+            .unwrap();
         assert_eq!(ok.status, 200);
-        assert!(dispatch(&router(), req("GE T", "/api/health", ""), false).await.is_err());
-        assert!(dispatch(&router(), req("GET", "not a uri", ""), false).await.is_err());
+        assert!(dispatch(&router(), req("GE T", "/api/health", ""), false)
+            .await
+            .is_err());
+        assert!(dispatch(&router(), req("GET", "not a uri", ""), false)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
     async fn fetch_owned_headers_are_not_forwarded() {
         let mut r = req("GET", "/api/health", "");
-        r.headers = vec![("Host".into(), "evil".into()), ("Content-Length".into(), "999".into())];
+        r.headers = vec![
+            ("Host".into(), "evil".into()),
+            ("Content-Length".into(), "999".into()),
+        ];
         assert_eq!(dispatch(&router(), r, false).await.unwrap().status, 200);
     }
 
     #[tokio::test]
     async fn unported_routes_are_501_only_when_asked() {
         let r = router();
-        let plain = dispatch(&r, req("GET", "/api/definitely-not-a-route", ""), false).await.unwrap();
+        let plain = dispatch(&r, req("GET", "/api/definitely-not-a-route", ""), false)
+            .await
+            .unwrap();
         assert_eq!(plain.status, 404);
 
-        let rewritten = dispatch(&r, req("GET", "/api/definitely-not-a-route", ""), true).await.unwrap();
+        let rewritten = dispatch(&r, req("GET", "/api/definitely-not-a-route", ""), true)
+            .await
+            .unwrap();
         assert_eq!(rewritten.status, 501);
         assert_eq!(json(&rewritten)["error"]["code"], "NOT_IMPLEMENTED");
-        assert!(json(&rewritten)["error"]["message"].as_str().unwrap().contains("/api/definitely-not-a-route"));
+        assert!(json(&rewritten)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("/api/definitely-not-a-route"));
     }
 
     #[tokio::test]
     async fn a_handlers_own_404_is_not_rewritten() {
-        let resp = dispatch(&router(), req("GET", "/api/sources/missing", ""), true).await.unwrap();
-        assert_eq!(resp.status, 404, "a missing row is a real 404, not 'unported'");
+        let resp = dispatch(&router(), req("GET", "/api/sources/missing", ""), true)
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status, 404,
+            "a missing row is a real 404, not 'unported'"
+        );
         assert_eq!(json(&resp)["error"]["code"], "NOT_FOUND");
     }
 }

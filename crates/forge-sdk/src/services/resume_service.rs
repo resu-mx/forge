@@ -136,10 +136,7 @@ impl ResumeService {
     }
 
     /// List all sections for a resume, ordered by position.
-    pub fn list_sections(
-        &self,
-        resume_id: &str,
-    ) -> Result<Vec<ResumeSectionEntity>, ForgeError> {
+    pub fn list_sections(&self, resume_id: &str) -> Result<Vec<ResumeSectionEntity>, ForgeError> {
         todo!()
     }
 
@@ -157,11 +154,7 @@ impl ResumeService {
 
     /// Delete a section. Cascades to entries and skills within the section.
     /// Verifies the section belongs to the specified resume.
-    pub fn delete_section(
-        &self,
-        resume_id: &str,
-        section_id: &str,
-    ) -> Result<(), ForgeError> {
+    pub fn delete_section(&self, resume_id: &str, section_id: &str) -> Result<(), ForgeError> {
         todo!()
     }
 
@@ -225,11 +218,7 @@ impl ResumeService {
 
     /// Remove a certification from a resume. Verifies it belongs to
     /// the specified resume.
-    pub fn remove_certification(
-        &self,
-        resume_id: &str,
-        rc_id: &str,
-    ) -> Result<(), ForgeError> {
+    pub fn remove_certification(&self, resume_id: &str, rc_id: &str) -> Result<(), ForgeError> {
         todo!()
     }
 
@@ -252,11 +241,7 @@ impl ResumeService {
     /// Update the structured header JSON blob on a resume.
     ///
     /// Validates that `header.name` is a non-empty string.
-    pub fn update_header(
-        &self,
-        id: &str,
-        header: serde_json::Value,
-    ) -> Result<Resume, ForgeError> {
+    pub fn update_header(&self, id: &str, header: serde_json::Value) -> Result<Resume, ForgeError> {
         todo!()
     }
 

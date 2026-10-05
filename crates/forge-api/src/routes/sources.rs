@@ -42,7 +42,9 @@ const EXTENSION_KEYS: [&str; 4] = ["role", "project", "education", "presentation
 
 /// Merge nested extension objects into the top level (nested values win, as in TS).
 fn flatten_extensions(body: Value) -> Value {
-    let Value::Object(mut map) = body else { return body };
+    let Value::Object(mut map) = body else {
+        return body;
+    };
     for key in EXTENSION_KEYS {
         if let Some(Value::Object(nested)) = map.remove(key) {
             map.extend(nested);
@@ -54,7 +56,10 @@ fn flatten_extensions(body: Value) -> Value {
 /// Decode a flattened body, reporting problems in the standard error envelope.
 fn decode<T: serde::de::DeserializeOwned>(body: Value) -> Result<T, ApiError> {
     serde_json::from_value(flatten_extensions(body)).map_err(|e| {
-        ApiError(forge_core::ForgeError::Validation { message: e.to_string(), field: None })
+        ApiError(forge_core::ForgeError::Validation {
+            message: e.to_string(),
+            field: None,
+        })
     })
 }
 
@@ -63,7 +68,11 @@ fn to_wire(source: SourceWithExtension) -> Value {
     let mut value = serde_json::to_value(&source).unwrap_or(Value::Null);
     if let Value::Object(map) = &mut value {
         let extension = map.remove("extension").unwrap_or(Value::Null);
-        let key = map.get("source_type").and_then(Value::as_str).filter(|k| EXTENSION_KEYS.contains(k)).map(str::to_string);
+        let key = map
+            .get("source_type")
+            .and_then(Value::as_str)
+            .filter(|k| EXTENSION_KEYS.contains(k))
+            .map(str::to_string);
         if let (Some(key), false) = (key, extension.is_null()) {
             map.insert(key, extension);
         }
@@ -101,7 +110,10 @@ async fn list_sources(
     let (data, pagination) =
         with_conn(&state, move |conn| SourceStore::list(conn, &filter, &pg)).await?;
 
-    Ok(Json(ApiList { data: data.into_iter().map(to_wire).collect(), pagination }))
+    Ok(Json(ApiList {
+        data: data.into_iter().map(to_wire).collect(),
+        pagination,
+    }))
 }
 
 async fn get_source(
@@ -109,14 +121,15 @@ async fn get_source(
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Value>>, ApiError> {
     let result = with_conn(&state, move |conn| {
-        SourceStore::get_hydrated(conn, &id)?
-            .ok_or_else(|| forge_core::ForgeError::NotFound {
-                entity_type: "Source".into(),
-                id: id.clone(),
-            })
+        SourceStore::get_hydrated(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
+            entity_type: "Source".into(),
+            id: id.clone(),
+        })
     })
     .await?;
-    Ok(Json(ApiData { data: to_wire(result) }))
+    Ok(Json(ApiData {
+        data: to_wire(result),
+    }))
 }
 
 async fn update_source(
@@ -125,9 +138,10 @@ async fn update_source(
     Json(body): Json<Value>,
 ) -> Result<Json<ApiData<Value>>, ApiError> {
     let input: UpdateSource = decode(body)?;
-    let result =
-        with_conn(&state, move |conn| SourceStore::update(conn, &id, &input)).await?;
-    Ok(Json(ApiData { data: to_wire(result) }))
+    let result = with_conn(&state, move |conn| SourceStore::update(conn, &id, &input)).await?;
+    Ok(Json(ApiData {
+        data: to_wire(result),
+    }))
 }
 
 async fn delete_source(
@@ -153,5 +167,8 @@ pub fn router() -> Router<SharedState> {
             "/sources/{id}",
             get(get_source).patch(update_source).delete(delete_source),
         )
-        .route("/sources/{id}/derive-bullets", post(derive_bullets_replaced))
+        .route(
+            "/sources/{id}/derive-bullets",
+            post(derive_bullets_replaced),
+        )
 }

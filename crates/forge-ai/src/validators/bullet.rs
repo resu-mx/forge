@@ -3,7 +3,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{extra_fields, ValidationError, ValidationResult, ValidatedResponse, Warning};
+use super::{extra_fields, ValidatedResponse, ValidationError, ValidationResult, Warning};
 
 /// Validated bullet derivation response.
 #[derive(Debug, Clone, Serialize)]

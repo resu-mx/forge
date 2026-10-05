@@ -17,7 +17,9 @@ pub type SharedState = Arc<AppState>;
 
 impl AppState {
     pub fn new(forge: Forge) -> SharedState {
-        Arc::new(Self { forge: Mutex::new(forge) })
+        Arc::new(Self {
+            forge: Mutex::new(forge),
+        })
     }
 
     /// Swap the database, returning the previous one so the caller decides when it

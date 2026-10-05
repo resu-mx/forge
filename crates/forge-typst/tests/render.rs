@@ -5,7 +5,12 @@ use forge_sdk::services::render_typst;
 use forge_typst::{compile_document, compile_pdf, document_text};
 
 fn bullet(content: &str) -> ExperienceBullet {
-    ExperienceBullet { content: content.into(), entry_id: None, source_chain: None, is_cloned: false }
+    ExperienceBullet {
+        content: content.into(),
+        entry_id: None,
+        source_chain: None,
+        is_cloned: false,
+    }
 }
 
 /// One of everything, with hostile text where users can type freely.
@@ -30,7 +35,12 @@ fn full_document(hostile: &str) -> ResumeDocument {
             website: None,
             clearance: Some("TS/SCI".into()),
         },
-        summary: Some(ResumeSummary { summary_id: None, title: None, content: "Builds engines.".into(), is_override: false }),
+        summary: Some(ResumeSummary {
+            summary_id: None,
+            title: None,
+            content: "Builds engines.".into(),
+            is_override: false,
+        }),
         sections: vec![
             section(
                 "Experience",
@@ -45,7 +55,10 @@ fn full_document(hostile: &str) -> ResumeDocument {
                             location: Some("Remote".into()),
                             date_range: "2022 - present".into(),
                             source_id: None,
-                            bullets: vec![bullet("Migrated 40 services to Kubernetes"), bullet(hostile)],
+                            bullets: vec![
+                                bullet("Migrated 40 services to Kubernetes"),
+                                bullet(hostile),
+                            ],
                         },
                         ExperienceSubheading {
                             id: "b".into(),
@@ -62,7 +75,10 @@ fn full_document(hostile: &str) -> ResumeDocument {
                 "Technical Skills",
                 IRSectionType::Skills,
                 vec![IRSectionItem::SkillGroup(SkillGroup {
-                    categories: vec![SkillCategoryGroup { label: "Languages".into(), skills: vec!["Rust".into(), "Go".into()] }],
+                    categories: vec![SkillCategoryGroup {
+                        label: "Languages".into(),
+                        skills: vec!["Rust".into(), "Go".into()],
+                    }],
                 })],
             ),
             section(
@@ -107,7 +123,11 @@ fn full_document(hostile: &str) -> ResumeDocument {
                 vec![IRSectionItem::CertificationGroup(CertificationGroup {
                     categories: vec![CertificationCategoryGroup {
                         label: "Cloud".into(),
-                        certs: vec![CertificationEntry { name: "CKA".into(), entry_id: None, source_id: None }],
+                        certs: vec![CertificationEntry {
+                            name: "CKA".into(),
+                            entry_id: None,
+                            source_id: None,
+                        }],
                     }],
                 })],
             ),
@@ -138,20 +158,42 @@ fn all_text(source: &str) -> String {
 #[test]
 fn a_full_resume_compiles_to_a_pdf_that_draws_its_content() {
     let source = render_typst(&full_document("plain bullet"));
-    let document = compile_document(&source).unwrap_or_else(|e| panic!("did not compile: {e:?}\n{source}"));
+    let document =
+        compile_document(&source).unwrap_or_else(|e| panic!("did not compile: {e:?}\n{source}"));
     let text = document_text(&document).join(" ");
 
     for expected in [
-        "Ada", "Lovelace", "Analytical", "TS/SCI", "Builds engines", "Acme", "Migrated 40 services",
-        "Shipped the analytical engine", "Languages", "Rust", "University of London", "B.Sc.", "Forge",
-        "CKA", "Typst, in a Worker",
+        "Ada",
+        "Lovelace",
+        "Analytical",
+        "TS/SCI",
+        "Builds engines",
+        "Acme",
+        "Migrated 40 services",
+        "Shipped the analytical engine",
+        "Languages",
+        "Rust",
+        "University of London",
+        "B.Sc.",
+        "Forge",
+        "CKA",
+        "Typst, in a Worker",
     ] {
-        assert!(text.contains(expected), "missing {expected:?} in drawn text: {text}");
+        assert!(
+            text.contains(expected),
+            "missing {expected:?} in drawn text: {text}"
+        );
     }
     assert!(!text.trim().is_empty(), "a PDF that draws nothing");
     // A bare "..." in Typst markup draws its quotation marks; summary and clearance text must not.
-    assert!(!text.contains("\u{201c}Builds") && !text.contains("\"Builds"), "summary drawn with quotes: {text}");
-    assert!(!text.contains("\u{201c}TS/SCI"), "clearance drawn with quotes: {text}");
+    assert!(
+        !text.contains("\u{201c}Builds") && !text.contains("\"Builds"),
+        "summary drawn with quotes: {text}"
+    );
+    assert!(
+        !text.contains("\u{201c}TS/SCI"),
+        "clearance drawn with quotes: {text}"
+    );
 
     let pdf = compile_pdf(&source).unwrap();
     assert!(pdf.starts_with(b"%PDF-"));
@@ -163,7 +205,10 @@ fn the_bundled_font_is_used_not_a_silent_fallback() {
     // The PDF embeds the font names it used, so look for ours.
     let pdf = compile_pdf(&render_typst(&full_document("x"))).unwrap();
     let haystack = String::from_utf8_lossy(&pdf);
-    assert!(haystack.contains("NewCM10"), "the PDF does not embed New Computer Modern");
+    assert!(
+        haystack.contains("NewCM10"),
+        "the PDF does not embed New Computer Modern"
+    );
 }
 
 #[test]
@@ -172,9 +217,15 @@ fn hostile_content_is_drawn_as_text_and_never_executed() {
     let text = all_text(&render_typst(&full_document(hostile)));
     // Typst's text extraction may split on glyph runs, so check distinctive pieces.
     for piece in ["#read(", "/etc/passwd", "*bold*", "$math$", "@ref"] {
-        assert!(text.contains(piece), "hostile text {piece:?} was not drawn literally: {text}");
+        assert!(
+            text.contains(piece),
+            "hostile text {piece:?} was not drawn literally: {text}"
+        );
     }
-    assert!(!text.contains("root:"), "file contents leaked into the document");
+    assert!(
+        !text.contains("root:"),
+        "file contents leaked into the document"
+    );
 }
 
 #[test]
@@ -201,7 +252,13 @@ fn an_empty_resume_still_produces_a_one_page_pdf() {
 
 #[test]
 fn a_long_resume_flows_onto_more_pages() {
-    let many: Vec<ExperienceBullet> = (0..120).map(|i| bullet(&format!("Accomplishment number {i} with a reasonably long description"))).collect();
+    let many: Vec<ExperienceBullet> = (0..120)
+        .map(|i| {
+            bullet(&format!(
+                "Accomplishment number {i} with a reasonably long description"
+            ))
+        })
+        .collect();
     let mut doc = full_document("x");
     if let IRSectionItem::ExperienceGroup(g) = &mut doc.sections[0].items[0] {
         g.subheadings[0].bullets = many;
@@ -215,7 +272,10 @@ fn a_long_resume_flows_onto_more_pages() {
 #[ignore]
 fn write_sample_pdf() {
     let path = std::env::var("FORGE_SAMPLE_PDF").expect("set FORGE_SAMPLE_PDF to an output path");
-    let pdf = compile_pdf(&render_typst(&full_document("Cut deploy time 70% across 40 services"))).unwrap();
+    let pdf = compile_pdf(&render_typst(&full_document(
+        "Cut deploy time 70% across 40 services",
+    )))
+    .unwrap();
     std::fs::write(path, pdf).unwrap();
 }
 

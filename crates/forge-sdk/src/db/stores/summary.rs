@@ -6,9 +6,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    CreateSummary, ForgeError, Pagination, Resume, ResumeStatus, Skill, SkillCategory,
-    SortDirection, Summary, SummaryFilter, SummarySort, SummarySortBy, UpdateSummary,
-    new_id, now_iso,
+    new_id, now_iso, CreateSummary, ForgeError, Pagination, Resume, ResumeStatus, Skill,
+    SkillCategory, SortDirection, Summary, SummaryFilter, SummarySort, SummarySortBy,
+    UpdateSummary,
 };
 
 /// Data-access repository for summaries and the `summary_skills` junction.
@@ -50,7 +50,9 @@ impl SummaryStore {
              FROM summaries WHERE id = ?1",
         )?;
 
-        let row = stmt.query_row(params![id], Self::map_summary_without_count).optional()?;
+        let row = stmt
+            .query_row(params![id], Self::map_summary_without_count)
+            .optional()?;
         match row {
             None => Ok(None),
             Some(mut summary) => {
@@ -68,9 +70,15 @@ impl SummaryStore {
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<Summary>, Pagination), ForgeError> {
-        let sort_by = sort.and_then(|s| s.sort_by).unwrap_or(SummarySortBy::UpdatedAt);
+        let sort_by = sort
+            .and_then(|s| s.sort_by)
+            .unwrap_or(SummarySortBy::UpdatedAt);
         let direction = sort.and_then(|s| s.direction).unwrap_or_else(|| {
-            if sort_by == SummarySortBy::Title { SortDirection::Asc } else { SortDirection::Desc }
+            if sort_by == SummarySortBy::Title {
+                SortDirection::Asc
+            } else {
+                SortDirection::Desc
+            }
         });
 
         let mut conditions = Vec::new();
@@ -157,13 +165,26 @@ impl SummaryStore {
             hydrated.push(summary);
         }
 
-        Ok((hydrated, Pagination { total, offset, limit }))
+        Ok((
+            hydrated,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// Apply a partial update to an existing summary.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateSummary) -> Result<Summary, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "summary".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateSummary,
+    ) -> Result<Summary, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "summary".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -224,7 +245,10 @@ impl SummaryStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM summaries WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "summary".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "summary".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -233,8 +257,10 @@ impl SummaryStore {
 
     /// Toggle the `is_template` flag on a summary (0 -> 1 or 1 -> 0).
     pub fn toggle_template(conn: &Connection, id: &str) -> Result<Summary, ForgeError> {
-        let summary = Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "summary".into(), id: id.into() })?;
+        let summary = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "summary".into(),
+            id: id.into(),
+        })?;
 
         let new_val = if summary.is_template == 1 { 0 } else { 1 };
         let now = now_iso();
@@ -250,11 +276,16 @@ impl SummaryStore {
     // ── Skill junction ──────────────────────────────────────────────
 
     /// Link a skill keyword to a summary (idempotent).
-    pub fn add_skill(conn: &Connection, summary_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+    pub fn add_skill(
+        conn: &Connection,
+        summary_id: &str,
+        skill_id: &str,
+    ) -> Result<(), ForgeError> {
         conn.execute(
             "INSERT OR IGNORE INTO summary_skills (summary_id, skill_id) VALUES (?1, ?2)",
             params![summary_id, skill_id],
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
                 if err.code == rusqlite::ErrorCode::ConstraintViolation {
                     if msg.as_deref().unwrap_or("").contains("FOREIGN KEY") {
@@ -271,7 +302,11 @@ impl SummaryStore {
     }
 
     /// Remove a skill keyword from a summary.
-    pub fn remove_skill(conn: &Connection, summary_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+    pub fn remove_skill(
+        conn: &Connection,
+        summary_id: &str,
+        skill_id: &str,
+    ) -> Result<(), ForgeError> {
         conn.execute(
             "DELETE FROM summary_skills WHERE summary_id = ?1 AND skill_id = ?2",
             params![summary_id, skill_id],
@@ -293,7 +328,8 @@ impl SummaryStore {
                 Ok(Skill {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category: row.get::<_, String>(2)?
+                    category: row
+                        .get::<_, String>(2)?
                         .parse()
                         .unwrap_or(SkillCategory::Other),
                 })
@@ -331,7 +367,14 @@ impl SummaryStore {
             .query_map(params![summary_id, limit, offset], Self::map_resume)?
             .collect::<Result<_, _>>()?;
 
-        Ok((resumes, Pagination { total, offset, limit }))
+        Ok((
+            resumes,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// Count resumes linked to a summary (used for `linked_resume_count`).
@@ -348,8 +391,10 @@ impl SummaryStore {
 
     /// Duplicate a summary row and its `summary_skills` links, returning the new row.
     pub fn clone_summary(conn: &Connection, id: &str) -> Result<Summary, ForgeError> {
-        let source = Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "summary".into(), id: id.into() })?;
+        let source = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "summary".into(),
+            id: id.into(),
+        })?;
 
         let new_id = new_id();
         let now = now_iso();
@@ -408,7 +453,8 @@ impl SummaryStore {
             target_role: row.get(2)?,
             target_employer: row.get(3)?,
             archetype: row.get(4)?,
-            status: row.get::<_, String>(5)?
+            status: row
+                .get::<_, String>(5)?
                 .parse()
                 .unwrap_or(ResumeStatus::Draft),
             header: row.get(6)?,
@@ -455,7 +501,9 @@ mod tests {
         assert_eq!(summary.is_template, 0);
         assert_eq!(summary.linked_resume_count, 0);
 
-        let fetched = SummaryStore::get(forge.conn(), &summary.id).unwrap().unwrap();
+        let fetched = SummaryStore::get(forge.conn(), &summary.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, summary.id);
         assert_eq!(fetched.title, "Senior SRE Summary");
     }
@@ -486,9 +534,7 @@ mod tests {
     #[test]
     fn list_empty() {
         let forge = setup();
-        let (summaries, pagination) = SummaryStore::list(
-            forge.conn(), None, None, 0, 50,
-        ).unwrap();
+        let (summaries, pagination) = SummaryStore::list(forge.conn(), None, None, 0, 50).unwrap();
         assert!(summaries.is_empty());
         assert_eq!(pagination.total, 0);
     }
@@ -496,29 +542,38 @@ mod tests {
     #[test]
     fn list_with_template_filter() {
         let forge = setup();
-        SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Template".into(),
-            role: None,
-            description: None,
-            is_template: Some(1),
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
-        SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Regular".into(),
-            role: None,
-            description: None,
-            is_template: Some(0),
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
+        SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Template".into(),
+                role: None,
+                description: None,
+                is_template: Some(1),
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
+        SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Regular".into(),
+                role: None,
+                description: None,
+                is_template: Some(0),
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        let filter = SummaryFilter { is_template: Some(1), ..Default::default() };
-        let (summaries, _) = SummaryStore::list(
-            forge.conn(), Some(&filter), None, 0, 50,
-        ).unwrap();
+        let filter = SummaryFilter {
+            is_template: Some(1),
+            ..Default::default()
+        };
+        let (summaries, _) = SummaryStore::list(forge.conn(), Some(&filter), None, 0, 50).unwrap();
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].title, "Template");
     }
@@ -526,29 +581,38 @@ mod tests {
     #[test]
     fn list_with_search() {
         let forge = setup();
-        SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Cloud Engineer".into(),
-            role: None,
-            description: Some("AWS and GCP expert".into()),
-            is_template: None,
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
-        SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Security Analyst".into(),
-            role: None,
-            description: None,
-            is_template: None,
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
+        SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Cloud Engineer".into(),
+                role: None,
+                description: Some("AWS and GCP expert".into()),
+                is_template: None,
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
+        SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Security Analyst".into(),
+                role: None,
+                description: None,
+                is_template: None,
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        let filter = SummaryFilter { search: Some("cloud".into()), ..Default::default() };
-        let (summaries, _) = SummaryStore::list(
-            forge.conn(), Some(&filter), None, 0, 50,
-        ).unwrap();
+        let filter = SummaryFilter {
+            search: Some("cloud".into()),
+            ..Default::default()
+        };
+        let (summaries, _) = SummaryStore::list(forge.conn(), Some(&filter), None, 0, 50).unwrap();
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].title, "Cloud Engineer");
     }
@@ -556,21 +620,30 @@ mod tests {
     #[test]
     fn update_summary() {
         let forge = setup();
-        let summary = SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Old Title".into(),
-            role: Some("Old Role".into()),
-            description: None,
-            is_template: None,
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
+        let summary = SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Old Title".into(),
+                role: Some("Old Role".into()),
+                description: None,
+                is_template: None,
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        let updated = SummaryStore::update(forge.conn(), &summary.id, &UpdateSummary {
-            title: Some("New Title".into()),
-            role: Some(Some("New Role".into())),
-            ..Default::default()
-        }).unwrap();
+        let updated = SummaryStore::update(
+            forge.conn(),
+            &summary.id,
+            &UpdateSummary {
+                title: Some("New Title".into()),
+                role: Some(Some("New Role".into())),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.title, "New Title");
         assert_eq!(updated.role, Some("New Role".into()));
     }
@@ -578,18 +651,24 @@ mod tests {
     #[test]
     fn delete_summary() {
         let forge = setup();
-        let summary = SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "To Delete".into(),
-            role: None,
-            description: None,
-            is_template: None,
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
+        let summary = SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "To Delete".into(),
+                role: None,
+                description: None,
+                is_template: None,
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
         SummaryStore::delete(forge.conn(), &summary.id).unwrap();
-        assert!(SummaryStore::get(forge.conn(), &summary.id).unwrap().is_none());
+        assert!(SummaryStore::get(forge.conn(), &summary.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -602,15 +681,19 @@ mod tests {
     #[test]
     fn toggle_template() {
         let forge = setup();
-        let summary = SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Toggle Test".into(),
-            role: None,
-            description: None,
-            is_template: Some(0),
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
+        let summary = SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Toggle Test".into(),
+                role: None,
+                description: None,
+                is_template: Some(0),
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
         assert_eq!(summary.is_template, 0);
 
         let toggled = SummaryStore::toggle_template(forge.conn(), &summary.id).unwrap();
@@ -623,15 +706,19 @@ mod tests {
     #[test]
     fn clone_summary() {
         let forge = setup();
-        let original = SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Original".into(),
-            role: Some("Dev".into()),
-            description: Some("Desc".into()),
-            is_template: Some(1),
-            industry_id: None,
-            role_type_id: None,
-            notes: Some("Notes".into()),
-        }).unwrap();
+        let original = SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Original".into(),
+                role: Some("Dev".into()),
+                description: Some("Desc".into()),
+                is_template: Some(1),
+                industry_id: None,
+                role_type_id: None,
+                notes: Some("Notes".into()),
+            },
+        )
+        .unwrap();
 
         let cloned = SummaryStore::clone_summary(forge.conn(), &original.id).unwrap();
         assert_eq!(cloned.title, "Copy of Original");
@@ -645,28 +732,34 @@ mod tests {
     fn list_templates_float_to_top() {
         let forge = setup();
         // Create regular first, then template
-        SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Regular Summary".into(),
-            role: None,
-            description: None,
-            is_template: Some(0),
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
-        SummaryStore::create(forge.conn(), &CreateSummary {
-            title: "Template Summary".into(),
-            role: None,
-            description: None,
-            is_template: Some(1),
-            industry_id: None,
-            role_type_id: None,
-            notes: None,
-        }).unwrap();
+        SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Regular Summary".into(),
+                role: None,
+                description: None,
+                is_template: Some(0),
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
+        SummaryStore::create(
+            forge.conn(),
+            &CreateSummary {
+                title: "Template Summary".into(),
+                role: None,
+                description: None,
+                is_template: Some(1),
+                industry_id: None,
+                role_type_id: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        let (summaries, _) = SummaryStore::list(
-            forge.conn(), None, None, 0, 50,
-        ).unwrap();
+        let (summaries, _) = SummaryStore::list(forge.conn(), None, None, 0, 50).unwrap();
         assert_eq!(summaries.len(), 2);
         assert_eq!(summaries[0].is_template, 1); // template first
         assert_eq!(summaries[1].is_template, 0);

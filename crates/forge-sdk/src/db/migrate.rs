@@ -1,8 +1,8 @@
 //! Migration runner — embeds SQL migration files from the TS codebase
 //! and applies them in order, tracking state in `_migrations`.
 
-use rusqlite::Connection;
 use forge_core::ForgeError;
+use rusqlite::Connection;
 
 /// Embedded SQL migrations in filename-sorted order.
 /// Source: `packages/core/src/db/migrations/*.sql`
@@ -380,8 +380,11 @@ mod tests {
         )
         .unwrap();
 
-        conn.execute("DELETE FROM skill_graph_nodes WHERE id = ?1", rusqlite::params![a])
-            .unwrap();
+        conn.execute(
+            "DELETE FROM skill_graph_nodes WHERE id = ?1",
+            rusqlite::params![a],
+        )
+        .unwrap();
 
         let count: i64 = conn
             .query_row(
@@ -390,7 +393,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 0, "edges must cascade when a referenced node is deleted");
+        assert_eq!(
+            count, 0,
+            "edges must cascade when a referenced node is deleted"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -435,9 +441,24 @@ mod tests {
             }
         }
 
-        insert_legacy_skill(&conn, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01", "Python", "language");
-        insert_legacy_skill(&conn, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02", "Rust",   "language");
-        insert_legacy_skill(&conn, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa03", "Docker", "tool");
+        insert_legacy_skill(
+            &conn,
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01",
+            "Python",
+            "language",
+        );
+        insert_legacy_skill(
+            &conn,
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02",
+            "Rust",
+            "language",
+        );
+        insert_legacy_skill(
+            &conn,
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa03",
+            "Docker",
+            "tool",
+        );
 
         conn
     }
@@ -471,7 +492,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3, "every legacy skill should produce one mirror node");
+        assert_eq!(
+            count, 3,
+            "every legacy skill should produce one mirror node"
+        );
 
         // legacy_skill_id should equal id for migrated rows so junctions JOIN cleanly.
         let mismatched: i64 = conn
@@ -481,7 +505,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(mismatched, 0, "migrated nodes must reuse the legacy skill UUID");
+        assert_eq!(
+            mismatched, 0,
+            "migrated nodes must reuse the legacy skill UUID"
+        );
 
         // Source and category propagate.
         let (name, category, source): (String, String, String) = conn
@@ -503,7 +530,10 @@ mod tests {
         let category_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM skill_categories", [], |r| r.get(0))
             .unwrap();
-        assert!(category_count > 0, "skill_categories should be seeded by 044");
+        assert!(
+            category_count > 0,
+            "skill_categories should be seeded by 044"
+        );
 
         apply_053(&conn);
 
@@ -526,7 +556,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(bad_roots, 0, "category roots must be concept-tagged with no legacy id");
+        assert_eq!(
+            bad_roots, 0,
+            "category roots must be concept-tagged with no legacy id"
+        );
     }
 
     #[test]
@@ -548,7 +581,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(orphan_skills, 0, "every migrated skill must have a parent-of edge from its category root");
+        assert_eq!(
+            orphan_skills, 0,
+            "every migrated skill must have a parent-of edge from its category root"
+        );
 
         // The parent of "Python" should be the "Languages" root.
         let parent_name: String = conn
@@ -592,8 +628,14 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM skill_graph_edges", [], |r| r.get(0))
             .unwrap();
 
-        assert_eq!(first_node_count, second_node_count, "node insert must be idempotent");
-        assert_eq!(first_edge_count, second_edge_count, "edge insert must be idempotent");
+        assert_eq!(
+            first_node_count, second_node_count,
+            "node insert must be idempotent"
+        );
+        assert_eq!(
+            first_edge_count, second_edge_count,
+            "edge insert must be idempotent"
+        );
     }
 
     #[test]
@@ -661,7 +703,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(root_count > 0, "category roots should be created even on fresh DB");
+        assert!(
+            root_count > 0,
+            "category roots should be created even on fresh DB"
+        );
 
         // No mirror nodes exist because there are no legacy skills.
         let mirror_count: i64 = conn
@@ -711,13 +756,23 @@ mod tests {
             .expect("expected migration 054 to be registered");
         let (name, sql) = entry;
         assert_eq!(*name, "054_alignment_results");
-        assert!(sql.contains("CREATE TABLE alignment_results"), "DDL must create alignment_results");
+        assert!(
+            sql.contains("CREATE TABLE alignment_results"),
+            "DDL must create alignment_results"
+        );
         assert!(sql.contains("STRICT"), "table must be STRICT");
-        assert!(sql.contains("idx_alignment_results_resume_jd"), "index must exist");
+        assert!(
+            sql.contains("idx_alignment_results_resume_jd"),
+            "index must exist"
+        );
     }
 
     #[test]
     fn migration_count_is_52() {
-        assert_eq!(MIGRATIONS.len(), 52, "expected 52 migrations after adding 054_alignment_results");
+        assert_eq!(
+            MIGRATIONS.len(),
+            52,
+            "expected 52 migrations after adding 054_alignment_results"
+        );
     }
 }

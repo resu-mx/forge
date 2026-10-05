@@ -5,7 +5,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{CreateDomainInput, Domain, ForgeError, new_id, now_iso};
+use forge_core::{new_id, now_iso, CreateDomainInput, Domain, ForgeError};
 
 /// Data-access store for the `domains` table.
 pub struct DomainStore;
@@ -61,7 +61,10 @@ impl DomainStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM domains WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "domain".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "domain".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -96,7 +99,10 @@ mod tests {
         };
         let domain = DomainStore::create(forge.conn(), &input).unwrap();
         assert_eq!(domain.name, "Cloud Security");
-        assert_eq!(domain.description, Some("Securing cloud infrastructure and services".into()));
+        assert_eq!(
+            domain.description,
+            Some("Securing cloud infrastructure and services".into())
+        );
 
         let fetched = DomainStore::get(forge.conn(), &domain.id).unwrap().unwrap();
         assert_eq!(fetched.id, domain.id);
@@ -109,14 +115,22 @@ mod tests {
         // Migrations seed domains, so count the baseline first
         let baseline = DomainStore::list(forge.conn()).unwrap().len();
 
-        DomainStore::create(forge.conn(), &CreateDomainInput {
-            name: "Backend".into(),
-            description: None,
-        }).unwrap();
-        DomainStore::create(forge.conn(), &CreateDomainInput {
-            name: "Quantum Computing".into(),
-            description: Some("Quantum computing and cryptography".into()),
-        }).unwrap();
+        DomainStore::create(
+            forge.conn(),
+            &CreateDomainInput {
+                name: "Backend".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        DomainStore::create(
+            forge.conn(),
+            &CreateDomainInput {
+                name: "Quantum Computing".into(),
+                description: Some("Quantum computing and cryptography".into()),
+            },
+        )
+        .unwrap();
 
         let rows = DomainStore::list(forge.conn()).unwrap();
         assert_eq!(rows.len(), baseline + 2);
@@ -128,12 +142,18 @@ mod tests {
     #[test]
     fn delete_domain() {
         let forge = setup();
-        let domain = DomainStore::create(forge.conn(), &CreateDomainInput {
-            name: "To Delete".into(),
-            description: None,
-        }).unwrap();
+        let domain = DomainStore::create(
+            forge.conn(),
+            &CreateDomainInput {
+                name: "To Delete".into(),
+                description: None,
+            },
+        )
+        .unwrap();
         DomainStore::delete(forge.conn(), &domain.id).unwrap();
-        assert!(DomainStore::get(forge.conn(), &domain.id).unwrap().is_none());
+        assert!(DomainStore::get(forge.conn(), &domain.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]

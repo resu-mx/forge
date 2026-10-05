@@ -10,9 +10,9 @@
 use rusqlite::{params, Connection};
 
 use forge_core::{
-    Bullet, BulletStatus, DataExportBundle, ExportMetadata, ForgeError, Framing,
-    OrgTag, Organization, Perspective, PerspectiveStatus, Skill, SkillCategory, Source,
-    SourceStatus, SourceType, UpdatedBy, now_iso,
+    now_iso, Bullet, BulletStatus, DataExportBundle, ExportMetadata, ForgeError, Framing, OrgTag,
+    Organization, Perspective, PerspectiveStatus, Skill, SkillCategory, Source, SourceStatus,
+    SourceType, UpdatedBy,
 };
 
 /// Export operations: entity data bundles and raw database dumps.
@@ -23,7 +23,10 @@ impl ExportService {
     ///
     /// Supported entity names: `"sources"`, `"bullets"`, `"perspectives"`,
     /// `"skills"`, `"organizations"`.
-    pub fn export_data(conn: &Connection, entities: &[String]) -> Result<DataExportBundle, ForgeError> {
+    pub fn export_data(
+        conn: &Connection,
+        entities: &[String],
+    ) -> Result<DataExportBundle, ForgeError> {
         let now = now_iso();
         let entity_names: Vec<String> = entities.iter().map(|e| e.to_lowercase()).collect();
 
@@ -115,7 +118,8 @@ impl ExportService {
                             values.push(format!("'{}'", s.replace('\'', "''")));
                         }
                         rusqlite::types::Value::Blob(b) => {
-                            let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
+                            let hex: String =
+                                b.iter().map(|byte| format!("{:02x}", byte)).collect();
                             values.push(format!("X'{}'", hex));
                         }
                     }
@@ -158,10 +162,16 @@ impl ExportService {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    source_type: row.get::<_, String>(3)?.parse().unwrap_or(SourceType::General),
+                    source_type: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or(SourceType::General),
                     start_date: row.get(4)?,
                     end_date: row.get(5)?,
-                    status: row.get::<_, String>(6)?.parse().unwrap_or(SourceStatus::Draft),
+                    status: row
+                        .get::<_, String>(6)?
+                        .parse()
+                        .unwrap_or(SourceStatus::Draft),
                     updated_by: row.get::<_, String>(7)?.parse().unwrap_or(UpdatedBy::Human),
                     last_derived_at: row.get(8)?,
                     created_at: row.get(9)?,
@@ -189,7 +199,10 @@ impl ExportService {
                     technologies: Vec::new(),
                     metrics: row.get(3)?,
                     domain: row.get(4)?,
-                    status: row.get::<_, String>(5)?.parse().unwrap_or(BulletStatus::Draft),
+                    status: row
+                        .get::<_, String>(5)?
+                        .parse()
+                        .unwrap_or(BulletStatus::Draft),
                     rejection_reason: row.get(6)?,
                     prompt_log_id: row.get(7)?,
                     approved_at: row.get(8)?,
@@ -234,10 +247,12 @@ impl ExportService {
                     bullet_content_snapshot: row.get(3)?,
                     target_archetype: row.get(4)?,
                     domain: row.get(5)?,
-                    framing: row.get::<_, String>(6)?
+                    framing: row
+                        .get::<_, String>(6)?
                         .parse()
                         .unwrap_or(Framing::Responsibility),
-                    status: row.get::<_, String>(7)?
+                    status: row
+                        .get::<_, String>(7)?
                         .parse()
                         .unwrap_or(PerspectiveStatus::Draft),
                     rejection_reason: row.get(8)?,
@@ -252,15 +267,15 @@ impl ExportService {
     }
 
     fn export_skills(conn: &Connection) -> Result<Vec<Skill>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, category FROM skills ORDER BY LOWER(name) ASC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, category FROM skills ORDER BY LOWER(name) ASC")?;
         let skills = stmt
             .query_map([], |row| {
                 Ok(Skill {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category: row.get::<_, String>(2)?
+                    category: row
+                        .get::<_, String>(2)?
                         .parse()
                         .unwrap_or(SkillCategory::Other),
                 })
@@ -292,7 +307,8 @@ impl ExportService {
                     linkedin_url: row.get(8)?,
                     glassdoor_url: row.get(9)?,
                     glassdoor_rating: row.get(10)?,
-                    status: row.get::<_, Option<String>>(11)?
+                    status: row
+                        .get::<_, Option<String>>(11)?
                         .and_then(|s| s.parse().ok()),
                     created_at: row.get(12)?,
                     updated_at: row.get(13)?,
@@ -303,9 +319,8 @@ impl ExportService {
         // Hydrate tags
         let mut result = Vec::with_capacity(orgs_raw.len());
         for mut org in orgs_raw {
-            let mut tag_stmt = conn.prepare(
-                "SELECT tag FROM org_tags WHERE organization_id = ?1 ORDER BY tag ASC",
-            )?;
+            let mut tag_stmt = conn
+                .prepare("SELECT tag FROM org_tags WHERE organization_id = ?1 ORDER BY tag ASC")?;
             let tags: Vec<OrgTag> = tag_stmt
                 .query_map(params![org.id], |row| {
                     let tag_str: String = row.get(0)?;
@@ -324,8 +339,8 @@ impl ExportService {
 mod tests {
     use super::*;
     use crate::db::stores::bullet::BulletStore;
-    use crate::db::stores::source::SourceStore;
     use crate::db::stores::skill::SkillStore;
+    use crate::db::stores::source::SourceStore;
     use crate::forge::Forge;
     use forge_core::{CreateSource, SourceType};
 
@@ -353,7 +368,8 @@ mod tests {
                 source_type: Some(SourceType::General),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let bundle = ExportService::export_data(forge.conn(), &["sources".into()]).unwrap();
         let sources = bundle.sources.unwrap();
@@ -372,7 +388,8 @@ mod tests {
                 source_type: Some(SourceType::General),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         BulletStore::create(
             forge.conn(),
@@ -382,7 +399,8 @@ mod tests {
             None,
             &[(src.base.id, true)],
             &["rust".into(), "axum".into()],
-        ).unwrap();
+        )
+        .unwrap();
 
         let bundle = ExportService::export_data(forge.conn(), &["bullets".into()]).unwrap();
         let bullets = bundle.bullets.unwrap();
@@ -407,7 +425,8 @@ mod tests {
         let bundle = ExportService::export_data(
             forge.conn(),
             &["sources".into(), "bullets".into(), "skills".into()],
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(bundle.sources.is_some());
         assert!(bundle.bullets.is_some());
@@ -418,10 +437,9 @@ mod tests {
     #[test]
     fn unknown_entity_silently_ignored() {
         let forge = setup();
-        let bundle = ExportService::export_data(
-            forge.conn(),
-            &["sources".into(), "nonexistent".into()],
-        ).unwrap();
+        let bundle =
+            ExportService::export_data(forge.conn(), &["sources".into(), "nonexistent".into()])
+                .unwrap();
         assert!(bundle.sources.is_some());
     }
 
@@ -447,7 +465,8 @@ mod tests {
                 source_type: Some(SourceType::General),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let dump = ExportService::dump_database(forge.conn()).unwrap();
         assert!(dump.contains("Dump Test"));

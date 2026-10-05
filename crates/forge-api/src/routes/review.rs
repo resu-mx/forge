@@ -19,16 +19,12 @@ use crate::state::SharedState;
 async fn get_pending_review(
     State(state): State<SharedState>,
 ) -> Result<Json<ApiData<ReviewQueue>>, ApiError> {
-    let result = with_conn(&state, move |conn| {
-        ReviewService::get_pending_review(conn)
-    })
-    .await?;
+    let result = with_conn(&state, move |conn| ReviewService::get_pending_review(conn)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
-    Router::new()
-        .route("/review/pending", get(get_pending_review))
+    Router::new().route("/review/pending", get(get_pending_review))
 }

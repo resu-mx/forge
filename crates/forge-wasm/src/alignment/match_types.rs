@@ -382,9 +382,11 @@ mod tests {
         let mock = MockEmbeddingNN::with(vec![(kube, 0.5)]); // below 0.7 threshold
         let resume = resume(&["kubernetes"]);
         let weights = MatchWeights::default();
-        assert!(embedding_match(&[0.0; 384], &resume, &mock, &weights, 0.7, 20)
-            .unwrap()
-            .is_none());
+        assert!(
+            embedding_match(&[0.0; 384], &resume, &mock, &weights, 0.7, 20)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -395,9 +397,11 @@ mod tests {
         let mock = MockEmbeddingNN::with(vec![(kube, 0.9)]);
         let resume = resume(&["python"]); // resume doesn't contain kubernetes
         let weights = MatchWeights::default();
-        assert!(embedding_match(&[0.0; 384], &resume, &mock, &weights, 0.7, 20)
-            .unwrap()
-            .is_none());
+        assert!(
+            embedding_match(&[0.0; 384], &resume, &mock, &weights, 0.7, 20)
+                .unwrap()
+                .is_none()
+        );
     }
 
     // ---- Co-occurrence ----

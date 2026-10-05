@@ -43,7 +43,9 @@ fn js_err<E: std::fmt::Display>(what: &str, e: E) -> JsValue {
 }
 
 fn runtime() -> Result<Rc<Runtime>, JsValue> {
-    RUNTIME.with(|r| r.borrow().clone()).ok_or_else(|| JsValue::from_str("forge runtime not started"))
+    RUNTIME
+        .with(|r| r.borrow().clone())
+        .ok_or_else(|| JsValue::from_str("forge runtime not started"))
 }
 
 /// Count applied migrations, for the status report.
@@ -60,7 +62,9 @@ fn migrations_applied(forge: &Forge) -> i64 {
 pub async fn start() -> Result<String, JsValue> {
     console_error_panic_hook::set_once();
     if RUNTIME.with(|r| r.borrow().is_some()) {
-        return Ok(json!({ "already_started": true, "version": crate::BUNDLE_VERSION }).to_string());
+        return Ok(
+            json!({ "already_started": true, "version": crate::BUNDLE_VERSION }).to_string(),
+        );
     }
 
     let t0 = js_sys::Date::now();
@@ -75,7 +79,13 @@ pub async fn start() -> Result<String, JsValue> {
 
     let state = AppState::new(forge);
     let router = app(state.clone());
-    RUNTIME.with(|r| *r.borrow_mut() = Some(Rc::new(Runtime { util, state, router })));
+    RUNTIME.with(|r| {
+        *r.borrow_mut() = Some(Rc::new(Runtime {
+            util,
+            state,
+            router,
+        }))
+    });
 
     Ok(json!({
         "version": crate::BUNDLE_VERSION,
@@ -91,24 +101,45 @@ pub async fn start() -> Result<String, JsValue> {
 ///
 /// Endpoints the Rust API does not serve yet answer 501 rather than 404.
 #[wasm_bindgen]
-pub async fn request(method: String, path: String, headers_json: String, body: Vec<u8>) -> Result<JsValue, JsValue> {
+pub async fn request(
+    method: String,
+    path: String,
+    headers_json: String,
+    body: Vec<u8>,
+) -> Result<JsValue, JsValue> {
     let rt = runtime()?;
-    let headers: Vec<(String, String)> =
-        serde_json::from_str(&headers_json).map_err(|e| js_err("headers must be [[name, value], …]", e))?;
+    let headers: Vec<(String, String)> = serde_json::from_str(&headers_json)
+        .map_err(|e| js_err("headers must be [[name, value], …]", e))?;
 
-    let response = dispatch(&rt.router, DispatchRequest { method, path, headers, body }, true)
-        .await
-        .map_err(|e| JsValue::from_str(&e))?;
+    let response = dispatch(
+        &rt.router,
+        DispatchRequest {
+            method,
+            path,
+            headers,
+            body,
+        },
+        true,
+    )
+    .await
+    .map_err(|e| JsValue::from_str(&e))?;
 
     let out = js_sys::Object::new();
-    let set = |key: &str, value: JsValue| js_sys::Reflect::set(&out, &JsValue::from_str(key), &value);
+    let set =
+        |key: &str, value: JsValue| js_sys::Reflect::set(&out, &JsValue::from_str(key), &value);
     set("status", JsValue::from_f64(f64::from(response.status)))?;
     let headers = js_sys::Array::new();
     for (k, v) in response.headers {
-        headers.push(&js_sys::Array::of2(&JsValue::from_str(&k), &JsValue::from_str(&v)));
+        headers.push(&js_sys::Array::of2(
+            &JsValue::from_str(&k),
+            &JsValue::from_str(&v),
+        ));
     }
     set("headers", headers.into())?;
-    set("body", js_sys::Uint8Array::from(response.body.as_slice()).into())?;
+    set(
+        "body",
+        js_sys::Uint8Array::from(response.body.as_slice()).into(),
+    )?;
     Ok(out.into())
 }
 
@@ -116,7 +147,9 @@ pub async fn request(method: String, path: String, headers_json: String, body: V
 #[wasm_bindgen(js_name = exportDatabase)]
 pub fn export_database() -> Result<Vec<u8>, JsValue> {
     let rt = runtime()?;
-    rt.util.export_db(DB_NAME).map_err(|e| js_err("export database", e))
+    rt.util
+        .export_db(DB_NAME)
+        .map_err(|e| js_err("export database", e))
 }
 
 /// Replace the database with a SQLite file (for example a TS `forge.db`, checkpointed
@@ -128,16 +161,24 @@ pub fn import_database(bytes: Vec<u8>) -> Result<String, JsValue> {
 
     // Reject the obvious non-databases before touching any storage.
     if bytes.len() < SQLITE_HEADER.len() || &bytes[..SQLITE_HEADER.len()] != SQLITE_HEADER {
-        return Err(JsValue::from_str("import rejected, current data kept: not a SQLite database file"));
+        return Err(JsValue::from_str(
+            "import rejected, current data kept: not a SQLite database file",
+        ));
     }
 
     // The pool will not import over an existing file, so the old one is deleted first.
     // Keep its bytes so a failure after that point can put everything back.
-    let previous = rt.util.export_db(DB_NAME).map_err(|e| js_err("import (reading current data)", e))?;
+    let previous = rt
+        .util
+        .export_db(DB_NAME)
+        .map_err(|e| js_err("import (reading current data)", e))?;
 
     // Close the live connection before its file is touched.
     let placeholder = Forge::open_memory().map_err(|e| js_err("import", e))?;
-    let old = rt.state.replace(placeholder).map_err(|e| js_err("import", e))?;
+    let old = rt
+        .state
+        .replace(placeholder)
+        .map_err(|e| js_err("import", e))?;
     drop(old);
 
     let imported = rt
@@ -146,7 +187,10 @@ pub fn import_database(bytes: Vec<u8>) -> Result<String, JsValue> {
         .and_then(|_| rt.util.import_db(DB_NAME, &bytes));
     if let Err(e) = imported {
         // Restore what was there, then report the failure.
-        let restored = rt.util.delete_db(DB_NAME).and_then(|_| rt.util.import_db(DB_NAME, &previous));
+        let restored = rt
+            .util
+            .delete_db(DB_NAME)
+            .and_then(|_| rt.util.import_db(DB_NAME, &previous));
         let reopened = Forge::open(DB_NAME);
         return match (restored, reopened) {
             (Ok(_), Ok(forge)) => {
@@ -161,7 +205,8 @@ pub fn import_database(bytes: Vec<u8>) -> Result<String, JsValue> {
         };
     }
 
-    let forge = Forge::open(DB_NAME).map_err(|e| js_err("could not open the imported database", e))?;
+    let forge =
+        Forge::open(DB_NAME).map_err(|e| js_err("could not open the imported database", e))?;
     let migrations = migrations_applied(&forge);
     let _ = rt.state.replace(forge);
     Ok(json!({ "imported_bytes": bytes.len(), "migrations": migrations }).to_string())

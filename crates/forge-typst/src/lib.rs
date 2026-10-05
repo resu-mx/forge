@@ -50,14 +50,20 @@ impl From<TypstAsLibError> for CompileError {
             }
             other => vec![other.to_string()],
         };
-        let message = details.first().cloned().unwrap_or_else(|| "Typst compilation failed".into());
+        let message = details
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "Typst compilation failed".into());
         CompileError { message, details }
     }
 }
 
 /// Compile Typst source to a laid-out document.
 pub fn compile_document(source: &str) -> Result<PagedDocument, CompileError> {
-    let engine = TypstEngine::builder().main_file(source).fonts(FONTS).build();
+    let engine = TypstEngine::builder()
+        .main_file(source)
+        .fonts(FONTS)
+        .build();
     Ok(engine.compile::<PagedDocument>().output?)
 }
 
@@ -67,7 +73,10 @@ pub fn compile_pdf(source: &str) -> Result<Vec<u8>, CompileError> {
     typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default()).map_err(|errors| {
         let details: Vec<String> = errors.iter().map(|d| d.message.to_string()).collect();
         CompileError {
-            message: details.first().cloned().unwrap_or_else(|| "PDF export failed".into()),
+            message: details
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "PDF export failed".into()),
             details,
         }
     })
@@ -113,6 +122,7 @@ mod browser {
     #[wasm_bindgen(js_name = compilePdf)]
     pub fn compile_pdf(source: &str) -> Result<Vec<u8>, JsValue> {
         console_error_panic_hook::set_once();
-        super::compile_pdf(source).map_err(|e| JsValue::from_str(&serde_json::to_string(&e).unwrap_or(e.message)))
+        super::compile_pdf(source)
+            .map_err(|e| JsValue::from_str(&serde_json::to_string(&e).unwrap_or(e.message)))
     }
 }

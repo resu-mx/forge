@@ -17,10 +17,7 @@ use super::enums::*;
 pub enum ForgeError {
     /// Entity not found by ID.
     #[error("{entity_type} not found: {id}")]
-    NotFound {
-        entity_type: String,
-        id: String,
-    },
+    NotFound { entity_type: String, id: String },
 
     /// Input validation failure.
     #[error("validation error: {message}")]
@@ -384,5 +381,10 @@ pub const ADJACENT_THRESHOLD_DEFAULT: f64 = 0.50;
 
 /// Well-known URL keys for profile URLs.
 pub const WELL_KNOWN_URL_KEYS: &[&str] = &[
-    "linkedin", "github", "gitlab", "indeed", "blog", "portfolio",
+    "linkedin",
+    "github",
+    "gitlab",
+    "indeed",
+    "blog",
+    "portfolio",
 ];

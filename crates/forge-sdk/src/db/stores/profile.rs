@@ -9,8 +9,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Address, CreateAddress, ForgeError, ProfileUrl, ProfileUrlInput, UpdateProfile, UserProfile,
-    new_id, now_iso,
+    new_id, now_iso, Address, CreateAddress, ForgeError, ProfileUrl, ProfileUrlInput,
+    UpdateProfile, UserProfile,
 };
 
 /// Data access layer for the singleton user profile and related entities
@@ -32,20 +32,22 @@ impl ProfileStore {
              FROM user_profile LIMIT 1",
         )?;
 
-        let row = stmt.query_row([], |row| {
-            Ok(ProfileRow {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                email: row.get(2)?,
-                phone: row.get(3)?,
-                address_id: row.get(4)?,
-                salary_minimum: row.get(5)?,
-                salary_target: row.get(6)?,
-                salary_stretch: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+        let row = stmt
+            .query_row([], |row| {
+                Ok(ProfileRow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    email: row.get(2)?,
+                    phone: row.get(3)?,
+                    address_id: row.get(4)?,
+                    salary_minimum: row.get(5)?,
+                    salary_target: row.get(6)?,
+                    salary_stretch: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         match row {
             None => Ok(None),
@@ -87,15 +89,25 @@ impl ProfileStore {
             tier(&patch.salary_target),
             tier(&patch.salary_stretch),
         );
-        let exceeds = |lo: Option<f64>, hi: Option<f64>| matches!((lo, hi), (Some(a), Some(b)) if a > b);
+        let exceeds =
+            |lo: Option<f64>, hi: Option<f64>| matches!((lo, hi), (Some(a), Some(b)) if a > b);
         if exceeds(min, target) {
-            return Err(invalid("salary_minimum must not exceed salary_target", "salary_minimum"));
+            return Err(invalid(
+                "salary_minimum must not exceed salary_target",
+                "salary_minimum",
+            ));
         }
         if exceeds(target, stretch) {
-            return Err(invalid("salary_target must not exceed salary_stretch", "salary_target"));
+            return Err(invalid(
+                "salary_target must not exceed salary_stretch",
+                "salary_target",
+            ));
         }
         if exceeds(min, stretch) {
-            return Err(invalid("salary_minimum must not exceed salary_stretch", "salary_minimum"));
+            return Err(invalid(
+                "salary_minimum must not exceed salary_stretch",
+                "salary_minimum",
+            ));
         }
         Ok(())
     }
@@ -105,7 +117,10 @@ impl ProfileStore {
     /// Only the fields present in `UpdateProfile` are written; absent
     /// fields are left unchanged. Creates the profile row if it doesn't
     /// exist yet (first update on a fresh DB). Returns the updated profile.
-    pub fn update_profile(conn: &Connection, patch: &UpdateProfile) -> Result<UserProfile, ForgeError> {
+    pub fn update_profile(
+        conn: &Connection,
+        patch: &UpdateProfile,
+    ) -> Result<UserProfile, ForgeError> {
         Self::validate_patch(patch)?;
 
         let current = Self::get_profile(conn)?;
@@ -202,7 +217,10 @@ impl ProfileStore {
     // ── Address ─────────────────────────────────────────────────────
 
     /// Fetch an address by ID.
-    fn get_address(conn: &Connection, address_id: Option<&str>) -> Result<Option<Address>, ForgeError> {
+    fn get_address(
+        conn: &Connection,
+        address_id: Option<&str>,
+    ) -> Result<Option<Address>, ForgeError> {
         let aid = match address_id {
             Some(id) => id,
             None => return Ok(None),
@@ -213,20 +231,22 @@ impl ProfileStore {
              FROM addresses WHERE id = ?1",
         )?;
 
-        let result = stmt.query_row(params![aid], |row| {
-            Ok(Address {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                street_1: row.get(2)?,
-                street_2: row.get(3)?,
-                city: row.get(4)?,
-                state: row.get(5)?,
-                zip: row.get(6)?,
-                country_code: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+        let result = stmt
+            .query_row(params![aid], |row| {
+                Ok(Address {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    street_1: row.get(2)?,
+                    street_2: row.get(3)?,
+                    city: row.get(4)?,
+                    state: row.get(5)?,
+                    zip: row.get(6)?,
+                    country_code: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
         Ok(result)
     }
 
@@ -255,7 +275,11 @@ impl ProfileStore {
     }
 
     /// Update an existing address by ID with the provided fields.
-    fn update_address_row(conn: &Connection, address_id: &str, input: &CreateAddress) -> Result<(), ForgeError> {
+    fn update_address_row(
+        conn: &Connection,
+        address_id: &str,
+        input: &CreateAddress,
+    ) -> Result<(), ForgeError> {
         let now = now_iso();
 
         conn.execute(
@@ -280,7 +304,10 @@ impl ProfileStore {
     // ── Profile URLs ────────────────────────────────────────────────
 
     /// List all profile URLs for the given profile, ordered by position.
-    fn list_profile_urls(conn: &Connection, profile_id: &str) -> Result<Vec<ProfileUrl>, ForgeError> {
+    fn list_profile_urls(
+        conn: &Connection,
+        profile_id: &str,
+    ) -> Result<Vec<ProfileUrl>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT id, profile_id, key, url, position, created_at
              FROM profile_urls
@@ -371,11 +398,15 @@ mod tests {
         // Delete any seeded profile row to test auto-creation
         let _ = forge.conn().execute("DELETE FROM user_profile", []);
 
-        let profile = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Adam".into()),
-            email: Some(Some("adam@example.com".into())),
-            ..Default::default()
-        }).unwrap();
+        let profile = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Adam".into()),
+                email: Some(Some("adam@example.com".into())),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(profile.name, "Adam");
         assert_eq!(profile.email, Some("adam@example.com".into()));
     }
@@ -385,15 +416,23 @@ mod tests {
         let forge = setup();
         // Ensure a profile exists
         let _ = forge.conn().execute("DELETE FROM user_profile", []);
-        ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Initial".into()),
-            ..Default::default()
-        }).unwrap();
+        ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Initial".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
-        let updated = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Updated Name".into()),
-            ..Default::default()
-        }).unwrap();
+        let updated = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Updated Name".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.name, "Updated Name");
     }
 
@@ -401,17 +440,25 @@ mod tests {
     fn update_profile_salary() {
         let forge = setup();
         let _ = forge.conn().execute("DELETE FROM user_profile", []);
-        ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Test".into()),
-            ..Default::default()
-        }).unwrap();
+        ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Test".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
-        let updated = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            salary_minimum: Some(Some(120_000.0)),
-            salary_target: Some(Some(150_000.0)),
-            salary_stretch: Some(Some(180_000.0)),
-            ..Default::default()
-        }).unwrap();
+        let updated = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                salary_minimum: Some(Some(120_000.0)),
+                salary_target: Some(Some(150_000.0)),
+                salary_stretch: Some(Some(180_000.0)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.salary_minimum, Some(120_000.0));
         assert_eq!(updated.salary_target, Some(150_000.0));
         assert_eq!(updated.salary_stretch, Some(180_000.0));
@@ -421,14 +468,24 @@ mod tests {
     fn update_profile_with_urls() {
         let forge = setup();
         let _ = forge.conn().execute("DELETE FROM user_profile", []);
-        let profile = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Test".into()),
-            urls: Some(vec![
-                ProfileUrlInput { key: "github".into(), url: "https://github.com/test".into() },
-                ProfileUrlInput { key: "linkedin".into(), url: "https://linkedin.com/in/test".into() },
-            ]),
-            ..Default::default()
-        }).unwrap();
+        let profile = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Test".into()),
+                urls: Some(vec![
+                    ProfileUrlInput {
+                        key: "github".into(),
+                        url: "https://github.com/test".into(),
+                    },
+                    ProfileUrlInput {
+                        key: "linkedin".into(),
+                        url: "https://linkedin.com/in/test".into(),
+                    },
+                ]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(profile.urls.len(), 2);
         assert_eq!(profile.urls[0].key, "github");
         assert_eq!(profile.urls[1].key, "linkedin");
@@ -440,19 +497,23 @@ mod tests {
     fn update_profile_with_address() {
         let forge = setup();
         let _ = forge.conn().execute("DELETE FROM user_profile", []);
-        let profile = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Test".into()),
-            address: Some(CreateAddress {
-                name: "Home".into(),
-                street_1: Some("123 Main St".into()),
-                street_2: None,
-                city: Some("Springfield".into()),
-                state: Some("IL".into()),
-                zip: Some("62701".into()),
-                country_code: Some("US".into()),
-            }),
-            ..Default::default()
-        }).unwrap();
+        let profile = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Test".into()),
+                address: Some(CreateAddress {
+                    name: "Home".into(),
+                    street_1: Some("123 Main St".into()),
+                    street_2: None,
+                    city: Some("Springfield".into()),
+                    state: Some("IL".into()),
+                    zip: Some("62701".into()),
+                    country_code: Some("US".into()),
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(profile.address.is_some());
         let addr = profile.address.unwrap();
         assert_eq!(addr.name, "Home");
@@ -465,23 +526,38 @@ mod tests {
         let _ = forge.conn().execute("DELETE FROM user_profile", []);
 
         // Create with initial URLs
-        let profile = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            name: Some("Test".into()),
-            urls: Some(vec![
-                ProfileUrlInput { key: "github".into(), url: "https://github.com/old".into() },
-            ]),
-            ..Default::default()
-        }).unwrap();
+        let profile = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Test".into()),
+                urls: Some(vec![ProfileUrlInput {
+                    key: "github".into(),
+                    url: "https://github.com/old".into(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(profile.urls.len(), 1);
 
         // Replace with new URLs
-        let updated = ProfileStore::update_profile(forge.conn(), &UpdateProfile {
-            urls: Some(vec![
-                ProfileUrlInput { key: "blog".into(), url: "https://blog.example.com".into() },
-                ProfileUrlInput { key: "portfolio".into(), url: "https://portfolio.example.com".into() },
-            ]),
-            ..Default::default()
-        }).unwrap();
+        let updated = ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                urls: Some(vec![
+                    ProfileUrlInput {
+                        key: "blog".into(),
+                        url: "https://blog.example.com".into(),
+                    },
+                    ProfileUrlInput {
+                        key: "portfolio".into(),
+                        url: "https://portfolio.example.com".into(),
+                    },
+                ]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.urls.len(), 2);
         assert_eq!(updated.urls[0].key, "blog");
         assert_eq!(updated.urls[1].key, "portfolio");

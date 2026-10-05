@@ -23,8 +23,8 @@
 use std::collections::HashMap;
 
 use forge_core::types::skill_graph::{
-    EdgeRow, EdgeType, NeighborhoodSubgraph, SkillGraphSnapshot, SkillGraphTraversal,
-    SkillNode, SnapshotNode,
+    EdgeRow, EdgeType, NeighborhoodSubgraph, SkillGraphSnapshot, SkillGraphTraversal, SkillNode,
+    SnapshotNode,
 };
 use forge_core::ForgeError;
 use petgraph::graph::{DiGraph, NodeIndex as PgIndex};
@@ -90,10 +90,8 @@ impl SkillGraphRuntime {
         let mut by_canonical_name = HashMap::with_capacity(nodes.len());
         let mut by_alias = HashMap::new();
         let mut by_id = HashMap::with_capacity(nodes.len());
-        let mut graph: DiGraph<NodeIndex, EdgeData> = DiGraph::with_capacity(
-            nodes.len(),
-            snapshot.header.edges.len(),
-        );
+        let mut graph: DiGraph<NodeIndex, EdgeData> =
+            DiGraph::with_capacity(nodes.len(), snapshot.header.edges.len());
         let mut pg_index = Vec::with_capacity(nodes.len());
 
         for (idx, node) in nodes.iter().enumerate() {
@@ -106,10 +104,9 @@ impl SkillGraphRuntime {
         }
 
         for edge in &snapshot.header.edges {
-            let (Some(&src_our), Some(&tgt_our)) = (
-                by_id.get(&edge.source_id),
-                by_id.get(&edge.target_id),
-            ) else {
+            let (Some(&src_our), Some(&tgt_our)) =
+                (by_id.get(&edge.source_id), by_id.get(&edge.target_id))
+            else {
                 return Err(ForgeError::Internal(format!(
                     "snapshot edge references unknown node id: {} → {}",
                     edge.source_id, edge.target_id
@@ -170,7 +167,11 @@ impl SkillGraphRuntime {
                 canonical_hits.push(i);
                 continue;
             }
-            if node.aliases.iter().any(|a| a.to_lowercase().contains(&needle)) {
+            if node
+                .aliases
+                .iter()
+                .any(|a| a.to_lowercase().contains(&needle))
+            {
                 alias_hits.push(i);
             }
         }
@@ -182,11 +183,7 @@ impl SkillGraphRuntime {
             .collect()
     }
 
-    pub fn search_by_embedding(
-        &self,
-        query: &[f32],
-        k: usize,
-    ) -> Vec<(SkillNode, f32)> {
+    pub fn search_by_embedding(&self, query: &[f32], k: usize) -> Vec<(SkillNode, f32)> {
         let Some(idx) = self.hnsw.as_ref() else {
             return Vec::new();
         };
@@ -210,10 +207,7 @@ impl SkillGraphRuntime {
 }
 
 impl SkillGraphTraversal for SkillGraphRuntime {
-    fn find_aliases(
-        &self,
-        skill_id: &str,
-    ) -> Result<Vec<SkillNode>, ForgeError> {
+    fn find_aliases(&self, skill_id: &str) -> Result<Vec<SkillNode>, ForgeError> {
         let our = self.lookup_id(skill_id)?;
         let pg = self.pg_index[our];
         let mut out = Vec::new();
@@ -232,10 +226,7 @@ impl SkillGraphTraversal for SkillGraphRuntime {
         Ok(out)
     }
 
-    fn find_children(
-        &self,
-        skill_id: &str,
-    ) -> Result<Vec<SkillNode>, ForgeError> {
+    fn find_children(&self, skill_id: &str) -> Result<Vec<SkillNode>, ForgeError> {
         let our = self.lookup_id(skill_id)?;
         let pg = self.pg_index[our];
         let mut out = Vec::new();
@@ -254,10 +245,7 @@ impl SkillGraphTraversal for SkillGraphRuntime {
         Ok(out)
     }
 
-    fn find_parents(
-        &self,
-        skill_id: &str,
-    ) -> Result<Vec<SkillNode>, ForgeError> {
+    fn find_parents(&self, skill_id: &str) -> Result<Vec<SkillNode>, ForgeError> {
         let our = self.lookup_id(skill_id)?;
         let pg = self.pg_index[our];
         let mut out = Vec::new();
@@ -404,8 +392,7 @@ impl SkillGraphTraversal for SkillGraphRuntime {
         &self,
         skill_id: &str,
         _time_window: Option<&str>,
-    ) -> Result<Vec<forge_core::types::skill_graph::CoOccurrenceStat>, ForgeError>
-    {
+    ) -> Result<Vec<forge_core::types::skill_graph::CoOccurrenceStat>, ForgeError> {
         // Verify the skill exists; ignore the result.
         let _ = self.lookup_id(skill_id)?;
         Ok(Vec::new())
@@ -451,8 +438,7 @@ fn build_hnsw_from_snapshot(
         }
         decoded.push((i, floats));
     }
-    let refs: Vec<(NodeIndex, &[f32])> =
-        decoded.iter().map(|(i, v)| (*i, v.as_slice())).collect();
+    let refs: Vec<(NodeIndex, &[f32])> = decoded.iter().map(|(i, v)| (*i, v.as_slice())).collect();
     Ok(Some(HnswIndex::build(&refs, dim)?))
 }
 
@@ -479,13 +465,10 @@ fn snapshot_node_to_skill_node(snap: &SnapshotNode) -> SkillNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_core::types::skill_graph::{NodeSource, SnapshotEdge, SkillGraphSnapshot, EdgeType};
+    use forge_core::types::skill_graph::{EdgeType, NodeSource, SkillGraphSnapshot, SnapshotEdge};
 
     /// Build snapshot bytes from explicit (nodes, edges).
-    fn snapshot_bytes_from(
-        nodes: Vec<SnapshotNode>,
-        edges: Vec<SnapshotEdge>,
-    ) -> Vec<u8> {
+    fn snapshot_bytes_from(nodes: Vec<SnapshotNode>, edges: Vec<SnapshotEdge>) -> Vec<u8> {
         SkillGraphSnapshot::structural_only(
             "test-snap",
             "2026-04-28T00:00:00Z",
@@ -614,15 +597,18 @@ mod tests {
             snap_node("c", "Unrelated", &[]),
         ];
         let edges = vec![snap_edge("a", "b", EdgeType::AliasOf)];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         let from_a = runtime.find_aliases("a").unwrap();
         assert_eq!(from_a.len(), 1, "a should have one alias (b)");
         assert_eq!(from_a[0].id, "b");
 
         let from_b = runtime.find_aliases("b").unwrap();
-        assert_eq!(from_b.len(), 1, "b should also resolve back to a (bidirectional)");
+        assert_eq!(
+            from_b.len(),
+            1,
+            "b should also resolve back to a (bidirectional)"
+        );
         assert_eq!(from_b[0].id, "a");
 
         let from_c = runtime.find_aliases("c").unwrap();
@@ -642,8 +628,7 @@ mod tests {
             snap_edge("p", "c1", EdgeType::ParentOf),
             snap_edge("p", "c2", EdgeType::ParentOf),
         ];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         let mut children = runtime.find_children("p").unwrap();
         children.sort_by(|a, b| a.id.cmp(&b.id));
@@ -659,11 +644,14 @@ mod tests {
         // Storage may emit `child-of` instead of `parent-of`; cover both.
         let nodes = vec![snap_node("p", "Parent", &[]), snap_node("c", "Child", &[])];
         let edges = vec![snap_edge("c", "p", EdgeType::ChildOf)];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         let children = runtime.find_children("p").unwrap();
-        assert_eq!(children.len(), 1, "incoming child-of must surface as a child of p");
+        assert_eq!(
+            children.len(),
+            1,
+            "incoming child-of must surface as a child of p"
+        );
         assert_eq!(children[0].id, "c");
     }
 
@@ -678,8 +666,7 @@ mod tests {
             snap_edge("p", "c1", EdgeType::ParentOf),
             snap_edge("p", "c2", EdgeType::ParentOf),
         ];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         let parents = runtime.find_parents("c1").unwrap();
         assert_eq!(parents.len(), 1);
@@ -704,8 +691,7 @@ mod tests {
             // Incoming to a — must NOT show up (find_related is outgoing-only).
             snap_edge("b", "a", EdgeType::RelatedTo),
         ];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         let mut rel_to = runtime.find_related("a", &[EdgeType::RelatedTo]).unwrap();
         rel_to.sort_by(|x, y| x.skill.id.cmp(&y.skill.id));
@@ -722,7 +708,10 @@ mod tests {
 
         // Empty filter → no results (explicit).
         let none = runtime.find_related("a", &[]).unwrap();
-        assert!(none.is_empty(), "empty edge_types filter must return no edges");
+        assert!(
+            none.is_empty(),
+            "empty edge_types filter must return no edges"
+        );
     }
 
     /// Validate the bead's three load/search latency budgets against a
@@ -755,11 +744,13 @@ mod tests {
             .collect();
         // Sparse edges (~3 per node) so petgraph build is realistic.
         let edges: Vec<SnapshotEdge> = (0..3 * N)
-            .map(|i| snap_edge(
-                &format!("{:036}", i % N),
-                &format!("{:036}", (i * 7 + 1) % N),
-                EdgeType::CoOccurs,
-            ))
+            .map(|i| {
+                snap_edge(
+                    &format!("{:036}", i % N),
+                    &format!("{:036}", (i * 7 + 1) % N),
+                    EdgeType::CoOccurs,
+                )
+            })
             .collect();
         // Synthetic embeddings: each node gets a unit vector with ~one
         // non-zero coordinate, so search returns predictable results without
@@ -777,10 +768,7 @@ mod tests {
         let runtime = SkillGraphRuntime::from_snapshot(&bytes).expect("load");
         let load_ms = t0.elapsed().as_millis();
         #[cfg(not(debug_assertions))]
-        assert!(
-            load_ms < 500,
-            "AC: load < 500ms; observed {load_ms}ms"
-        );
+        assert!(load_ms < 500, "AC: load < 500ms; observed {load_ms}ms");
 
         // HNSW search.
         let mut q = vec![0.0_f32; DIM as usize];
@@ -810,9 +798,7 @@ mod tests {
         );
 
         // Echo numbers — picked up in the session-end memory.
-        eprintln!(
-            "[forge-afyg perf] load={load_ms}ms search={hnsw_ms}ms autocomplete={auto_ms}ms"
-        );
+        eprintln!("[forge-afyg perf] load={load_ms}ms search={hnsw_ms}ms autocomplete={auto_ms}ms");
     }
 
     #[test]
@@ -822,16 +808,22 @@ mod tests {
             snap_node("b", "Python", &["py"]),
             snap_node("c", "Programming", &[]),
         ];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, Vec::new()))
-            .unwrap();
+        let runtime =
+            SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, Vec::new())).unwrap();
 
         // Canonical-name substring (case-insensitive).
         let r1 = runtime.search_skills("rust", 5);
-        assert!(r1.iter().any(|n| n.id == "a"), "expected to find 'Rust' for query 'rust'");
+        assert!(
+            r1.iter().any(|n| n.id == "a"),
+            "expected to find 'Rust' for query 'rust'"
+        );
 
         // Alias substring.
         let r2 = runtime.search_skills("py", 5);
-        assert!(r2.iter().any(|n| n.id == "b"), "expected to find 'Python' via alias 'py'");
+        assert!(
+            r2.iter().any(|n| n.id == "b"),
+            "expected to find 'Python' via alias 'py'"
+        );
 
         // Top-k cap.
         let r3 = runtime.search_skills("p", 1);
@@ -889,11 +881,7 @@ mod tests {
             snap_node("c", "Python", &[]),
         ];
         // 2-D embeddings, deliberately distinguishable.
-        let embeddings = vec![
-            vec![1.0_f32, 0.0],
-            vec![0.0_f32, 1.0],
-            vec![0.7_f32, 0.7],
-        ];
+        let embeddings = vec![vec![1.0_f32, 0.0], vec![0.0_f32, 1.0], vec![0.7_f32, 0.7]];
         let bytes = snapshot_bytes_with_embeddings(nodes, Vec::new(), embeddings, 2);
         let runtime = SkillGraphRuntime::from_snapshot(&bytes).expect("load");
 
@@ -925,8 +913,7 @@ mod tests {
             snap_edge("b", "c", EdgeType::RelatedTo),
             snap_edge("c", "d", EdgeType::RelatedTo),
         ];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         // 0 hops from a → just a, no edges.
         let r0 = runtime.n_hop_neighbors("a", 0, None).unwrap();
@@ -961,8 +948,7 @@ mod tests {
             // c is reachable from a only via Prerequisite edge.
             snap_edge("b", "c", EdgeType::Prerequisite),
         ];
-        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges))
-            .unwrap();
+        let runtime = SkillGraphRuntime::from_snapshot(&snapshot_bytes_from(nodes, edges)).unwrap();
 
         // Filter to RelatedTo only — c is not reachable.
         let r = runtime
@@ -980,7 +966,10 @@ mod tests {
         // empty list for every known skill (and NotFound for unknown).
         let bytes = sample_snapshot_bytes();
         let runtime = SkillGraphRuntime::from_snapshot(&bytes).unwrap();
-        assert!(runtime.co_occurrence_stats("node-a", None).unwrap().is_empty());
+        assert!(runtime
+            .co_occurrence_stats("node-a", None)
+            .unwrap()
+            .is_empty());
         assert!(runtime
             .co_occurrence_stats("node-a", Some("2026-Q1"))
             .unwrap()
@@ -991,7 +980,9 @@ mod tests {
     fn co_occurrence_stats_unknown_id_returns_not_found() {
         let bytes = sample_snapshot_bytes();
         let runtime = SkillGraphRuntime::from_snapshot(&bytes).unwrap();
-        let err = runtime.co_occurrence_stats("nonexistent", None).unwrap_err();
+        let err = runtime
+            .co_occurrence_stats("nonexistent", None)
+            .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not found") || msg.contains("nonexistent"));
     }

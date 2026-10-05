@@ -154,10 +154,13 @@ mod tests {
         let (source_id, bullet_id, _) = create_chain(forge.conn());
 
         // Mutate source description
-        forge.conn().execute(
-            "UPDATE sources SET description = 'Changed description' WHERE id = ?1",
-            params![source_id],
-        ).unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE sources SET description = 'Changed description' WHERE id = ?1",
+                params![source_id],
+            )
+            .unwrap();
 
         let drifted = IntegrityService::get_drifted_entities(forge.conn()).unwrap();
         assert_eq!(drifted.len(), 1);
@@ -173,10 +176,13 @@ mod tests {
         let (_, bullet_id, perspective_id) = create_chain(forge.conn());
 
         // Mutate bullet content
-        forge.conn().execute(
-            "UPDATE bullets SET content = 'Changed bullet' WHERE id = ?1",
-            params![bullet_id],
-        ).unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE bullets SET content = 'Changed bullet' WHERE id = ?1",
+                params![bullet_id],
+            )
+            .unwrap();
 
         let drifted = IntegrityService::get_drifted_entities(forge.conn()).unwrap();
         assert_eq!(drifted.len(), 1);
@@ -190,14 +196,20 @@ mod tests {
         let (source_id, bullet_id, _) = create_chain(forge.conn());
 
         // Mutate both source and bullet
-        forge.conn().execute(
-            "UPDATE sources SET description = 'Changed source' WHERE id = ?1",
-            params![source_id],
-        ).unwrap();
-        forge.conn().execute(
-            "UPDATE bullets SET content = 'Changed bullet' WHERE id = ?1",
-            params![bullet_id],
-        ).unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE sources SET description = 'Changed source' WHERE id = ?1",
+                params![source_id],
+            )
+            .unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE bullets SET content = 'Changed bullet' WHERE id = ?1",
+                params![bullet_id],
+            )
+            .unwrap();
 
         let drifted = IntegrityService::get_drifted_entities(forge.conn()).unwrap();
         assert_eq!(drifted.len(), 2);

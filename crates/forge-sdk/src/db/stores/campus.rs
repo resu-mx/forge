@@ -4,8 +4,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    CreateOrgAlias, CreateOrgLocation, ForgeError, LocationModality, OrgAlias,
-    OrgLocation, UpdateOrgLocation, new_id, now_iso,
+    new_id, now_iso, CreateOrgAlias, CreateOrgLocation, ForgeError, LocationModality, OrgAlias,
+    OrgLocation, UpdateOrgLocation,
 };
 
 /// Data access for `org_locations` and `org_aliases` tables.
@@ -15,7 +15,10 @@ impl CampusStore {
     // ── Org Locations ────────────────────────────────────────────────
 
     /// Create a new org location.
-    pub fn create_location(conn: &Connection, input: &CreateOrgLocation) -> Result<OrgLocation, ForgeError> {
+    pub fn create_location(
+        conn: &Connection,
+        input: &CreateOrgLocation,
+    ) -> Result<OrgLocation, ForgeError> {
         let id = new_id();
         let now = now_iso();
         let modality = input.modality.unwrap_or(LocationModality::InPerson);
@@ -55,9 +58,15 @@ impl CampusStore {
     }
 
     /// Partially update an org location.
-    pub fn update_location(conn: &Connection, id: &str, input: &UpdateOrgLocation) -> Result<OrgLocation, ForgeError> {
-        Self::get_location(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "org_location".into(), id: id.into() })?;
+    pub fn update_location(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateOrgLocation,
+    ) -> Result<OrgLocation, ForgeError> {
+        Self::get_location(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "org_location".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -101,7 +110,10 @@ impl CampusStore {
     pub fn delete_location(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM org_locations WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "org_location".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "org_location".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -109,7 +121,11 @@ impl CampusStore {
     // ── Org Aliases ──────────────────────────────────────────────────
 
     /// Create a new org alias.
-    pub fn create_alias(conn: &Connection, org_id: &str, input: &CreateOrgAlias) -> Result<OrgAlias, ForgeError> {
+    pub fn create_alias(
+        conn: &Connection,
+        org_id: &str,
+        input: &CreateOrgAlias,
+    ) -> Result<OrgAlias, ForgeError> {
         let trimmed = input.alias.trim();
         if trimmed.is_empty() {
             return Err(ForgeError::Validation {
@@ -164,7 +180,10 @@ impl CampusStore {
     pub fn delete_alias(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM org_aliases WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "org_alias".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "org_alias".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -176,7 +195,8 @@ impl CampusStore {
             id: row.get(0)?,
             organization_id: row.get(1)?,
             name: row.get(2)?,
-            modality: row.get::<_, String>(3)?
+            modality: row
+                .get::<_, String>(3)?
                 .parse()
                 .unwrap_or(LocationModality::InPerson),
             address_id: row.get(4)?,
@@ -210,19 +230,25 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Acme Corp");
 
-        let loc = CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id.clone(),
-            name: "HQ".into(),
-            modality: Some(LocationModality::InPerson),
-            address_id: None,
-            is_headquarters: Some(true),
-        }).unwrap();
+        let loc = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id.clone(),
+                name: "HQ".into(),
+                modality: Some(LocationModality::InPerson),
+                address_id: None,
+                is_headquarters: Some(true),
+            },
+        )
+        .unwrap();
 
         assert_eq!(loc.name, "HQ");
         assert_eq!(loc.organization_id, org_id);
         assert_eq!(loc.is_headquarters, 1);
 
-        let fetched = CampusStore::get_location(forge.conn(), &loc.id).unwrap().unwrap();
+        let fetched = CampusStore::get_location(forge.conn(), &loc.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, loc.id);
     }
 
@@ -238,20 +264,28 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Big Co");
 
-        CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id.clone(),
-            name: "Office A".into(),
-            modality: None,
-            address_id: None,
-            is_headquarters: None,
-        }).unwrap();
-        CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id.clone(),
-            name: "Office B".into(),
-            modality: None,
-            address_id: None,
-            is_headquarters: None,
-        }).unwrap();
+        CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id.clone(),
+                name: "Office A".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        )
+        .unwrap();
+        CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id.clone(),
+                name: "Office B".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        )
+        .unwrap();
 
         let locations = CampusStore::list_by_org(forge.conn(), &org_id).unwrap();
         assert_eq!(locations.len(), 2);
@@ -262,20 +296,29 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Update Co");
 
-        let loc = CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id,
-            name: "Old Name".into(),
-            modality: None,
-            address_id: None,
-            is_headquarters: None,
-        }).unwrap();
+        let loc = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id,
+                name: "Old Name".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        )
+        .unwrap();
 
-        let updated = CampusStore::update_location(forge.conn(), &loc.id, &UpdateOrgLocation {
-            name: Some("New Name".into()),
-            modality: Some(LocationModality::Remote),
-            is_headquarters: Some(true),
-            ..Default::default()
-        }).unwrap();
+        let updated = CampusStore::update_location(
+            forge.conn(),
+            &loc.id,
+            &UpdateOrgLocation {
+                name: Some("New Name".into()),
+                modality: Some(LocationModality::Remote),
+                is_headquarters: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         assert_eq!(updated.name, "New Name");
         assert_eq!(updated.modality, LocationModality::Remote);
@@ -285,7 +328,11 @@ mod tests {
     #[test]
     fn update_missing_returns_not_found() {
         let forge = setup();
-        let result = CampusStore::update_location(forge.conn(), "nonexistent", &UpdateOrgLocation::default());
+        let result = CampusStore::update_location(
+            forge.conn(),
+            "nonexistent",
+            &UpdateOrgLocation::default(),
+        );
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
     }
 
@@ -294,16 +341,22 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Delete Co");
 
-        let loc = CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id,
-            name: "Gone".into(),
-            modality: None,
-            address_id: None,
-            is_headquarters: None,
-        }).unwrap();
+        let loc = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id,
+                name: "Gone".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        )
+        .unwrap();
 
         CampusStore::delete_location(forge.conn(), &loc.id).unwrap();
-        assert!(CampusStore::get_location(forge.conn(), &loc.id).unwrap().is_none());
+        assert!(CampusStore::get_location(forge.conn(), &loc.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -318,15 +371,25 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Western Governors University");
 
-        let alias = CampusStore::create_alias(forge.conn(), &org_id, &CreateOrgAlias {
-            alias: "WGU".into(),
-        }).unwrap();
+        let alias = CampusStore::create_alias(
+            forge.conn(),
+            &org_id,
+            &CreateOrgAlias {
+                alias: "WGU".into(),
+            },
+        )
+        .unwrap();
         assert_eq!(alias.alias, "WGU");
         assert_eq!(alias.organization_id, org_id);
 
-        CampusStore::create_alias(forge.conn(), &org_id, &CreateOrgAlias {
-            alias: "Western Gov".into(),
-        }).unwrap();
+        CampusStore::create_alias(
+            forge.conn(),
+            &org_id,
+            &CreateOrgAlias {
+                alias: "Western Gov".into(),
+            },
+        )
+        .unwrap();
 
         let aliases = CampusStore::list_aliases(forge.conn(), &org_id).unwrap();
         assert_eq!(aliases.len(), 2);
@@ -336,9 +399,13 @@ mod tests {
     fn create_alias_rejects_empty() {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Empty Alias Co");
-        let result = CampusStore::create_alias(forge.conn(), &org_id, &CreateOrgAlias {
-            alias: "   ".into(),
-        });
+        let result = CampusStore::create_alias(
+            forge.conn(),
+            &org_id,
+            &CreateOrgAlias {
+                alias: "   ".into(),
+            },
+        );
         assert!(matches!(result, Err(ForgeError::Validation { .. })));
     }
 
@@ -347,13 +414,22 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Dup Alias Co");
 
-        CampusStore::create_alias(forge.conn(), &org_id, &CreateOrgAlias {
-            alias: "USAF".into(),
-        }).unwrap();
+        CampusStore::create_alias(
+            forge.conn(),
+            &org_id,
+            &CreateOrgAlias {
+                alias: "USAF".into(),
+            },
+        )
+        .unwrap();
 
-        let result = CampusStore::create_alias(forge.conn(), &org_id, &CreateOrgAlias {
-            alias: "USAF".into(),
-        });
+        let result = CampusStore::create_alias(
+            forge.conn(),
+            &org_id,
+            &CreateOrgAlias {
+                alias: "USAF".into(),
+            },
+        );
         assert!(matches!(result, Err(ForgeError::Validation { .. })));
     }
 
@@ -362,9 +438,14 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Del Alias Co");
 
-        let alias = CampusStore::create_alias(forge.conn(), &org_id, &CreateOrgAlias {
-            alias: "DAC".into(),
-        }).unwrap();
+        let alias = CampusStore::create_alias(
+            forge.conn(),
+            &org_id,
+            &CreateOrgAlias {
+                alias: "DAC".into(),
+            },
+        )
+        .unwrap();
 
         CampusStore::delete_alias(forge.conn(), &alias.id).unwrap();
         let aliases = CampusStore::list_aliases(forge.conn(), &org_id).unwrap();

@@ -14,7 +14,12 @@ fn router() -> Router {
     app(AppState::new(Forge::open_memory().unwrap()))
 }
 
-async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+async fn call(
+    router: &Router,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let mut req = Request::builder().method(method).uri(path);
     let body = match body {
         Some(v) => {
@@ -24,7 +29,11 @@ async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) ->
         None => Body::empty(),
     };
     let (status, _, text) = raw_full(router, req.body(body).unwrap()).await;
-    let value = if text.is_empty() { Value::Null } else { serde_json::from_str(&text).unwrap_or(Value::Null) };
+    let value = if text.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text).unwrap_or(Value::Null)
+    };
     (status, value)
 }
 
@@ -32,8 +41,14 @@ async fn raw_full(router: &Router, req: Request<Body>) -> (StatusCode, HeaderMap
     let resp = router.clone().oneshot(req).await.unwrap();
     let status = resp.status();
     let headers = resp.headers().clone();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
-    (status, headers, String::from_utf8_lossy(&bytes).into_owned())
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (
+        status,
+        headers,
+        String::from_utf8_lossy(&bytes).into_owned(),
+    )
 }
 
 /// A resume created from the first built-in template; returns (resume id, section count).
@@ -46,7 +61,10 @@ async fn resume_from_template(r: &Router) -> (String, usize) {
     });
     let (status, created) = call(r, "POST", "/api/resumes", Some(body)).await;
     assert_eq!(status, StatusCode::CREATED);
-    (created["data"]["id"].as_str().unwrap().to_string(), template["sections"].as_array().unwrap().len())
+    (
+        created["data"]["id"].as_str().unwrap().to_string(),
+        template["sections"].as_array().unwrap().len(),
+    )
 }
 
 #[tokio::test]
@@ -107,19 +125,31 @@ async fn resume_export_formats_and_errors() {
 
     let (status, headers, body) = raw_full(&r, get("markdown")).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(headers["content-type"].to_str().unwrap().starts_with("text/markdown"));
+    assert!(headers["content-type"]
+        .to_str()
+        .unwrap()
+        .starts_with("text/markdown"));
     let disposition = headers["content-disposition"].to_str().unwrap();
-    assert!(disposition.starts_with("attachment; filename=\"my-r-sum-"), "{disposition}");
+    assert!(
+        disposition.starts_with("attachment; filename=\"my-r-sum-"),
+        "{disposition}"
+    );
     assert!(disposition.ends_with(".md\""), "{disposition}");
     assert!(!body.is_empty());
 
     let (status, headers, _) = raw_full(&r, get("latex")).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(headers["content-type"].to_str().unwrap().starts_with("application/x-latex"));
+    assert!(headers["content-type"]
+        .to_str()
+        .unwrap()
+        .starts_with("application/x-latex"));
 
     let (status, headers, body) = raw_full(&r, get("json")).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(headers["content-disposition"].to_str().unwrap().contains(".json"));
+    assert!(headers["content-disposition"]
+        .to_str()
+        .unwrap()
+        .contains(".json"));
     let doc: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(doc["data"]["resume_id"], id.as_str());
 
@@ -143,9 +173,19 @@ async fn resume_export_formats_and_errors() {
     // PDFs compile in-process only when the `pdf` feature is on (the native server); otherwise
     // the build answers 501 and points at ?format=typst.
     let (status, _, _) = raw_full(&r, get("pdf")).await;
-    assert_eq!(status, if cfg!(feature = "pdf") { StatusCode::OK } else { StatusCode::NOT_IMPLEMENTED });
+    assert_eq!(
+        status,
+        if cfg!(feature = "pdf") {
+            StatusCode::OK
+        } else {
+            StatusCode::NOT_IMPLEMENTED
+        }
+    );
 
-    let missing = Request::builder().uri("/api/export/resume/nope?format=json").body(Body::empty()).unwrap();
+    let missing = Request::builder()
+        .uri("/api/export/resume/nope?format=json")
+        .body(Body::empty())
+        .unwrap();
     let (status, _, _) = raw_full(&r, missing).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -154,44 +194,92 @@ async fn resume_export_formats_and_errors() {
 async fn entry_reorder_is_a_patch_that_answers_data_null() {
     let r = router();
     let (id, _) = resume_from_template(&r).await;
-    let (status, body) =
-        call(&r, "PATCH", &format!("/api/resumes/{id}/entries/reorder"), Some(json!({"entries": []}))).await;
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/resumes/{id}/entries/reorder"),
+        Some(json!({"entries": []})),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"data": null}));
     // The old method is gone.
-    let (status, _) =
-        call(&r, "POST", &format!("/api/resumes/{id}/entries/reorder"), Some(json!({"entries": []}))).await;
+    let (status, _) = call(
+        &r,
+        "POST",
+        &format!("/api/resumes/{id}/entries/reorder"),
+        Some(json!({"entries": []})),
+    )
+    .await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
 }
 
 #[tokio::test]
 async fn note_references_round_trip() {
     let r = router();
-    let (_, note) = call(&r, "POST", "/api/notes", Some(json!({"title": "N", "content": "c"}))).await;
+    let (_, note) = call(
+        &r,
+        "POST",
+        "/api/notes",
+        Some(json!({"title": "N", "content": "c"})),
+    )
+    .await;
     let note_id = note["data"]["id"].as_str().unwrap().to_string();
-    let (_, src) = call(&r, "POST", "/api/sources", Some(json!({"title": "T", "description": "D"}))).await;
+    let (_, src) = call(
+        &r,
+        "POST",
+        "/api/sources",
+        Some(json!({"title": "T", "description": "D"})),
+    )
+    .await;
     let source_id = src["data"]["id"].as_str().unwrap().to_string();
 
     let body = json!({"entity_type": "source", "entity_id": source_id});
-    let (status, created) = call(&r, "POST", &format!("/api/notes/{note_id}/references"), Some(body)).await;
-    assert_eq!((status, created), (StatusCode::CREATED, json!({"data": null})));
+    let (status, created) = call(
+        &r,
+        "POST",
+        &format!("/api/notes/{note_id}/references"),
+        Some(body),
+    )
+    .await;
+    assert_eq!(
+        (status, created),
+        (StatusCode::CREATED, json!({"data": null}))
+    );
 
     let (_, got) = call(&r, "GET", &format!("/api/notes/{note_id}"), None).await;
     let refs = got["data"]["references"].as_array().unwrap();
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0]["entity_type"], "source");
 
-    let (status, by_entity) = call(&r, "GET", &format!("/api/notes/by-entity/source/{source_id}"), None).await;
+    let (status, by_entity) = call(
+        &r,
+        "GET",
+        &format!("/api/notes/by-entity/source/{source_id}"),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(by_entity["data"].as_array().unwrap().len(), 1);
 
     let bad = json!({"entity_type": "nonsense", "entity_id": "x"});
-    let (status, err) = call(&r, "POST", &format!("/api/notes/{note_id}/references"), Some(bad)).await;
+    let (status, err) = call(
+        &r,
+        "POST",
+        &format!("/api/notes/{note_id}/references"),
+        Some(bad),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
 
-    let (status, _) =
-        call(&r, "DELETE", &format!("/api/notes/{note_id}/references/source/{source_id}"), None).await;
+    let (status, _) = call(
+        &r,
+        "DELETE",
+        &format!("/api/notes/{note_id}/references/source/{source_id}"),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
 
@@ -205,7 +293,10 @@ async fn source_extension_uses_the_typed_wire_key() {
     let (status, created) = call(&r, "POST", "/api/sources", Some(body)).await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(created["data"]["education"]["degree_level"], "doctoral");
-    assert!(created["data"].get("extension").is_none(), "renamed to the typed key");
+    assert!(
+        created["data"].get("extension").is_none(),
+        "renamed to the typed key"
+    );
 
     let id = created["data"]["id"].as_str().unwrap();
     let (_, patched) = call(
@@ -215,7 +306,14 @@ async fn source_extension_uses_the_typed_wire_key() {
         Some(json!({"education": {"location": null, "gpa": "3.9"}})),
     )
     .await;
-    assert_eq!(patched["data"]["education"]["location"], Value::Null, "null clears the column");
+    assert_eq!(
+        patched["data"]["education"]["location"],
+        Value::Null,
+        "null clears the column"
+    );
     assert_eq!(patched["data"]["education"]["gpa"], "3.9");
-    assert_eq!(patched["data"]["education"]["degree_level"], "doctoral", "absent fields are untouched");
+    assert_eq!(
+        patched["data"]["education"]["degree_level"], "doctoral",
+        "absent fields are untouched"
+    );
 }

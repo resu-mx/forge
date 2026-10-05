@@ -7,7 +7,8 @@ use super::RenderedPrompt;
 
 pub const TEMPLATE_VERSION: &str = "source-to-bullet-v1";
 
-const SYSTEM: &str = "You are a resume content assistant. Given a source description of work performed,
+const SYSTEM: &str =
+    "You are a resume content assistant. Given a source description of work performed,
 decompose it into factual bullet points. Each bullet must:
 - State only facts present in the source description
 - Include specific technologies, tools, or methods mentioned
@@ -48,7 +49,9 @@ mod tests {
     #[test]
     fn render_includes_description() {
         let prompt = render("Led a 4-person team building cloud forensics tools");
-        assert!(prompt.user.contains("Led a 4-person team building cloud forensics tools"));
+        assert!(prompt
+            .user
+            .contains("Led a 4-person team building cloud forensics tools"));
     }
 
     #[test]

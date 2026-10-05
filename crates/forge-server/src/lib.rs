@@ -45,13 +45,12 @@ impl Config {
             .ok_or("FORGE_DB_PATH is required. Set it to a path for the SQLite database file.")?;
         let port = match get("FORGE_PORT") {
             None => 3000,
-            Some(raw) => raw
-                .parse::<u16>()
-                .ok()
-                .filter(|p| *p >= 1)
-                .ok_or_else(|| format!("FORGE_PORT must be a valid port number (1-65535), got: {raw}"))?,
+            Some(raw) => raw.parse::<u16>().ok().filter(|p| *p >= 1).ok_or_else(|| {
+                format!("FORGE_PORT must be a valid port number (1-65535), got: {raw}")
+            })?,
         };
-        let production = get("FORGE_ENV").or_else(|| get("NODE_ENV")).as_deref() == Some("production");
+        let production =
+            get("FORGE_ENV").or_else(|| get("NODE_ENV")).as_deref() == Some("production");
         Ok(Self {
             port,
             host: get("FORGE_HOST").unwrap_or_else(|| "127.0.0.1".into()),
@@ -83,7 +82,9 @@ pub fn build_app(forge: Forge, production: bool) -> Router {
 /// Clients should not care, but the contract tests do, so match it.
 async fn preflight_no_content(req: Request<Body>, next: Next) -> Response<Body> {
     let is_preflight = req.method() == Method::OPTIONS
-        && req.headers().contains_key(header::ACCESS_CONTROL_REQUEST_METHOD);
+        && req
+            .headers()
+            .contains_key(header::ACCESS_CONTROL_REQUEST_METHOD);
     let mut resp = next.run(req).await;
     if is_preflight && resp.status() == StatusCode::OK {
         *resp.status_mut() = StatusCode::NO_CONTENT;
@@ -112,7 +113,9 @@ fn cors(production: bool) -> CorsLayer {
 
 /// Development: the web UI and browser-extension origins only.
 fn dev_origin_allowed(origin: &HeaderValue) -> bool {
-    let Ok(origin) = origin.to_str() else { return false };
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
     matches!(origin, "http://localhost:5173" | "http://127.0.0.1:5173")
         || origin.starts_with("chrome-extension://")
         || origin.starts_with("moz-extension://")
@@ -132,7 +135,11 @@ fn panic_response(_: Box<dyn Any + Send + 'static>) -> Response<Body> {
 
 /// Open the database (running migrations), clear expired derivation locks, and serve.
 pub async fn run(config: Config) -> anyhow::Result<()> {
-    if let Some(dir) = config.db_path.parent().filter(|d| !d.as_os_str().is_empty()) {
+    if let Some(dir) = config
+        .db_path
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(dir)?;
     }
     let path = config
@@ -165,8 +172,10 @@ mod tests {
     use std::collections::HashMap;
 
     fn cfg(vars: &[(&str, &str)]) -> Result<Config, String> {
-        let map: HashMap<String, String> =
-            vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let map: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         Config::from_lookup(|k| map.get(k).cloned())
     }
 
@@ -179,22 +188,45 @@ mod tests {
     #[test]
     fn defaults() {
         let c = cfg(&[("FORGE_DB_PATH", "/tmp/x.db")]).unwrap();
-        assert_eq!((c.port, c.host.as_str(), c.production), (3000, "127.0.0.1", false));
+        assert_eq!(
+            (c.port, c.host.as_str(), c.production),
+            (3000, "127.0.0.1", false)
+        );
     }
 
     #[test]
     fn port_is_validated() {
         for bad in ["0", "70000", "abc", "-1"] {
-            assert!(cfg(&[("FORGE_DB_PATH", "x"), ("FORGE_PORT", bad)]).is_err(), "{bad}");
+            assert!(
+                cfg(&[("FORGE_DB_PATH", "x"), ("FORGE_PORT", bad)]).is_err(),
+                "{bad}"
+            );
         }
-        assert_eq!(cfg(&[("FORGE_DB_PATH", "x"), ("FORGE_PORT", "8080")]).unwrap().port, 8080);
+        assert_eq!(
+            cfg(&[("FORGE_DB_PATH", "x"), ("FORGE_PORT", "8080")])
+                .unwrap()
+                .port,
+            8080
+        );
     }
 
     #[test]
     fn production_flag_from_either_variable() {
-        assert!(cfg(&[("FORGE_DB_PATH", "x"), ("FORGE_ENV", "production")]).unwrap().production);
-        assert!(cfg(&[("FORGE_DB_PATH", "x"), ("NODE_ENV", "production")]).unwrap().production);
-        assert!(!cfg(&[("FORGE_DB_PATH", "x"), ("NODE_ENV", "development")]).unwrap().production);
+        assert!(
+            cfg(&[("FORGE_DB_PATH", "x"), ("FORGE_ENV", "production")])
+                .unwrap()
+                .production
+        );
+        assert!(
+            cfg(&[("FORGE_DB_PATH", "x"), ("NODE_ENV", "production")])
+                .unwrap()
+                .production
+        );
+        assert!(
+            !cfg(&[("FORGE_DB_PATH", "x"), ("NODE_ENV", "development")])
+                .unwrap()
+                .production
+        );
     }
 
     #[test]

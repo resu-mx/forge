@@ -30,8 +30,7 @@ async fn create_credential(
     State(state): State<SharedState>,
     Json(input): Json<CreateCredential>,
 ) -> Result<Created<Credential>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| CredentialStore::create(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| CredentialStore::create(conn, &input)).await?;
     Ok(Created(result))
 }
 
@@ -65,8 +64,10 @@ async fn update_credential(
     Path(id): Path<String>,
     Json(input): Json<UpdateCredential>,
 ) -> Result<Json<ApiData<Credential>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| CredentialStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CredentialStore::update(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -82,7 +83,10 @@ async fn delete_credential(
 
 pub fn router() -> Router<SharedState> {
     Router::new()
-        .route("/credentials", post(create_credential).get(list_credentials))
+        .route(
+            "/credentials",
+            post(create_credential).get(list_credentials),
+        )
         .route(
             "/credentials/{id}",
             get(get_credential)

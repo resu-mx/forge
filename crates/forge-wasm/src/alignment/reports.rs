@@ -41,10 +41,7 @@ pub fn build_gap(
 }
 
 /// Build a strength report — resume skills with NO JD coverage (transferable surplus).
-pub fn build_strength(
-    resume: &ResumeAlignmentInput,
-    per_skill: &[SkillScore],
-) -> StrengthReport {
+pub fn build_strength(resume: &ResumeAlignmentInput, per_skill: &[SkillScore]) -> StrengthReport {
     let scored: std::collections::HashSet<&str> =
         per_skill.iter().map(|s| s.skill_id.as_str()).collect();
     let entries = resume

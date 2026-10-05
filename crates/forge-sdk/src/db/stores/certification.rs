@@ -4,8 +4,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Certification, CreateCertification, ForgeError, Pagination, Skill, SkillCategory,
-    UpdateCertification, new_id, now_iso,
+    new_id, now_iso, Certification, CreateCertification, ForgeError, Pagination, Skill,
+    SkillCategory, UpdateCertification,
 };
 
 /// Data access for the `certifications` and `certification_skills` tables.
@@ -15,7 +15,10 @@ impl CertificationStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a new certification row.
-    pub fn create(conn: &Connection, input: &CreateCertification) -> Result<Certification, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreateCertification,
+    ) -> Result<Certification, ForgeError> {
         let id = new_id();
         let now = now_iso();
 
@@ -52,7 +55,9 @@ impl CertificationStore {
                     in_progress, created_at, updated_at
              FROM certifications WHERE id = ?1",
         )?;
-        let result = stmt.query_row(params![id], Self::map_certification).optional()?;
+        let result = stmt
+            .query_row(params![id], Self::map_certification)
+            .optional()?;
         Ok(result)
     }
 
@@ -62,11 +67,8 @@ impl CertificationStore {
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<Certification>, Pagination), ForgeError> {
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM certifications",
-            [],
-            |row| row.get(0),
-        )?;
+        let total: i64 =
+            conn.query_row("SELECT COUNT(*) FROM certifications", [], |row| row.get(0))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, short_name, long_name, cert_id, issuer_id, date_earned,
@@ -80,15 +82,28 @@ impl CertificationStore {
             .query_map(params![limit, offset], Self::map_certification)?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
 
     /// Partially update a certification.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateCertification) -> Result<Certification, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "certification".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateCertification,
+    ) -> Result<Certification, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "certification".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -162,7 +177,10 @@ impl CertificationStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM certifications WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "certification".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "certification".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -179,7 +197,11 @@ impl CertificationStore {
     }
 
     /// Unlink a skill from a certification.
-    pub fn remove_skill(conn: &Connection, cert_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+    pub fn remove_skill(
+        conn: &Connection,
+        cert_id: &str,
+        skill_id: &str,
+    ) -> Result<(), ForgeError> {
         conn.execute(
             "DELETE FROM certification_skills WHERE certification_id = ?1 AND skill_id = ?2",
             params![cert_id, skill_id],
@@ -201,7 +223,8 @@ impl CertificationStore {
                 Ok(Skill {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category: row.get::<_, String>(2)?
+                    category: row
+                        .get::<_, String>(2)?
                         .parse()
                         .unwrap_or(SkillCategory::Other),
                 })
@@ -246,7 +269,8 @@ mod tests {
         conn.execute(
             "INSERT INTO skills (id, name, category) VALUES (?1, ?2, ?3)",
             params![id, name, "tool"],
-        ).unwrap();
+        )
+        .unwrap();
         Skill {
             id,
             name: name.into(),
@@ -275,7 +299,9 @@ mod tests {
         assert_eq!(cert.cert_id, Some("CKA-2024".into()));
         assert!(!cert.in_progress);
 
-        let fetched = CertificationStore::get(forge.conn(), &cert.id).unwrap().unwrap();
+        let fetched = CertificationStore::get(forge.conn(), &cert.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, cert.id);
         assert_eq!(fetched.short_name, "CKA");
     }
@@ -290,30 +316,38 @@ mod tests {
     #[test]
     fn list_certifications() {
         let forge = setup();
-        CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKA".into(),
-            long_name: "Certified Kubernetes Administrator".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
-        CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKAD".into(),
-            long_name: "Certified Kubernetes Application Developer".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
+        CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKA".into(),
+                long_name: "Certified Kubernetes Administrator".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
+        CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKAD".into(),
+                long_name: "Certified Kubernetes Application Developer".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
 
         let (certs, pagination) = CertificationStore::list(forge.conn(), 0, 50).unwrap();
         assert_eq!(certs.len(), 2);
@@ -323,24 +357,33 @@ mod tests {
     #[test]
     fn update_certification() {
         let forge = setup();
-        let cert = CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKA".into(),
-            long_name: "Old Name".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
+        let cert = CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKA".into(),
+                long_name: "Old Name".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
 
-        let updated = CertificationStore::update(forge.conn(), &cert.id, &UpdateCertification {
-            long_name: Some("Certified Kubernetes Administrator".into()),
-            in_progress: Some(true),
-            ..Default::default()
-        }).unwrap();
+        let updated = CertificationStore::update(
+            forge.conn(),
+            &cert.id,
+            &UpdateCertification {
+                long_name: Some("Certified Kubernetes Administrator".into()),
+                in_progress: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.long_name, "Certified Kubernetes Administrator");
         assert!(updated.in_progress);
         assert_eq!(updated.short_name, "CKA"); // unchanged
@@ -349,28 +392,38 @@ mod tests {
     #[test]
     fn update_missing_returns_not_found() {
         let forge = setup();
-        let result = CertificationStore::update(forge.conn(), "nonexistent", &UpdateCertification::default());
+        let result = CertificationStore::update(
+            forge.conn(),
+            "nonexistent",
+            &UpdateCertification::default(),
+        );
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
     }
 
     #[test]
     fn delete_certification() {
         let forge = setup();
-        let cert = CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKA".into(),
-            long_name: "CKA".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
+        let cert = CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKA".into(),
+                long_name: "CKA".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
 
         CertificationStore::delete(forge.conn(), &cert.id).unwrap();
-        assert!(CertificationStore::get(forge.conn(), &cert.id).unwrap().is_none());
+        assert!(CertificationStore::get(forge.conn(), &cert.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -383,18 +436,22 @@ mod tests {
     #[test]
     fn add_skill_and_get_skills() {
         let forge = setup();
-        let cert = CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKA".into(),
-            long_name: "CKA".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
+        let cert = CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKA".into(),
+                long_name: "CKA".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
 
         let s1 = create_skill(forge.conn(), "Kubernetes");
         let s2 = create_skill(forge.conn(), "Docker");
@@ -412,18 +469,22 @@ mod tests {
     #[test]
     fn add_skill_is_idempotent() {
         let forge = setup();
-        let cert = CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKA".into(),
-            long_name: "CKA".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
+        let cert = CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKA".into(),
+                long_name: "CKA".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
         let s1 = create_skill(forge.conn(), "Kubernetes");
 
         CertificationStore::add_skill(forge.conn(), &cert.id, &s1.id).unwrap();
@@ -436,18 +497,22 @@ mod tests {
     #[test]
     fn remove_skill() {
         let forge = setup();
-        let cert = CertificationStore::create(forge.conn(), &CreateCertification {
-            short_name: "CKA".into(),
-            long_name: "CKA".into(),
-            cert_id: None,
-            issuer_id: None,
-            date_earned: None,
-            expiry_date: None,
-            credential_id: None,
-            credential_url: None,
-            credly_url: None,
-            in_progress: None,
-        }).unwrap();
+        let cert = CertificationStore::create(
+            forge.conn(),
+            &CreateCertification {
+                short_name: "CKA".into(),
+                long_name: "CKA".into(),
+                cert_id: None,
+                issuer_id: None,
+                date_earned: None,
+                expiry_date: None,
+                credential_id: None,
+                credential_url: None,
+                credly_url: None,
+                in_progress: None,
+            },
+        )
+        .unwrap();
         let s1 = create_skill(forge.conn(), "Kubernetes");
         let s2 = create_skill(forge.conn(), "Docker");
 

@@ -34,11 +34,7 @@ impl SkillService {
     /// Validates that `name` is non-empty and `category` (if provided) is
     /// a valid `SkillCategory` enum value. The name is capitalized on the
     /// first character. Defaults `category` to `other` when omitted.
-    pub fn create(
-        &self,
-        name: &str,
-        category: Option<SkillCategory>,
-    ) -> Result<Skill, ForgeError> {
+    pub fn create(&self, name: &str, category: Option<SkillCategory>) -> Result<Skill, ForgeError> {
         todo!()
     }
 

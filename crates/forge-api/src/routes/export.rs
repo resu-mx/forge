@@ -59,10 +59,7 @@ async fn export_data(
 async fn dump_database(
     State(state): State<SharedState>,
 ) -> Result<Json<ApiData<String>>, ApiError> {
-    let result = with_conn(&state, move |conn| {
-        ExportService::dump_database(conn)
-    })
-    .await?;
+    let result = with_conn(&state, move |conn| ExportService::dump_database(conn)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -124,7 +121,10 @@ async fn export_resume(
             super::pdf::with_notice(
                 (
                     [
-                        (header::CONTENT_TYPE, "text/x-typst; charset=utf-8".to_string()),
+                        (
+                            header::CONTENT_TYPE,
+                            "text/x-typst; charset=utf-8".to_string(),
+                        ),
                         (header::CONTENT_DISPOSITION, disposition("typ")),
                     ],
                     rendered.source.clone(),
@@ -137,20 +137,34 @@ async fn export_resume(
 
     let format_for_db = format.clone();
     let (name, body) = with_conn(&state, move |conn| {
-        let resume = ResumeStore::get(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
-            entity_type: "resume".into(),
-            id: id.clone(),
-        })?;
+        let resume =
+            ResumeStore::get(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.clone(),
+            })?;
         let body = match format_for_db.as_str() {
-            "markdown" if resume.markdown_override.as_deref().is_some_and(|s| !s.is_empty()) => {
+            "markdown"
+                if resume
+                    .markdown_override
+                    .as_deref()
+                    .is_some_and(|s| !s.is_empty()) =>
+            {
                 resume.markdown_override.clone().unwrap_or_default()
             }
-            "latex" if resume.latex_override.as_deref().is_some_and(|s| !s.is_empty()) => {
+            "latex"
+                if resume
+                    .latex_override
+                    .as_deref()
+                    .is_some_and(|s| !s.is_empty()) =>
+            {
                 resume.latex_override.clone().unwrap_or_default()
             }
             other => {
                 let doc = CompilerService::compile(conn, &id)?.ok_or_else(|| {
-                    forge_core::ForgeError::NotFound { entity_type: "resume".into(), id: id.clone() }
+                    forge_core::ForgeError::NotFound {
+                        entity_type: "resume".into(),
+                        id: id.clone(),
+                    }
                 })?;
                 match other {
                     "markdown" => CompilerService::render_markdown(&doc),
@@ -173,13 +187,19 @@ async fn export_resume(
     };
     let response = match format.as_str() {
         "json" => (
-            [(header::CONTENT_TYPE, "application/json".to_string()), (header::CONTENT_DISPOSITION, filename("json"))],
+            [
+                (header::CONTENT_TYPE, "application/json".to_string()),
+                (header::CONTENT_DISPOSITION, filename("json")),
+            ],
             body,
         )
             .into_response(),
         "markdown" => (
             [
-                (header::CONTENT_TYPE, "text/markdown; charset=utf-8".to_string()),
+                (
+                    header::CONTENT_TYPE,
+                    "text/markdown; charset=utf-8".to_string(),
+                ),
                 (header::CONTENT_DISPOSITION, filename("md")),
             ],
             body,
@@ -187,7 +207,10 @@ async fn export_resume(
             .into_response(),
         "latex" => (
             [
-                (header::CONTENT_TYPE, "application/x-latex; charset=utf-8".to_string()),
+                (
+                    header::CONTENT_TYPE,
+                    "application/x-latex; charset=utf-8".to_string(),
+                ),
                 (header::CONTENT_DISPOSITION, filename("tex")),
             ],
             body,
