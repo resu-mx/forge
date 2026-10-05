@@ -9,6 +9,15 @@ use forge_core::{ForgeError, ResumeTaglineState};
 
 use crate::db::ResumeStore;
 
+mod generator;
+#[cfg(test)]
+mod golden;
+
+pub use generator::{
+    compute_tf_idf, generate_tagline, rank_keywords, tokenize, GeneratedTagline, DEFAULT_TOP_K,
+    SKILL_MATCH_BOOST,
+};
+
 /// ECMAScript WhiteSpace + LineTerminator: the set that JS `\s` and `String.prototype.trim`
 /// use. Rust's `char::is_whitespace` (Unicode White_Space) differs in two code points:
 /// it includes U+0085, which JS does not, and it excludes U+FEFF, which JS includes.
@@ -53,6 +62,25 @@ pub fn get_state(
 ) -> Result<Option<ResumeTaglineState>, ForgeError> {
     Ok(ResumeStore::get(conn, resume_id)?
         .map(|r| tagline_state(r.generated_tagline, r.tagline_override)))
+}
+
+/// `PATCH /resumes/:id/tagline-override` (TS `routes/resumes.ts:269-307`). `None`, `""` and
+/// JS-blank strings clear the override (NULL); anything else is stored verbatim, untrimmed.
+/// `Ok(None)` when no resume has this id, in which case nothing is written.
+pub fn set_override(
+    conn: &Connection,
+    resume_id: &str,
+    content: Option<&str>,
+) -> Result<Option<ResumeTaglineState>, ForgeError> {
+    let normalized = content.filter(|c| !js_trim(c).is_empty());
+    match ResumeStore::update_tagline_override(conn, resume_id, normalized) {
+        Ok(resume) => Ok(Some(tagline_state(
+            resume.generated_tagline,
+            resume.tagline_override,
+        ))),
+        Err(ForgeError::NotFound { .. }) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]
@@ -137,5 +165,81 @@ mod tests {
             })
             .unwrap();
         assert_eq!(updated_at, "2000-01-01T00:00:00Z");
+    }
+
+    fn resume_with_taglines(forge: &Forge, generated: Option<&str>, ov: Option<&str>) -> String {
+        let id = ResumeStore::create(
+            forge.conn(),
+            &CreateResume {
+                name: "R".into(),
+                target_role: "Cloud Engineer".into(),
+                target_employer: "Acme".into(),
+                archetype: "sre".into(),
+                summary_id: None,
+            },
+        )
+        .unwrap()
+        .id;
+        forge
+            .conn()
+            .execute(
+                "UPDATE resumes SET generated_tagline = ?1, tagline_override = ?2, updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![generated, ov, "2000-01-01T00:00:00Z", id],
+            )
+            .unwrap();
+        id
+    }
+
+    fn stored(forge: &Forge, id: &str) -> (Option<String>, Option<String>, String) {
+        forge
+            .conn()
+            .query_row(
+                "SELECT generated_tagline, tagline_override, updated_at FROM resumes WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn set_override_stores_verbatim_and_bumps_updated_at() {
+        let forge = Forge::open_memory().unwrap();
+        let id = resume_with_taglines(&forge, Some("gen"), None);
+        let s = set_override(forge.conn(), &id, Some("  Padded  "))
+            .unwrap()
+            .unwrap();
+        assert_eq!(s.tagline_override.as_deref(), Some("  Padded  "));
+        assert_eq!((s.resolved.as_str(), s.has_override), ("  Padded  ", true));
+        let (generated, ov, updated_at) = stored(&forge, &id);
+        assert_eq!(generated.as_deref(), Some("gen"));
+        assert_eq!(ov.as_deref(), Some("  Padded  "));
+        assert_ne!(updated_at, "2000-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn set_override_clears_on_blank_and_keeps_u0085() {
+        let forge = Forge::open_memory().unwrap();
+        let id = resume_with_taglines(&forge, Some("gen"), Some("old"));
+        for blank in [None, Some(""), Some("   "), Some("\u{FEFF}")] {
+            set_override(forge.conn(), &id, Some("old")).unwrap();
+            let s = set_override(forge.conn(), &id, blank).unwrap().unwrap();
+            assert_eq!(s.tagline_override, None, "{blank:?}");
+            assert_eq!((s.resolved.as_str(), s.has_override), ("gen", false));
+            assert_eq!(stored(&forge, &id).1, None);
+        }
+        // JS keeps U+0085, so it is a real (non-blank) override.
+        let s = set_override(forge.conn(), &id, Some("\u{0085}"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(s.tagline_override.as_deref(), Some("\u{0085}"));
+        assert!(s.has_override);
+    }
+
+    #[test]
+    fn set_override_unknown_id_is_none() {
+        let forge = Forge::open_memory().unwrap();
+        assert!(set_override(forge.conn(), "missing", Some("x"))
+            .unwrap()
+            .is_none());
     }
 }

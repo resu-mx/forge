@@ -41,6 +41,8 @@ tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "util
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 strum = { version = "0.27", features = ["derive"] }
+# Root collation only via `new_root` (needs `unstable`): matches Bun's `localeCompare`. no_std, wasm32-safe.
+icu_collator = { version = "2.3", default-features = false, features = ["compiled_data", "unstable"] }
 
 # Size-optimised build for the browser runtime only (`just wasm-bundle`). Kept off
 # the default release profile so the native server is not built for size.

@@ -1,0 +1,1623 @@
+{
+ "cases": [
+  {
+   "name": "tokenize > lowercases input",
+   "fn": "tokenize",
+   "text": "Python AND Terraform",
+   "expected": [
+    "python",
+    "terraform"
+   ]
+  },
+  {
+   "name": "tokenize > drops stop words",
+   "fn": "tokenize",
+   "text": "The quick brown fox jumps over the lazy dog",
+   "expected": [
+    "quick",
+    "brown",
+    "fox",
+    "jumps",
+    "lazy",
+    "dog"
+   ]
+  },
+  {
+   "name": "tokenize > drops tokens under 2 characters",
+   "fn": "tokenize",
+   "text": "a b cd e",
+   "expected": [
+    "cd"
+   ]
+  },
+  {
+   "name": "tokenize > strips punctuation around tokens",
+   "fn": "tokenize",
+   "text": "\"python,\" terraform; aws!",
+   "expected": [
+    "python",
+    "terraform",
+    "aws"
+   ]
+  },
+  {
+   "name": "tokenize > preserves internal hyphens and plus signs",
+   "fn": "tokenize",
+   "text": "front-end c++ ci-cd",
+   "expected": [
+    "front-end",
+    "c++",
+    "ci-cd"
+   ]
+  },
+  {
+   "name": "tokenize > drops pure numbers",
+   "fn": "tokenize",
+   "text": "5 years of python 10 plus kubernetes",
+   "expected": [
+    "python",
+    "kubernetes"
+   ]
+  },
+  {
+   "name": "tokenize > empty input returns empty array",
+   "fn": "tokenize",
+   "text": "",
+   "expected": []
+  },
+  {
+   "name": "tokenize > empty input returns empty array",
+   "fn": "tokenize",
+   "text": null,
+   "expected": []
+  },
+  {
+   "name": "tokenize > drops common job-description filler words",
+   "fn": "tokenize",
+   "text": "looking for strong experience working with teams",
+   "expected": []
+  },
+  {
+   "name": "computeTfIdf > empty corpus yields empty map",
+   "fn": "computeTfIdf",
+   "texts": [],
+   "expected": []
+  },
+  {
+   "name": "computeTfIdf > single JD assigns positive scores to every term",
+   "fn": "computeTfIdf",
+   "texts": [
+    "python terraform aws"
+   ],
+   "expected": [
+    [
+     "python",
+     1
+    ],
+    [
+     "terraform",
+     1
+    ],
+    [
+     "aws",
+     1
+    ]
+   ]
+  },
+  {
+   "name": "computeTfIdf > term frequency in one JD boosts score",
+   "fn": "computeTfIdf",
+   "texts": [
+    "python python python terraform"
+   ],
+   "expected": [
+    [
+     "python",
+     1
+    ],
+    [
+     "terraform",
+     0.3333333333333333
+    ]
+   ]
+  },
+  {
+   "name": "computeTfIdf > cross-JD repetition still accumulates score",
+   "fn": "computeTfIdf",
+   "texts": [
+    "python terraform",
+    "python kubernetes"
+   ],
+   "expected": [
+    [
+     "python",
+     2
+    ],
+    [
+     "terraform",
+     1.4054651081081644
+    ],
+    [
+     "kubernetes",
+     1.4054651081081644
+    ]
+   ]
+  },
+  {
+   "name": "computeTfIdf > ubiquitous terms get down-weighted relative to unique terms",
+   "fn": "computeTfIdf",
+   "texts": [
+    "common rare1",
+    "common rare2",
+    "common rare3"
+   ],
+   "expected": [
+    [
+     "common",
+     3
+    ],
+    [
+     "rare1",
+     1.6931471805599454
+    ],
+    [
+     "rare2",
+     1.6931471805599454
+    ],
+    [
+     "rare3",
+     1.6931471805599454
+    ]
+   ]
+  },
+  {
+   "name": "computeTfIdf > stop words are excluded from scores",
+   "fn": "computeTfIdf",
+   "texts": [
+    "the quick brown fox"
+   ],
+   "expected": [
+    [
+     "quick",
+     1
+    ],
+    [
+     "brown",
+     1
+    ],
+    [
+     "fox",
+     1
+    ]
+   ]
+  },
+  {
+   "name": "rankKeywords > returns entries sorted by score descending",
+   "fn": "rankKeywords",
+   "scores": [
+    [
+     "alpha",
+     1
+    ],
+    [
+     "beta",
+     3
+    ],
+    [
+     "gamma",
+     2
+    ]
+   ],
+   "skills": [],
+   "expected": [
+    {
+     "term": "beta",
+     "score": 3,
+     "matchedSkill": false
+    },
+    {
+     "term": "gamma",
+     "score": 2,
+     "matchedSkill": false
+    },
+    {
+     "term": "alpha",
+     "score": 1,
+     "matchedSkill": false
+    }
+   ]
+  },
+  {
+   "name": "rankKeywords > skill match boosts score by SKILL_MATCH_BOOST",
+   "fn": "rankKeywords",
+   "scores": [
+    [
+     "python",
+     1
+    ],
+    [
+     "terraform",
+     1
+    ]
+   ],
+   "skills": [
+    "Python"
+   ],
+   "expected": [
+    {
+     "term": "python",
+     "score": 2,
+     "matchedSkill": true
+    },
+    {
+     "term": "terraform",
+     "score": 1,
+     "matchedSkill": false
+    }
+   ]
+  },
+  {
+   "name": "rankKeywords > ties break alphabetically ascending",
+   "fn": "rankKeywords",
+   "scores": [
+    [
+     "zebra",
+     1
+    ],
+    [
+     "apple",
+     1
+    ],
+    [
+     "mango",
+     1
+    ]
+   ],
+   "skills": [],
+   "expected": [
+    {
+     "term": "apple",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "mango",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "zebra",
+     "score": 1,
+     "matchedSkill": false
+    }
+   ]
+  },
+  {
+   "name": "rankKeywords > empty scores yield empty ranking",
+   "fn": "rankKeywords",
+   "scores": [],
+   "skills": [],
+   "expected": []
+  },
+  {
+   "name": "generateTagline > empty corpus yields empty tagline",
+   "fn": "generateTagline",
+   "texts": [],
+   "skills": [],
+   "expected": {
+    "tagline": "",
+    "keywords": []
+   }
+  },
+  {
+   "name": "generateTagline > whitespace-only texts yield empty tagline",
+   "fn": "generateTagline",
+   "texts": [
+    "",
+    "  ",
+    "\n\t"
+   ],
+   "skills": [],
+   "expected": {
+    "tagline": "",
+    "keywords": []
+   }
+  },
+  {
+   "name": "generateTagline > produces top-K keywords joined by \" + \"",
+   "fn": "generateTagline",
+   "texts": [
+    "We build cloud infrastructure using python terraform kubernetes aws. Python experience required. Terraform mandatory."
+   ],
+   "skills": [],
+   "topK": 3,
+   "expected": {
+    "tagline": "python + terraform + aws",
+    "keywords": [
+     {
+      "term": "python",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "terraform",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "aws",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "generateTagline > prefix renders as \"<prefix> -- <keywords>\"",
+   "fn": "generateTagline",
+   "texts": [
+    "python terraform kubernetes"
+   ],
+   "skills": [],
+   "prefix": "Senior Platform Engineer",
+   "expected": {
+    "tagline": "Senior Platform Engineer -- kubernetes + python + terraform",
+    "keywords": [
+     {
+      "term": "kubernetes",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "python",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "terraform",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "generateTagline > default topK is DEFAULT_TOP_K",
+   "fn": "generateTagline",
+   "texts": [
+    "alpha beta gamma delta epsilon zeta eta theta"
+   ],
+   "skills": [],
+   "expected": {
+    "tagline": "alpha + beta + delta",
+    "keywords": [
+     {
+      "term": "alpha",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "beta",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "delta",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "generateTagline > skill-matched terms rank above non-matched with equal base score",
+   "fn": "generateTagline",
+   "texts": [
+    "terraform postgres"
+   ],
+   "skills": [
+    "Terraform"
+   ],
+   "expected": {
+    "tagline": "terraform + postgres",
+    "keywords": [
+     {
+      "term": "terraform",
+      "score": 2,
+      "matchedSkill": true
+     },
+     {
+      "term": "postgres",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "generateTagline > handles multi-JD corpus and aggregates scores",
+   "fn": "generateTagline",
+   "texts": [
+    "python aws kafka streaming",
+    "python aws kinesis streaming",
+    "python gcp pubsub"
+   ],
+   "skills": [],
+   "topK": 3,
+   "expected": {
+    "tagline": "python + aws + streaming",
+    "keywords": [
+     {
+      "term": "python",
+      "score": 3,
+      "matchedSkill": false
+     },
+     {
+      "term": "aws",
+      "score": 2.5753641449035616,
+      "matchedSkill": false
+     },
+     {
+      "term": "streaming",
+      "score": 2.5753641449035616,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "generateTagline > matches skills case-insensitively",
+   "fn": "generateTagline",
+   "texts": [
+    "JavaScript typescript"
+   ],
+   "skills": [
+    "TypeScript",
+    "JAVASCRIPT"
+   ],
+   "topK": 2,
+   "expected": {
+    "tagline": "javascript + typescript",
+    "keywords": [
+     {
+      "term": "javascript",
+      "score": 2,
+      "matchedSkill": true
+     },
+     {
+      "term": "typescript",
+      "score": 2,
+      "matchedSkill": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "generateTagline > omitting prefix yields bare keyword list",
+   "fn": "generateTagline",
+   "texts": [
+    "alpha beta gamma"
+   ],
+   "skills": [],
+   "topK": 3,
+   "expected": {
+    "tagline": "alpha + beta + gamma",
+    "keywords": [
+     {
+      "term": "alpha",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "beta",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "gamma",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "issue#67 > tokenize example",
+   "fn": "tokenize",
+   "text": "Front-end (React/TypeScript), C++ and CI-CD!",
+   "expected": [
+    "front-end",
+    "react",
+    "typescript",
+    "c++",
+    "ci-cd"
+   ]
+  },
+  {
+   "name": "issue#67 > multi-JD example",
+   "fn": "generateTagline",
+   "texts": [
+    "kubernetes terraform python",
+    "kubernetes prometheus grafana"
+   ],
+   "skills": [],
+   "prefix": "SRE",
+   "expected": {
+    "tagline": "SRE -- kubernetes + grafana + prometheus",
+    "keywords": [
+     {
+      "term": "kubernetes",
+      "score": 2,
+      "matchedSkill": false
+     },
+     {
+      "term": "grafana",
+      "score": 1.4054651081081644,
+      "matchedSkill": false
+     },
+     {
+      "term": "prometheus",
+      "score": 1.4054651081081644,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "issue#69 > regenerate example",
+   "fn": "generateTagline",
+   "texts": [
+    "Terraform Kubernetes Python Ansible"
+   ],
+   "skills": [
+    "Terraform"
+   ],
+   "prefix": "Senior Platform Engineer",
+   "expected": {
+    "tagline": "Senior Platform Engineer -- terraform + ansible + kubernetes",
+    "keywords": [
+     {
+      "term": "terraform",
+      "score": 2,
+      "matchedSkill": true
+     },
+     {
+      "term": "ansible",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "kubernetes",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "probe > tie order, punctuation",
+   "fn": "rankKeywords",
+   "scores": [
+    [
+     "ca",
+     1
+    ],
+    [
+     "c0",
+     1
+    ],
+    [
+     "c++",
+     1
+    ],
+    [
+     "c#",
+     1
+    ],
+    [
+     "c-d",
+     1
+    ],
+    [
+     "c-",
+     1
+    ],
+    [
+     "c",
+     1
+    ]
+   ],
+   "skills": [],
+   "expected": [
+    {
+     "term": "c",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "c-",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "c-d",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "c#",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "c++",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "c0",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "ca",
+     "score": 1,
+     "matchedSkill": false
+    }
+   ]
+  },
+  {
+   "name": "probe > tie order, non-ASCII",
+   "fn": "rankKeywords",
+   "scores": [
+    [
+     "west",
+     1
+    ],
+    [
+     "we’re",
+     1
+    ],
+    [
+     "we-re",
+     1
+    ],
+    [
+     "naivf",
+     1
+    ],
+    [
+     "naïve",
+     1
+    ],
+    [
+     "naive",
+     1
+    ],
+    [
+     "company’s",
+     1
+    ]
+   ],
+   "skills": [],
+   "expected": [
+    {
+     "term": "company’s",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "naive",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "naïve",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "naivf",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "we-re",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "we’re",
+     "score": 1,
+     "matchedSkill": false
+    },
+    {
+     "term": "west",
+     "score": 1,
+     "matchedSkill": false
+    }
+   ]
+  },
+  {
+   "name": "probe > JS whitespace",
+   "fn": "tokenize",
+   "text": "alpha﻿beta gammadelta x yz",
+   "expected": [
+    "alpha",
+    "beta",
+    "gammadelta",
+    "yz"
+   ]
+  },
+  {
+   "name": "probe > trailing non-ASCII is stripped",
+   "fn": "tokenize",
+   "text": "café résumé naïve über",
+   "expected": [
+    "caf",
+    "résum",
+    "naïve",
+    "ber"
+   ]
+  },
+  {
+   "name": "probe > prefix empty string is omitted",
+   "fn": "generateTagline",
+   "texts": [
+    "alpha beta"
+   ],
+   "skills": [],
+   "prefix": "",
+   "expected": {
+    "tagline": "alpha + beta",
+    "keywords": [
+     {
+      "term": "alpha",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "beta",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "probe > U+FEFF-only text is blank",
+   "fn": "generateTagline",
+   "texts": [
+    "﻿",
+    "  "
+   ],
+   "skills": [],
+   "expected": {
+    "tagline": "",
+    "keywords": []
+   }
+  },
+  {
+   "name": "probe > multi-word skill never matches",
+   "fn": "generateTagline",
+   "texts": [
+    "machine learning pipelines"
+   ],
+   "skills": [
+    "Machine Learning"
+   ],
+   "expected": {
+    "tagline": "learning + machine + pipelines",
+    "keywords": [
+     {
+      "term": "learning",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "machine",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "pipelines",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  }
+ ],
+ "corpus": [
+  {
+   "name": "corpus > amazon-ml-engineer.txt",
+   "files": [
+    "amazon-ml-engineer.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "design + development + software",
+    "keywords": [
+     {
+      "term": "design",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "development",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "software",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > anthropic-agent-infra.txt",
+   "files": [
+    "anthropic-agent-infra.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "agent + infrastructure + mcp",
+    "keywords": [
+     {
+      "term": "agent",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "infrastructure",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "mcp",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > anthropic-cybersec-re.txt",
+   "files": [
+    "anthropic-cybersec-re.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "ai + cybersecurity + research",
+    "keywords": [
+     {
+      "term": "ai",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "cybersecurity",
+      "score": 0.8571428571428571,
+      "matchedSkill": false
+     },
+     {
+      "term": "research",
+      "score": 0.8571428571428571,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > anthropic-fde-federal.txt",
+   "files": [
+    "anthropic-fde-federal.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "ai + deployment + federal",
+    "keywords": [
+     {
+      "term": "ai",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "deployment",
+      "score": 0.5714285714285714,
+      "matchedSkill": false
+     },
+     {
+      "term": "federal",
+      "score": 0.5714285714285714,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > betterup-ai-security.txt",
+   "files": [
+    "betterup-ai-security.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "ai + engineering + security",
+    "keywords": [
+     {
+      "term": "ai",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineering",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "security",
+      "score": 0.875,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > booz-agentic-ai.txt",
+   "files": [
+    "booz-agentic-ai.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "ai + agentic + context",
+    "keywords": [
+     {
+      "term": "ai",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "agentic",
+      "score": 0.8,
+      "matchedSkill": false
+     },
+     {
+      "term": "context",
+      "score": 0.6,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > capital-one-swe.txt",
+   "files": [
+    "capital-one-swe.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "security + compliance + product",
+    "keywords": [
+     {
+      "term": "security",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "compliance",
+      "score": 0.6153846153846154,
+      "matchedSkill": false
+     },
+     {
+      "term": "product",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > generic-allcaps-headings.txt",
+   "files": [
+    "generic-allcaps-headings.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "acme + benefits + builds",
+    "keywords": [
+     {
+      "term": "acme",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "benefits",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "builds",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > generic-bold-headings.txt",
+   "files": [
+    "generic-bold-headings.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "apis + build + documentation",
+    "keywords": [
+     {
+      "term": "apis",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "build",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "documentation",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > generic-html-headings.txt",
+   "files": [
+    "generic-html-headings.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "h3 + h2 + h4",
+    "keywords": [
+     {
+      "term": "h3",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "h2",
+      "score": 0.5,
+      "matchedSkill": false
+     },
+     {
+      "term": "h4",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > generic-markdown-headings.txt",
+   "files": [
+    "generic-markdown-headings.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "401k + benefits + design",
+    "keywords": [
+     {
+      "term": "401k",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "benefits",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "design",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > generic-mixed-headings.txt",
+   "files": [
+    "generic-mixed-headings.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "data + engineering + build",
+    "keywords": [
+     {
+      "term": "data",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineering",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "build",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > generic-no-headings.txt",
+   "files": [
+    "generic-no-headings.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "annually + apis + based",
+    "keywords": [
+     {
+      "term": "annually",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "apis",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "based",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > hybrid-location.txt",
+   "files": [
+    "hybrid-location.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "hybrid + arlington + based",
+    "keywords": [
+     {
+      "term": "hybrid",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "arlington",
+      "score": 0.5,
+      "matchedSkill": false
+     },
+     {
+      "term": "based",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > minimal-jd.txt",
+   "files": [
+    "minimal-jd.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "120k-$160k + aws + build",
+    "keywords": [
+     {
+      "term": "120k-$160k",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "aws",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "build",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > multi-location.txt",
+   "files": [
+    "multi-location.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "austin + based + ca",
+    "keywords": [
+     {
+      "term": "austin",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "based",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "ca",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > remote-only.txt",
+   "files": [
+    "remote-only.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "fully + remote + anywhere",
+    "keywords": [
+     {
+      "term": "fully",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "remote",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "anywhere",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > salary-em-dash.txt",
+   "files": [
+    "salary-em-dash.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "equivalent + expected + phd",
+    "keywords": [
+     {
+      "term": "equivalent",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "expected",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "phd",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > salary-hourly.txt",
+   "files": [
+    "salary-hourly.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "compensation + contract + hr",
+    "keywords": [
+     {
+      "term": "compensation",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "contract",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "hr",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > salary-range-dash.txt",
+   "files": [
+    "salary-range-dash.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "annual + compensation + engineer",
+    "keywords": [
+     {
+      "term": "annual",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "compensation",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineer",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > salary-range-to.txt",
+   "files": [
+    "salary-range-to.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "base + compensation + engineer",
+    "keywords": [
+     {
+      "term": "base",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "compensation",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineer",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > salary-single-number.txt",
+   "files": [
+    "salary-single-number.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "compensation + engineer + entry-level",
+    "keywords": [
+     {
+      "term": "compensation",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineer",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "entry-level",
+      "score": 1,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > snorkel-training-infra.txt",
+   "files": [
+    "snorkel-training-infra.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "training + infrastructure + model",
+    "keywords": [
+     {
+      "term": "training",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "infrastructure",
+      "score": 0.6666666666666666,
+      "matchedSkill": false
+     },
+     {
+      "term": "model",
+      "score": 0.6666666666666666,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > wall-of-text.txt",
+   "files": [
+    "wall-of-text.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "frameworks + software + applications",
+    "keywords": [
+     {
+      "term": "frameworks",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "software",
+      "score": 1,
+      "matchedSkill": false
+     },
+     {
+      "term": "applications",
+      "score": 0.5,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > platform mix",
+   "files": [
+    "anthropic-agent-infra.txt",
+    "snorkel-training-infra.txt",
+    "capital-one-swe.txt"
+   ],
+   "skills": [
+    "Python",
+    "Kubernetes",
+    "AWS",
+    "Go"
+   ],
+   "prefix": "Senior Platform Engineer",
+   "expected": {
+    "tagline": "Senior Platform Engineer -- infrastructure + security + mcp",
+    "keywords": [
+     {
+      "term": "infrastructure",
+      "score": 2.1461367874196347,
+      "matchedSkill": false
+     },
+     {
+      "term": "security",
+      "score": 2.1461367874196347,
+      "matchedSkill": false
+     },
+     {
+      "term": "mcp",
+      "score": 1.6931471805599454,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > security pair",
+   "files": [
+    "anthropic-cybersec-re.txt",
+    "betterup-ai-security.txt"
+   ],
+   "skills": [
+    "Python",
+    "Rust"
+   ],
+   "prefix": "Security Engineer",
+   "expected": {
+    "tagline": "Security Engineer -- ai + engineering + cybersecurity",
+    "keywords": [
+     {
+      "term": "ai",
+      "score": 2,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineering",
+      "score": 1.4285714285714286,
+      "matchedSkill": false
+     },
+     {
+      "term": "cybersecurity",
+      "score": 1.2046843783784265,
+      "matchedSkill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "corpus > all JDs, no skills",
+   "files": [
+    "amazon-ml-engineer.txt",
+    "anthropic-agent-infra.txt",
+    "anthropic-cybersec-re.txt",
+    "anthropic-fde-federal.txt",
+    "betterup-ai-security.txt",
+    "booz-agentic-ai.txt",
+    "capital-one-swe.txt",
+    "generic-allcaps-headings.txt",
+    "generic-bold-headings.txt",
+    "generic-html-headings.txt",
+    "generic-markdown-headings.txt",
+    "generic-mixed-headings.txt",
+    "generic-no-headings.txt",
+    "hybrid-location.txt",
+    "minimal-jd.txt",
+    "multi-location.txt",
+    "remote-only.txt",
+    "salary-em-dash.txt",
+    "salary-hourly.txt",
+    "salary-range-dash.txt",
+    "salary-range-to.txt",
+    "salary-single-number.txt",
+    "snorkel-training-infra.txt",
+    "wall-of-text.txt"
+   ],
+   "skills": [],
+   "prefix": null,
+   "expected": {
+    "tagline": "compensation + engineer + salary",
+    "keywords": [
+     {
+      "term": "compensation",
+      "score": 13.429540430033875,
+      "matchedSkill": false
+     },
+     {
+      "term": "engineer",
+      "score": 12.790887602637213,
+      "matchedSkill": false
+     },
+     {
+      "term": "salary",
+      "score": 12.51967029388264,
+      "matchedSkill": false
+     }
+    ]
+   }
+  }
+ ]
+}

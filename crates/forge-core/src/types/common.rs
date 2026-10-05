@@ -276,6 +276,17 @@ pub struct ResumeTaglineState {
     pub has_override: bool,
 }
 
+/// A ranked tagline keyword (TS `RankedKeyword`, `tagline-service.ts:86-91`;
+/// SDK `RankedTaglineKeyword`, `packages/sdk/src/types.ts:453-458`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RankedKeyword {
+    pub term: String,
+    pub score: f64,
+    /// True when the term equals a lowercased skill name and got the boost.
+    #[serde(rename = "matchedSkill")]
+    pub matched_skill: bool,
+}
+
 // ── Alignment ────────────────────────────────────────────────────────
 
 /// A requirement-to-entry match result.

@@ -418,3 +418,23 @@ mod extension_wire {
         assert_eq!(crate::EXTENSION_CONFIG_KEYS.len(), 4);
     }
 }
+
+#[cfg(test)]
+mod ranked_keyword {
+    #[test]
+    fn serializes_matched_skill_in_camel_case() {
+        let k = crate::RankedKeyword {
+            term: "rust".into(),
+            score: 1.5,
+            matched_skill: true,
+        };
+        let v = serde_json::to_value(&k).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({"term": "rust", "score": 1.5, "matchedSkill": true})
+        );
+        assert!(v.get("matched_skill").is_none());
+        let back: crate::RankedKeyword = serde_json::from_value(v).unwrap();
+        assert_eq!(back, k);
+    }
+}

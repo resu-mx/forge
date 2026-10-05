@@ -519,6 +519,23 @@ async fn get_tagline(
     })
 }
 
+/// `PATCH /resumes/:id/tagline-override` with `{ "content": string | null }`. It answers with
+/// the tagline state (the GET shape), not the resume row that the other override routes return.
+async fn update_tagline_override(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+    Json(body): Json<OverrideBody>,
+) -> Result<Response, ApiError> {
+    let found = with_conn(&state, move |conn| {
+        tagline::set_override(conn, &resume_id, body.content.as_deref())
+    })
+    .await?;
+    Ok(match found {
+        Some(data) => Json(ApiData { data }).into_response(),
+        None => resume_not_found(),
+    })
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -575,4 +592,8 @@ pub fn router() -> Router<SharedState> {
         .route("/resumes/{id}/pdf", post(resume_pdf))
         .route("/resumes/{id}/contacts", get(list_resume_contacts))
         .route("/resumes/{id}/tagline", get(get_tagline))
+        .route(
+            "/resumes/{id}/tagline-override",
+            patch(update_tagline_override),
+        )
 }
