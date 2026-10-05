@@ -1,17 +1,17 @@
-//! Domain CRUD routes.
-//!
-//! Simple lookup table — no pagination, no update.
+//! Domain routes: create, paginated list with usage counts, get, delete.
+//! `PATCH /domains/{id}` is resu-mx/forge#17.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Deserialize;
 
-use forge_core::{CreateDomainInput, Domain};
+use forge_core::{CreateDomainInput, Domain, DomainWithUsage};
 use forge_sdk::db::DomainStore;
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{ApiData, Created, NoContent};
+use crate::response::{ApiData, ApiList, Created, NoContent};
 use crate::state::SharedState;
 
 // -- Handlers ────────────────────────────────────────────────────────
@@ -24,11 +24,28 @@ async fn create_domain(
     Ok(Created(result))
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct DomainListQuery {
+    pub offset: Option<i64>,
+    pub limit: Option<i64>,
+}
+
 async fn list_domains(
     State(state): State<SharedState>,
-) -> Result<Json<ApiData<Vec<Domain>>>, ApiError> {
-    let data = with_conn(&state, move |conn| DomainStore::list(conn)).await?;
-    Ok(Json(ApiData { data }))
+    Query(q): Query<DomainListQuery>,
+) -> Result<Json<ApiList<DomainWithUsage>>, ApiError> {
+    // TS defaults and bounds: packages/core/src/routes/domains.ts:20-21.
+    // Known edge difference, left as in archetypes.rs: TS reads a non-numeric
+    // limit or limit=0 as 50, while Rust answers 400 for non-numeric input and
+    // clamps 0 to 1.
+    let offset = q.offset.unwrap_or(0).max(0);
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+
+    let (data, pagination) = with_conn(&state, move |conn| {
+        DomainStore::list_with_usage(conn, offset, limit)
+    })
+    .await?;
+    Ok(Json(ApiList { data, pagination }))
 }
 
 async fn get_domain(

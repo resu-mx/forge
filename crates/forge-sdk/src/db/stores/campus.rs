@@ -28,7 +28,8 @@ impl CampusStore {
             "INSERT INTO org_locations (id, organization_id, name, modality, address_id, is_headquarters, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, input.organization_id, input.name, modality.as_ref(), input.address_id, is_hq, now],
-        )?;
+        )
+        .map_err(Self::map_fk_violation)?;
 
         Self::get_location(conn, &id)?
             .ok_or_else(|| ForgeError::Internal("OrgLocation created but not found".into()))
@@ -44,12 +45,28 @@ impl CampusStore {
         Ok(result)
     }
 
-    /// List all locations for an organization.
+    /// A dangling organization or address reference breaks a foreign key; TS answers that with a
+    /// validation error (packages/core/src/storage/error-mapper.ts), not a 500.
+    fn map_fk_violation(e: rusqlite::Error) -> ForgeError {
+        if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
+            if err.code == rusqlite::ErrorCode::ConstraintViolation
+                && msg.as_deref().unwrap_or("").contains("FOREIGN KEY")
+            {
+                return ForgeError::Validation {
+                    message: "Referenced organization or address does not exist".into(),
+                    field: None,
+                };
+            }
+        }
+        ForgeError::Database { source: e }
+    }
+
+    /// List all locations for an organization, by name (TS org-location-service.ts).
     pub fn list_by_org(conn: &Connection, org_id: &str) -> Result<Vec<OrgLocation>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT id, organization_id, name, modality, address_id, is_headquarters, created_at
              FROM org_locations WHERE organization_id = ?1
-             ORDER BY is_headquarters DESC, name ASC",
+             ORDER BY name ASC",
         )?;
         let rows: Vec<OrgLocation> = stmt
             .query_map(params![org_id], Self::map_location)?
@@ -99,7 +116,8 @@ impl CampusStore {
             conn.execute(
                 &sql,
                 rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
-            )?;
+            )
+            .map_err(Self::map_fk_violation)?;
         }
 
         Self::get_location(conn, id)?
@@ -200,7 +218,7 @@ impl CampusStore {
                 .parse()
                 .unwrap_or(LocationModality::InPerson),
             address_id: row.get(4)?,
-            is_headquarters: row.get(5)?,
+            is_headquarters: row.get::<_, bool>(5)?, // INTEGER 0/1 -> bool
             created_at: row.get(6)?,
         })
     }
@@ -244,7 +262,7 @@ mod tests {
 
         assert_eq!(loc.name, "HQ");
         assert_eq!(loc.organization_id, org_id);
-        assert_eq!(loc.is_headquarters, 1);
+        assert!(loc.is_headquarters);
 
         let fetched = CampusStore::get_location(forge.conn(), &loc.id)
             .unwrap()
@@ -292,6 +310,81 @@ mod tests {
     }
 
     #[test]
+    fn list_orders_by_name_not_hq_first() {
+        let forge = setup();
+        let org_id = create_org(forge.conn(), "Order Co");
+        for (name, hq) in [("Zeta HQ", true), ("Alpha", false)] {
+            CampusStore::create_location(
+                forge.conn(),
+                &CreateOrgLocation {
+                    organization_id: org_id.clone(),
+                    name: name.into(),
+                    modality: None,
+                    address_id: None,
+                    is_headquarters: Some(hq),
+                },
+            )
+            .unwrap();
+        }
+        let names: Vec<_> = CampusStore::list_by_org(forge.conn(), &org_id)
+            .unwrap()
+            .into_iter()
+            .map(|l| l.name)
+            .collect();
+        assert_eq!(names, ["Alpha", "Zeta HQ"]);
+    }
+
+    #[test]
+    fn dangling_references_are_validation_errors() {
+        let forge = setup();
+        let org_id = create_org(forge.conn(), "FK Co");
+        let missing_org = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: "no-such-org".into(),
+                name: "X".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        );
+        assert!(matches!(missing_org, Err(ForgeError::Validation { .. })));
+
+        let missing_addr = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id.clone(),
+                name: "X".into(),
+                modality: None,
+                address_id: Some("no-such-address".into()),
+                is_headquarters: None,
+            },
+        );
+        assert!(matches!(missing_addr, Err(ForgeError::Validation { .. })));
+
+        let loc = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id,
+                name: "Y".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        )
+        .unwrap();
+        let patched = CampusStore::update_location(
+            forge.conn(),
+            &loc.id,
+            &UpdateOrgLocation {
+                address_id: Some(Some("no-such-address".into())),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(patched, Err(ForgeError::Validation { .. })));
+    }
+
+    #[test]
     fn update_location() {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Update Co");
@@ -322,7 +415,7 @@ mod tests {
 
         assert_eq!(updated.name, "New Name");
         assert_eq!(updated.modality, LocationModality::Remote);
-        assert_eq!(updated.is_headquarters, 1);
+        assert!(updated.is_headquarters);
     }
 
     #[test]

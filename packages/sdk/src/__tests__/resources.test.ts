@@ -579,8 +579,111 @@ describe('Resource clients', () => {
   })
 
   // -----------------------------------------------------------------------
+  // addresses
+  // -----------------------------------------------------------------------
+
+  describe('addresses', () => {
+    it('create POSTs /api/addresses with the body', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { data: { id: 'a1', name: 'Main Campus', city: 'Arlington', state: 'VA', country_code: 'US' } },
+            { status: 201 },
+          ),
+        ),
+      )
+      const result = await client.addresses.create({ name: 'Main Campus', city: 'Arlington', state: 'VA' })
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/addresses')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        name: 'Main Campus',
+        city: 'Arlington',
+        state: 'VA',
+      })
+    })
+
+    it('get GETs /api/addresses/:id', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ data: { id: 'a1' } })))
+      const result = await client.addresses.get('a1')
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/addresses/a1')
+      expect(calledInit(fetchMock).method).toBe('GET')
+    })
+
+    it('update PATCHes /api/addresses/:id with the body', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ data: { id: 'a1', city: null } })))
+      const result = await client.addresses.update('a1', { city: null })
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/addresses/a1')
+      expect(calledInit(fetchMock).method).toBe('PATCH')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({ city: null })
+    })
+
+    it('delete returns ok on 204', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(noContentResponse()))
+      const result = await client.addresses.delete('a1')
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/addresses/a1')
+      expect(calledInit(fetchMock).method).toBe('DELETE')
+    })
+
+    it('list sends offset and limit as a query string', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: [], pagination: { total: 0, offset: 0, limit: 10 } })),
+      )
+      await client.addresses.list({ offset: 0, limit: 10 })
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/addresses?offset=0&limit=10')
+      expect(calledInit(fetchMock).method).toBe('GET')
+    })
+  })
+
+  // -----------------------------------------------------------------------
   // organizations
   // -----------------------------------------------------------------------
+
+  describe('contacts', () => {
+    beforeEach(() => {
+      // The contact link routes answer 201 with an empty body.
+      fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 201 })))
+    })
+
+    it('linkOrganization POSTs the target id and resolves ok on an empty 201', async () => {
+      const result = await client.contacts.linkOrganization('c1', 'o1', 'recruiter')
+
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/contacts/c1/organizations')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        organization_id: 'o1',
+        relationship: 'recruiter',
+      })
+    })
+
+    it('linkJobDescription POSTs the target id and resolves ok on an empty 201', async () => {
+      const result = await client.contacts.linkJobDescription('c1', 'j1', 'hiring_manager')
+
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/contacts/c1/job-descriptions')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        job_description_id: 'j1',
+        relationship: 'hiring_manager',
+      })
+    })
+
+    it('linkResume POSTs the target id and resolves ok on an empty 201', async () => {
+      const result = await client.contacts.linkResume('c1', 'r1', 'reference')
+
+      expect(result.ok).toBe(true)
+      expect(calledUrl(fetchMock)).toBe('http://localhost:3000/api/contacts/c1/resumes')
+      expect(calledInit(fetchMock).method).toBe('POST')
+      expect(JSON.parse(calledInit(fetchMock).body as string)).toEqual({
+        resume_id: 'r1',
+        relationship: 'reference',
+      })
+    })
+  })
 
   describe('organizations', () => {
     it('create sends POST /api/organizations with body', async () => {

@@ -12,6 +12,24 @@ use forge_core::{
     Pagination, UpdateContact,
 };
 
+/// A link to a missing contact or target breaks the junction's FOREIGN KEY, and
+/// `INSERT OR IGNORE` does not cover foreign keys. TS answers 400 VALIDATION_ERROR
+/// (packages/core/src/storage/error-mapper.ts:17). Fold into resu-mx/forge#98's
+/// central mapping when that lands.
+fn link_error(e: rusqlite::Error, junction: &str) -> ForgeError {
+    if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
+        if err.code == rusqlite::ErrorCode::ConstraintViolation
+            && msg.as_deref().unwrap_or("").contains("FOREIGN KEY")
+        {
+            return ForgeError::Validation {
+                message: format!("{junction}: the contact or the linked record does not exist"),
+                field: None,
+            };
+        }
+    }
+    e.into()
+}
+
 /// Data-access repository for contacts and their junction tables.
 pub struct ContactStore;
 
@@ -245,7 +263,8 @@ impl ContactStore {
             "INSERT OR IGNORE INTO contact_organizations (contact_id, organization_id, relationship)
              VALUES (?1, ?2, ?3)",
             params![contact_id, org_id, relationship.as_ref()],
-        )?;
+        )
+        .map_err(|e| link_error(e, "contact_organizations"))?;
         Ok(())
     }
 
@@ -305,7 +324,8 @@ impl ContactStore {
             "INSERT OR IGNORE INTO contact_job_descriptions (contact_id, job_description_id, relationship)
              VALUES (?1, ?2, ?3)",
             params![contact_id, jd_id, relationship.as_ref()],
-        )?;
+        )
+        .map_err(|e| link_error(e, "contact_job_descriptions"))?;
         Ok(())
     }
 
@@ -367,7 +387,8 @@ impl ContactStore {
             "INSERT OR IGNORE INTO contact_resumes (contact_id, resume_id, relationship)
              VALUES (?1, ?2, ?3)",
             params![contact_id, resume_id, relationship.as_ref()],
-        )?;
+        )
+        .map_err(|e| link_error(e, "contact_resumes"))?;
         Ok(())
     }
 
@@ -634,5 +655,276 @@ mod tests {
         let forge = setup();
         let result = ContactStore::delete(forge.conn(), "nonexistent");
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
+    }
+
+    // ── Junctions ───────────────────────────────────────────────────
+
+    fn seed_org(forge: &Forge, name: &str) -> String {
+        let id = new_id();
+        forge
+            .conn()
+            .execute(
+                "INSERT INTO organizations (id, name) VALUES (?1, ?2)",
+                params![id, name],
+            )
+            .unwrap();
+        id
+    }
+
+    fn seed_jd(forge: &Forge, title: &str, org_id: Option<&str>) -> String {
+        let id = new_id();
+        forge
+            .conn()
+            .execute(
+                "INSERT INTO job_descriptions (id, organization_id, title, raw_text) VALUES (?1, ?2, ?3, 'text')",
+                params![id, org_id, title],
+            )
+            .unwrap();
+        id
+    }
+
+    fn seed_resume(forge: &Forge, name: &str) -> String {
+        let id = new_id();
+        forge
+            .conn()
+            .execute(
+                "INSERT INTO resumes (id, name, target_role, target_employer, archetype)
+                 VALUES (?1, ?2, 'SRE', 'Acme', 'backend')",
+                params![id, name],
+            )
+            .unwrap();
+        id
+    }
+
+    #[test]
+    fn link_organization_to_a_missing_org_is_a_validation_error() {
+        let forge = setup();
+        let c = ContactStore::create(forge.conn(), &sample_input()).unwrap();
+        let err = ContactStore::link_organization(
+            forge.conn(),
+            &c.id,
+            "no-such-org",
+            ContactOrgRelationship::Recruiter,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn link_organization_from_a_missing_contact_is_a_validation_error() {
+        let forge = setup();
+        let o = seed_org(&forge, "Acme");
+        let err = ContactStore::link_organization(
+            forge.conn(),
+            "no-such-contact",
+            &o,
+            ContactOrgRelationship::Recruiter,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn link_job_description_and_resume_to_missing_targets_are_validation_errors() {
+        let forge = setup();
+        let c = ContactStore::create(forge.conn(), &sample_input()).unwrap();
+        let err = ContactStore::link_job_description(
+            forge.conn(),
+            &c.id,
+            "no-such-jd",
+            ContactJDRelationship::Recruiter,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }), "{err:?}");
+        let err = ContactStore::link_resume(
+            forge.conn(),
+            &c.id,
+            "no-such-resume",
+            ContactResumeRelationship::Reference,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn link_twice_is_a_noop() {
+        let forge = setup();
+        let c = ContactStore::create(forge.conn(), &sample_input()).unwrap();
+        let o = seed_org(&forge, "Acme");
+        let j = seed_jd(&forge, "SRE", Some(&o));
+        let r = seed_resume(&forge, "Resume");
+        for _ in 0..2 {
+            ContactStore::link_organization(forge.conn(), &c.id, &o, ContactOrgRelationship::Hr)
+                .unwrap();
+            ContactStore::link_job_description(
+                forge.conn(),
+                &c.id,
+                &j,
+                ContactJDRelationship::Interviewer,
+            )
+            .unwrap();
+            ContactStore::link_resume(
+                forge.conn(),
+                &c.id,
+                &r,
+                ContactResumeRelationship::Reference,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            ContactStore::list_organizations(forge.conn(), &c.id)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            ContactStore::list_job_descriptions(forge.conn(), &c.id)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            ContactStore::list_resumes(forge.conn(), &c.id)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn two_relationships_on_one_pair_are_both_listed() {
+        let forge = setup();
+        let c = ContactStore::create(forge.conn(), &sample_input()).unwrap();
+        let o = seed_org(&forge, "Acme");
+        let j = seed_jd(&forge, "SRE", None);
+        let r = seed_resume(&forge, "Resume");
+        ContactStore::link_organization(forge.conn(), &c.id, &o, ContactOrgRelationship::Recruiter)
+            .unwrap();
+        ContactStore::link_organization(forge.conn(), &c.id, &o, ContactOrgRelationship::Peer)
+            .unwrap();
+        ContactStore::link_job_description(
+            forge.conn(),
+            &c.id,
+            &j,
+            ContactJDRelationship::Recruiter,
+        )
+        .unwrap();
+        ContactStore::link_job_description(
+            forge.conn(),
+            &c.id,
+            &j,
+            ContactJDRelationship::Referral,
+        )
+        .unwrap();
+        ContactStore::link_resume(
+            forge.conn(),
+            &c.id,
+            &r,
+            ContactResumeRelationship::Reference,
+        )
+        .unwrap();
+        ContactStore::link_resume(
+            forge.conn(),
+            &c.id,
+            &r,
+            ContactResumeRelationship::Recommender,
+        )
+        .unwrap();
+        assert_eq!(
+            ContactStore::list_organizations(forge.conn(), &c.id)
+                .unwrap()
+                .len(),
+            2
+        );
+        let jds = ContactStore::list_job_descriptions(forge.conn(), &c.id).unwrap();
+        assert_eq!(jds.len(), 2);
+        assert_eq!(
+            jds[0].2, None,
+            "a JD without an organization has no organization name"
+        );
+        assert_eq!(
+            ContactStore::list_resumes(forge.conn(), &c.id)
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn unlink_missing_row_is_ok() {
+        let forge = setup();
+        ContactStore::unlink_organization(forge.conn(), "x", "y", ContactOrgRelationship::Hr)
+            .unwrap();
+        ContactStore::unlink_job_description(forge.conn(), "x", "y", ContactJDRelationship::Other)
+            .unwrap();
+        ContactStore::unlink_resume(forge.conn(), "x", "y", ContactResumeRelationship::Other)
+            .unwrap();
+    }
+
+    #[test]
+    fn unlink_removes_only_the_named_relationship() {
+        let forge = setup();
+        let c = ContactStore::create(forge.conn(), &sample_input()).unwrap();
+        let o = seed_org(&forge, "Acme");
+        ContactStore::link_organization(forge.conn(), &c.id, &o, ContactOrgRelationship::Recruiter)
+            .unwrap();
+        ContactStore::link_organization(forge.conn(), &c.id, &o, ContactOrgRelationship::Peer)
+            .unwrap();
+        ContactStore::unlink_organization(
+            forge.conn(),
+            &c.id,
+            &o,
+            ContactOrgRelationship::Recruiter,
+        )
+        .unwrap();
+        let rows = ContactStore::list_organizations(forge.conn(), &c.id).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].2, ContactOrgRelationship::Peer);
+    }
+
+    #[test]
+    fn reverse_lookups_list_contact_links() {
+        let forge = setup();
+        let c = ContactStore::create(forge.conn(), &sample_input()).unwrap();
+        let o = seed_org(&forge, "Acme");
+        let j = seed_jd(&forge, "SRE", Some(&o));
+        let r = seed_resume(&forge, "Resume");
+        ContactStore::link_organization(forge.conn(), &c.id, &o, ContactOrgRelationship::Manager)
+            .unwrap();
+        ContactStore::link_job_description(
+            forge.conn(),
+            &c.id,
+            &j,
+            ContactJDRelationship::HiringManager,
+        )
+        .unwrap();
+        ContactStore::link_resume(
+            forge.conn(),
+            &c.id,
+            &r,
+            ContactResumeRelationship::Recommender,
+        )
+        .unwrap();
+
+        let by_org = ContactStore::list_by_organization(forge.conn(), &o).unwrap();
+        assert_eq!(by_org.len(), 1);
+        assert_eq!(by_org[0].contact_id, c.id);
+        assert_eq!(by_org[0].contact_name, "Jane Doe");
+        assert_eq!(by_org[0].relationship, "manager");
+        assert_eq!(
+            ContactStore::list_by_job_description(forge.conn(), &j)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            ContactStore::list_by_resume(forge.conn(), &r)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(ContactStore::list_by_resume(forge.conn(), "unknown")
+            .unwrap()
+            .is_empty());
     }
 }

@@ -7,6 +7,7 @@ import type { DebugOptions, SDKLogEntry } from './debug'
 import { DomainsResource } from './resources/domains'
 import { IntegrityResource } from './resources/integrity'
 import { NotesResource } from './resources/notes'
+import { AddressesResource } from './resources/addresses'
 import { OrganizationsResource } from './resources/organizations'
 import { PerspectivesResource } from './resources/perspectives'
 import { ResumesResource } from './resources/resumes'
@@ -71,6 +72,7 @@ export class ForgeClient {
   public review: ReviewResource
   /** Organization CRUD. */
   public organizations: OrganizationsResource
+  public addresses: AddressesResource
   /** User notes CRUD + references. */
   public notes: NotesResource
   /** Integrity / drift detection. */
@@ -134,6 +136,7 @@ export class ForgeClient {
     this.resumes = new ResumesResource(req, reqList, this.baseUrl, this.debug, this.fetchImpl)
     this.review = new ReviewResource(req)
     this.organizations = new OrganizationsResource(req, reqList)
+    this.addresses = new AddressesResource(req, reqList)
     this.notes = new NotesResource(req, reqList)
     this.integrity = new IntegrityResource(req)
     this.domains = new DomainsResource(req, reqList)
@@ -228,6 +231,28 @@ export class ForgeClient {
       let rawText: string | undefined
       try {
         rawText = await response.text()
+
+        // A 2xx with no body is a success with no data. The contact link routes answer
+        // `201` with an empty body (packages/core/src/routes/contacts.ts; the Rust API
+        // matches them, see resu-mx/forge#30). Decision recorded in resu-mx/forge#36: keep
+        // that contract and accept it here. Only 2xx: an empty error response still falls
+        // through to UNKNOWN_ERROR below.
+        if (response.ok && rawText.trim() === '') {
+          this.logResponse({
+            timestamp: new Date().toISOString(),
+            direction: 'response',
+            method,
+            path,
+            status: response.status,
+            duration_ms: Math.round(duration * 10) / 10,
+            ok: true,
+            request_id: requestId,
+            payload_size: 0,
+            request_body_size: bodySize,
+          })
+          return { ok: true, data: undefined as T }
+        }
+
         json = JSON.parse(rawText) as Record<string, unknown>
       } catch {
         const entry: SDKLogEntry = {
