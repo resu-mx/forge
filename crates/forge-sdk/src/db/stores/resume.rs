@@ -1098,6 +1098,28 @@ impl ResumeStore {
             .ok_or_else(|| ForgeError::Internal("Resume updated but not found".into()))
     }
 
+    /// Set or clear (`None`) the tagline override and bump `updated_at`. Writes `content` as
+    /// given: the blank-to-NULL rule lives in `services::tagline::set_override`.
+    /// Never touches `generated_tagline`.
+    pub fn update_tagline_override(
+        conn: &Connection,
+        id: &str,
+        content: Option<&str>,
+    ) -> Result<Resume, ForgeError> {
+        let updated = conn.execute(
+            "UPDATE resumes SET tagline_override = ?1, updated_at = ?2 WHERE id = ?3",
+            params![content, now_iso(), id],
+        )?;
+        if updated == 0 {
+            return Err(ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.into(),
+            });
+        }
+        Self::get(conn, id)?
+            .ok_or_else(|| ForgeError::Internal("Resume updated but not found".into()))
+    }
+
     /// Set or clear the Markdown override for a resume.
     pub fn update_markdown_override(
         conn: &Connection,
@@ -2178,6 +2200,31 @@ mod tests {
             ResumeStore::update_markdown_override(forge.conn(), &resume.id, None).unwrap();
         assert!(cleared.markdown_override.is_none());
         assert!(cleared.markdown_override_updated_at.is_none());
+    }
+
+    #[test]
+    fn update_tagline_override_writes_verbatim_and_bumps_updated_at() {
+        let forge = setup();
+        let resume = create_resume(forge.conn());
+        forge
+            .conn()
+            .execute(
+                "UPDATE resumes SET generated_tagline = 'gen', updated_at = '2000-01-01T00:00:00Z' WHERE id = ?1",
+                [&resume.id],
+            )
+            .unwrap();
+
+        let set = ResumeStore::update_tagline_override(forge.conn(), &resume.id, Some("  Mine  "))
+            .unwrap();
+        assert_eq!(set.tagline_override.as_deref(), Some("  Mine  "));
+        assert_eq!(set.generated_tagline.as_deref(), Some("gen"));
+        assert_ne!(set.updated_at, "2000-01-01T00:00:00Z");
+
+        let cleared = ResumeStore::update_tagline_override(forge.conn(), &resume.id, None).unwrap();
+        assert!(cleared.tagline_override.is_none());
+
+        let missing = ResumeStore::update_tagline_override(forge.conn(), "nope", Some("x"));
+        assert!(matches!(missing, Err(ForgeError::NotFound { .. })));
     }
 
     #[test]

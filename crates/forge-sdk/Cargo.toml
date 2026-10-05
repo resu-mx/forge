@@ -12,6 +12,7 @@ rusqlite = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+icu_collator = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
