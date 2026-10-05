@@ -33,10 +33,7 @@ impl SourceService {
     ///
     /// The base row is inserted first, then the extension row (if the
     /// type has one). Returns the fully hydrated source with extension.
-    pub fn create_source(
-        &self,
-        input: &CreateSource,
-    ) -> Result<SourceWithExtension, ForgeError> {
+    pub fn create_source(&self, input: &CreateSource) -> Result<SourceWithExtension, ForgeError> {
         todo!()
     }
 

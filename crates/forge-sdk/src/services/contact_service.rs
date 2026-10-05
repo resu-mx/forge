@@ -87,10 +87,7 @@ impl ContactService {
     }
 
     /// List organizations linked to a contact, with IDs, names, and relationships.
-    pub fn list_organizations(
-        &self,
-        contact_id: &str,
-    ) -> Result<Vec<OrgRelation>, ForgeError> {
+    pub fn list_organizations(&self, contact_id: &str) -> Result<Vec<OrgRelation>, ForgeError> {
         todo!()
     }
 
@@ -119,10 +116,7 @@ impl ContactService {
     }
 
     /// List job descriptions linked to a contact, with titles and org names.
-    pub fn list_job_descriptions(
-        &self,
-        contact_id: &str,
-    ) -> Result<Vec<JdRelation>, ForgeError> {
+    pub fn list_job_descriptions(&self, contact_id: &str) -> Result<Vec<JdRelation>, ForgeError> {
         todo!()
     }
 
@@ -151,10 +145,7 @@ impl ContactService {
     }
 
     /// List resumes linked to a contact, with IDs, names, and relationships.
-    pub fn list_resumes(
-        &self,
-        contact_id: &str,
-    ) -> Result<Vec<ResumeRelation>, ForgeError> {
+    pub fn list_resumes(&self, contact_id: &str) -> Result<Vec<ResumeRelation>, ForgeError> {
         todo!()
     }
 

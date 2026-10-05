@@ -17,11 +17,12 @@ impl AuditService {
     ///
     /// Resolves: perspective -> bullet -> primary source.
     pub fn trace_chain(conn: &Connection, perspective_id: &str) -> Result<ChainTrace, ForgeError> {
-        let chain = PerspectiveStore::get_with_chain(conn, perspective_id)?
-            .ok_or_else(|| ForgeError::NotFound {
+        let chain = PerspectiveStore::get_with_chain(conn, perspective_id)?.ok_or_else(|| {
+            ForgeError::NotFound {
                 entity_type: "perspective".into(),
                 id: perspective_id.into(),
-            })?;
+            }
+        })?;
 
         Ok(ChainTrace {
             perspective: chain.base,
@@ -35,7 +36,10 @@ impl AuditService {
     /// Compares:
     /// - `perspective.bullet_content_snapshot` against `bullet.content`
     /// - `bullet.source_content_snapshot` against `source.description`
-    pub fn check_integrity(conn: &Connection, perspective_id: &str) -> Result<IntegrityReport, ForgeError> {
+    pub fn check_integrity(
+        conn: &Connection,
+        perspective_id: &str,
+    ) -> Result<IntegrityReport, ForgeError> {
         let chain = Self::trace_chain(conn, perspective_id)?;
 
         let bullet_matches = chain.perspective.bullet_content_snapshot == chain.bullet.content;
@@ -72,9 +76,7 @@ mod tests {
     use crate::db::stores::perspective::PerspectiveStore;
     use crate::db::stores::source::SourceStore;
     use crate::forge::Forge;
-    use forge_core::{
-        CreatePerspectiveInput, CreateSource, Framing, SourceType,
-    };
+    use forge_core::{CreatePerspectiveInput, CreateSource, Framing, SourceType};
 
     fn setup() -> (Forge, String, String, String) {
         let forge = Forge::open_memory().unwrap();
@@ -149,10 +151,13 @@ mod tests {
         let (forge, _, bullet_id, perspective_id) = setup();
 
         // Mutate the bullet content directly
-        forge.conn().execute(
-            "UPDATE bullets SET content = 'Changed bullet content' WHERE id = ?1",
-            rusqlite::params![bullet_id],
-        ).unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE bullets SET content = 'Changed bullet content' WHERE id = ?1",
+                rusqlite::params![bullet_id],
+            )
+            .unwrap();
 
         let report = AuditService::check_integrity(forge.conn(), &perspective_id).unwrap();
 
@@ -168,10 +173,13 @@ mod tests {
         let (forge, source_id, _, perspective_id) = setup();
 
         // Mutate the source description directly
-        forge.conn().execute(
-            "UPDATE sources SET description = 'Changed source description' WHERE id = ?1",
-            rusqlite::params![source_id],
-        ).unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE sources SET description = 'Changed source description' WHERE id = ?1",
+                rusqlite::params![source_id],
+            )
+            .unwrap();
 
         let report = AuditService::check_integrity(forge.conn(), &perspective_id).unwrap();
 

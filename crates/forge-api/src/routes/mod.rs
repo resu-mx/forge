@@ -70,15 +70,10 @@ pub fn api_router() -> Router<SharedState> {
         .merge(export::router())
         .merge(templates::router());
 
-    Router::new()
-        .nest("/api", api)
-        .fallback(fallback)
+    Router::new().nest("/api", api).fallback(fallback)
 }
 
-async fn fallback(
-    method: axum::http::Method,
-    uri: axum::http::Uri,
-) -> impl IntoResponse {
+async fn fallback(method: axum::http::Method, uri: axum::http::Uri) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
         Json(json!({

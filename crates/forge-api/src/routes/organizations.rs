@@ -34,8 +34,7 @@ async fn create_organization(
     State(state): State<SharedState>,
     Json(input): Json<CreateOrganizationInput>,
 ) -> Result<Created<Organization>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| OrganizationStore::create(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| OrganizationStore::create(conn, &input)).await?;
     Ok(Created(result))
 }
 
@@ -80,8 +79,10 @@ async fn update_organization(
     Path(id): Path<String>,
     Json(input): Json<CreateOrganizationInput>,
 ) -> Result<Json<ApiData<Organization>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| OrganizationStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        OrganizationStore::update(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 

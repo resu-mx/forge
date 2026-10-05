@@ -5,9 +5,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    CreateJobDescription, ForgeError, JobDescription, JobDescriptionFilter,
+    new_id, now_iso, CreateJobDescription, ForgeError, JobDescription, JobDescriptionFilter,
     JobDescriptionStatus, JobDescriptionWithOrg, Pagination, UpdateJobDescription,
-    new_id, now_iso,
 };
 
 /// Data-access repository for job descriptions.
@@ -17,7 +16,10 @@ impl JdStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a new job description row.
-    pub fn create(conn: &Connection, input: &CreateJobDescription) -> Result<JobDescription, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreateJobDescription,
+    ) -> Result<JobDescription, ForgeError> {
         let id = new_id();
         let now = now_iso();
         let status = input.status.unwrap_or(JobDescriptionStatus::Discovered);
@@ -66,13 +68,19 @@ impl JdStore {
     }
 
     /// Fetch a job description with its hydrated organization name.
-    pub fn get_with_org(conn: &Connection, id: &str) -> Result<Option<JobDescriptionWithOrg>, ForgeError> {
+    pub fn get_with_org(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<JobDescriptionWithOrg>, ForgeError> {
         let jd = match Self::get(conn, id)? {
             Some(jd) => jd,
             None => return Ok(None),
         };
         let org_name = Self::lookup_org_name(conn, jd.organization_id.as_deref())?;
-        Ok(Some(JobDescriptionWithOrg { base: jd, organization_name: org_name }))
+        Ok(Some(JobDescriptionWithOrg {
+            base: jd,
+            organization_name: org_name,
+        }))
     }
 
     /// List job descriptions with optional filtering and pagination.
@@ -130,7 +138,14 @@ impl JdStore {
             )?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// List job descriptions with hydrated organization names.
@@ -144,7 +159,10 @@ impl JdStore {
         let mut hydrated = Vec::with_capacity(rows.len());
         for jd in rows {
             let org_name = Self::lookup_org_name(conn, jd.organization_id.as_deref())?;
-            hydrated.push(JobDescriptionWithOrg { base: jd, organization_name: org_name });
+            hydrated.push(JobDescriptionWithOrg {
+                base: jd,
+                organization_name: org_name,
+            });
         }
         Ok((hydrated, pagination))
     }
@@ -152,10 +170,16 @@ impl JdStore {
     // ── Update ───────────────────────────────────────────────────────
 
     /// Apply a partial update to an existing job description.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateJobDescription) -> Result<JobDescription, ForgeError> {
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateJobDescription,
+    ) -> Result<JobDescription, ForgeError> {
         // Verify existence
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "job_description".into(), id: id.into() })?;
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "job_description".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -241,7 +265,10 @@ impl JdStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM job_descriptions WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "job_description".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "job_description".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -263,14 +290,19 @@ impl JdStore {
 
     // ── Helpers ──────────────────────────────────────────────────────
 
-    fn lookup_org_name(conn: &Connection, org_id: Option<&str>) -> Result<Option<String>, ForgeError> {
+    fn lookup_org_name(
+        conn: &Connection,
+        org_id: Option<&str>,
+    ) -> Result<Option<String>, ForgeError> {
         match org_id {
             Some(oid) => {
-                let name: Option<String> = conn.query_row(
-                    "SELECT name FROM organizations WHERE id = ?1",
-                    params![oid],
-                    |row| row.get(0),
-                ).optional()?;
+                let name: Option<String> = conn
+                    .query_row(
+                        "SELECT name FROM organizations WHERE id = ?1",
+                        params![oid],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
                 Ok(name)
             }
             None => Ok(None),
@@ -284,7 +316,10 @@ impl JdStore {
             title: row.get(2)?,
             url: row.get(3)?,
             raw_text: row.get(4)?,
-            status: row.get::<_, String>(5)?.parse().unwrap_or(JobDescriptionStatus::Discovered),
+            status: row
+                .get::<_, String>(5)?
+                .parse()
+                .unwrap_or(JobDescriptionStatus::Discovered),
             salary_range: row.get(6)?,
             salary_min: row.get(7)?,
             salary_max: row.get(8)?,
@@ -349,12 +384,8 @@ mod tests {
     #[test]
     fn list_empty() {
         let forge = setup();
-        let (rows, pagination) = JdStore::list(
-            forge.conn(),
-            &JobDescriptionFilter::default(),
-            0,
-            50,
-        ).unwrap();
+        let (rows, pagination) =
+            JdStore::list(forge.conn(), &JobDescriptionFilter::default(), 0, 50).unwrap();
         assert!(rows.is_empty());
         assert_eq!(pagination.total, 0);
     }
@@ -363,19 +394,27 @@ mod tests {
     fn list_with_status_filter() {
         let forge = setup();
         JdStore::create(forge.conn(), &sample_input()).unwrap();
-        JdStore::create(forge.conn(), &CreateJobDescription {
-            title: "Python Dev".into(),
-            raw_text: "Python job".into(),
-            status: Some(JobDescriptionStatus::Applied),
-            ..sample_input()
-        }).unwrap();
+        JdStore::create(
+            forge.conn(),
+            &CreateJobDescription {
+                title: "Python Dev".into(),
+                raw_text: "Python job".into(),
+                status: Some(JobDescriptionStatus::Applied),
+                ..sample_input()
+            },
+        )
+        .unwrap();
 
         let (rows, _) = JdStore::list(
             forge.conn(),
-            &JobDescriptionFilter { status: Some(JobDescriptionStatus::Applied), ..Default::default() },
+            &JobDescriptionFilter {
+                status: Some(JobDescriptionStatus::Applied),
+                ..Default::default()
+            },
             0,
             50,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "Python Dev");
     }
@@ -384,10 +423,15 @@ mod tests {
     fn update_title() {
         let forge = setup();
         let created = JdStore::create(forge.conn(), &sample_input()).unwrap();
-        let updated = JdStore::update(forge.conn(), &created.id, &UpdateJobDescription {
-            title: Some("Staff Rust Engineer".into()),
-            ..Default::default()
-        }).unwrap();
+        let updated = JdStore::update(
+            forge.conn(),
+            &created.id,
+            &UpdateJobDescription {
+                title: Some("Staff Rust Engineer".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.title, "Staff Rust Engineer");
     }
 

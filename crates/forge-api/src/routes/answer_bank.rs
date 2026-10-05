@@ -28,8 +28,7 @@ async fn upsert_answer(
     State(state): State<SharedState>,
     Json(input): Json<UpsertAnswerInput>,
 ) -> Result<Json<ApiData<AnswerBankEntry>>, ApiError> {
-    let data =
-        with_conn(&state, move |conn| AnswerBankStore::upsert(conn, &input)).await?;
+    let data = with_conn(&state, move |conn| AnswerBankStore::upsert(conn, &input)).await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -48,10 +47,7 @@ async fn delete_answer(
 
 pub fn router() -> Router<SharedState> {
     Router::new()
-        .route(
-            "/profile/answers",
-            get(list_answers).put(upsert_answer),
-        )
+        .route("/profile/answers", get(list_answers).put(upsert_answer))
         .route(
             "/profile/answers/{field_kind}",
             axum::routing::delete(delete_answer),

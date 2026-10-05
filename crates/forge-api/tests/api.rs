@@ -15,7 +15,12 @@ fn router() -> Router {
     app(AppState::new(Forge::open_memory().unwrap()))
 }
 
-async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+async fn call(
+    router: &Router,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let mut req = Request::builder().method(method).uri(path);
     let body = match body {
         Some(v) => {
@@ -24,18 +29,33 @@ async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) ->
         }
         None => Body::empty(),
     };
-    let resp = router.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+    let resp = router
+        .clone()
+        .oneshot(req.body(body).unwrap())
+        .await
+        .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
-    let value = if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap_or(Value::Null) };
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
     (status, value)
 }
 
 async fn raw(router: &Router, req: Request<Body>) -> (StatusCode, Value) {
     let resp = router.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 #[tokio::test]
@@ -49,7 +69,13 @@ async fn health() {
 async fn source_crud_uses_the_ts_envelopes() {
     let r = router();
 
-    let (status, created) = call(&r, "POST", "/api/sources", Some(json!({"title": "T", "description": "D"}))).await;
+    let (status, created) = call(
+        &r,
+        "POST",
+        "/api/sources",
+        Some(json!({"title": "T", "description": "D"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED);
     let id = created["data"]["id"].as_str().unwrap().to_string();
 
@@ -132,7 +158,13 @@ async fn templates_crud_and_builtin_protection() {
     assert_eq!(created["data"]["sections"][0]["position"], 0);
     let id = created["data"]["id"].as_str().unwrap().to_string();
 
-    let (status, patched) = call(&r, "PATCH", &format!("/api/templates/{id}"), Some(json!({"name": "Renamed"}))).await;
+    let (status, patched) = call(
+        &r,
+        "PATCH",
+        &format!("/api/templates/{id}"),
+        Some(json!({"name": "Renamed"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(patched["data"]["name"], "Renamed");
 
@@ -188,7 +220,8 @@ async fn post_resumes_with_template_id_creates_the_sections() {
     assert_eq!(resumes["pagination"]["total"], 1);
 
     // Plain create (no template_id) still works.
-    let body = json!({"name": "Plain", "target_role": "E", "target_employer": "A", "archetype": "x"});
+    let body =
+        json!({"name": "Plain", "target_role": "E", "target_employer": "A", "archetype": "x"});
     let (status, _) = call(&r, "POST", "/api/resumes", Some(body)).await;
     assert_eq!(status, StatusCode::CREATED);
 }

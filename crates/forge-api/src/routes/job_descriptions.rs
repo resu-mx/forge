@@ -38,8 +38,9 @@ async fn create_job_description(
 ) -> Result<Created<JobDescriptionWithOrg>, ApiError> {
     let result = with_conn(&state, move |conn| {
         let jd = JdStore::create(conn, &input)?;
-        JdStore::get_with_org(conn, &jd.id)?
-            .ok_or_else(|| forge_core::ForgeError::Internal("Job description created but not found".into()))
+        JdStore::get_with_org(conn, &jd.id)?.ok_or_else(|| {
+            forge_core::ForgeError::Internal("Job description created but not found".into())
+        })
     })
     .await?;
     Ok(Created(result))
@@ -50,14 +51,18 @@ async fn list_job_descriptions(
     Query(q): Query<JdListQuery>,
 ) -> Result<Json<ApiList<JobDescriptionWithOrg>>, ApiError> {
     let filter = JobDescriptionFilter {
-        status: q.status.and_then(|s| s.parse::<JobDescriptionStatus>().ok()),
+        status: q
+            .status
+            .and_then(|s| s.parse::<JobDescriptionStatus>().ok()),
         organization_id: q.organization_id,
     };
     let offset = q.offset.unwrap_or(0).max(0);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
 
-    let (data, pagination) =
-        with_conn(&state, move |conn| JdStore::list_with_org(conn, &filter, offset, limit)).await?;
+    let (data, pagination) = with_conn(&state, move |conn| {
+        JdStore::list_with_org(conn, &filter, offset, limit)
+    })
+    .await?;
 
     Ok(Json(ApiList { data, pagination }))
 }

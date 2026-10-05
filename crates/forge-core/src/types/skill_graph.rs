@@ -24,9 +24,17 @@ use crate::ForgeError;
 /// Numeric semantics for alignment scoring live in the alignment engine
 /// (Epic forge-etam), not here. See `docs/src/architecture/graphs/skills.md`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    Serialize, Deserialize,
-    strum::Display, strum::EnumString, strum::AsRefStr,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+    strum::AsRefStr,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -56,9 +64,17 @@ impl EdgeType {
 
 /// Provenance for a skill graph node. Stored on `skill_graph_nodes.source`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash,
-    Serialize, Deserialize,
-    strum::Display, strum::EnumString, strum::AsRefStr,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+    strum::AsRefStr,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -382,9 +398,8 @@ impl SkillGraphSnapshot {
         let header_json = serde_json::to_vec(&self.header).map_err(|e| {
             ForgeError::Internal(format!("snapshot header JSON encode failed: {e}"))
         })?;
-        let header_len = u32::try_from(header_json.len()).map_err(|_| {
-            ForgeError::Internal("snapshot header exceeds 4 GiB".to_string())
-        })?;
+        let header_len = u32::try_from(header_json.len())
+            .map_err(|_| ForgeError::Internal("snapshot header exceeds 4 GiB".to_string()))?;
 
         let mut out = Vec::with_capacity(
             12 + header_json.len() + self.embeddings.len() + self.hnsw_index.len(),
@@ -431,8 +446,8 @@ impl SkillGraphSnapshot {
                 "snapshot header length exceeds payload".to_string(),
             ));
         }
-        let header: SnapshotHeader =
-            serde_json::from_slice(&bytes[cursor..cursor + header_len]).map_err(|e| {
+        let header: SnapshotHeader = serde_json::from_slice(&bytes[cursor..cursor + header_len])
+            .map_err(|e| {
                 ForgeError::Internal(format!("snapshot header JSON decode failed: {e}"))
             })?;
         cursor += header_len;
@@ -563,7 +578,10 @@ mod snapshot_tests {
         bad.extend_from_slice(&0_u32.to_be_bytes());
         let err = SkillGraphSnapshot::decode(&bad).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("version"), "expected version error, got: {msg}");
+        assert!(
+            msg.contains("version"),
+            "expected version error, got: {msg}"
+        );
     }
 
     #[test]
@@ -677,21 +695,21 @@ mod tests {
     fn edge_type_string_form_matches_sql_check() {
         // These strings match the CHECK constraint in migration 052. Touching
         // either side requires updating the other.
-        assert_eq!(EdgeType::AliasOf.as_ref(),     "alias-of");
-        assert_eq!(EdgeType::ParentOf.as_ref(),    "parent-of");
-        assert_eq!(EdgeType::ChildOf.as_ref(),     "child-of");
-        assert_eq!(EdgeType::Prerequisite.as_ref(),"prerequisite");
-        assert_eq!(EdgeType::RelatedTo.as_ref(),   "related-to");
-        assert_eq!(EdgeType::CoOccurs.as_ref(),    "co-occurs");
+        assert_eq!(EdgeType::AliasOf.as_ref(), "alias-of");
+        assert_eq!(EdgeType::ParentOf.as_ref(), "parent-of");
+        assert_eq!(EdgeType::ChildOf.as_ref(), "child-of");
+        assert_eq!(EdgeType::Prerequisite.as_ref(), "prerequisite");
+        assert_eq!(EdgeType::RelatedTo.as_ref(), "related-to");
+        assert_eq!(EdgeType::CoOccurs.as_ref(), "co-occurs");
         assert_eq!(EdgeType::PlatformFor.as_ref(), "platform-for");
     }
 
     #[test]
     fn node_source_string_form_matches_sql_check() {
         // Matches the CHECK constraint on skill_graph_nodes.source.
-        assert_eq!(NodeSource::Seed.as_ref(),        "seed");
-        assert_eq!(NodeSource::Extracted.as_ref(),   "extracted");
-        assert_eq!(NodeSource::Curated.as_ref(),     "curated");
+        assert_eq!(NodeSource::Seed.as_ref(), "seed");
+        assert_eq!(NodeSource::Extracted.as_ref(), "extracted");
+        assert_eq!(NodeSource::Curated.as_ref(), "curated");
         assert_eq!(NodeSource::UserCreated.as_ref(), "user-created");
     }
 }

@@ -28,6 +28,5 @@ async fn get_drifted_entities(
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
-    Router::new()
-        .route("/integrity/drift", get(get_drifted_entities))
+    Router::new().route("/integrity/drift", get(get_drifted_entities))
 }

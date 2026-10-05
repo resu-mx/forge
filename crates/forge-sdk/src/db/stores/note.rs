@@ -6,8 +6,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    ForgeError, NoteReference, NoteReferenceEntityType, Pagination, UserNote,
-    new_id, now_iso,
+    new_id, now_iso, ForgeError, NoteReference, NoteReferenceEntityType, Pagination, UserNote,
 };
 
 /// Data-access repository for user notes and note references.
@@ -99,7 +98,14 @@ impl NoteStore {
             )?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// Apply a partial update to an existing note (title and/or content).
@@ -109,8 +115,10 @@ impl NoteStore {
         title: Option<&str>,
         content: Option<&str>,
     ) -> Result<UserNote, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "user_note".into(), id: id.into() })?;
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "user_note".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -150,7 +158,10 @@ impl NoteStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM user_notes WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "user_note".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "user_note".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -195,7 +206,10 @@ impl NoteStore {
     }
 
     /// List all references for a given note.
-    pub fn list_references(conn: &Connection, note_id: &str) -> Result<Vec<NoteReference>, ForgeError> {
+    pub fn list_references(
+        conn: &Connection,
+        note_id: &str,
+    ) -> Result<Vec<NoteReference>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT note_id, entity_type, entity_id
              FROM note_references WHERE note_id = ?1",
@@ -243,7 +257,10 @@ impl NoteStore {
     fn map_reference(row: &rusqlite::Row) -> rusqlite::Result<NoteReference> {
         Ok(NoteReference {
             note_id: row.get(0)?,
-            entity_type: row.get::<_, String>(1)?.parse().unwrap_or(NoteReferenceEntityType::Source),
+            entity_type: row
+                .get::<_, String>(1)?
+                .parse()
+                .unwrap_or(NoteReferenceEntityType::Source),
             entity_id: row.get(2)?,
         })
     }
@@ -265,7 +282,8 @@ mod tests {
             forge.conn(),
             Some("My Note"),
             "This is the content of my note.",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(note.title, Some("My Note".into()));
         assert_eq!(note.content, "This is the content of my note.");
 
@@ -300,8 +318,18 @@ mod tests {
     #[test]
     fn list_with_search() {
         let forge = setup();
-        NoteStore::create(forge.conn(), Some("Rust Notes"), "Learning Rust programming").unwrap();
-        NoteStore::create(forge.conn(), Some("Python Notes"), "Learning Python scripting").unwrap();
+        NoteStore::create(
+            forge.conn(),
+            Some("Rust Notes"),
+            "Learning Rust programming",
+        )
+        .unwrap();
+        NoteStore::create(
+            forge.conn(),
+            Some("Python Notes"),
+            "Learning Python scripting",
+        )
+        .unwrap();
 
         let (rows, _) = NoteStore::list(forge.conn(), Some("rust"), 0, 50).unwrap();
         assert_eq!(rows.len(), 1);
@@ -317,7 +345,8 @@ mod tests {
             &created.id,
             Some("New Title"),
             Some("New content"),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(updated.title, Some("New Title".into()));
         assert_eq!(updated.content, "New content");
     }
@@ -347,13 +376,15 @@ mod tests {
             &note.id,
             NoteReferenceEntityType::Source,
             "source-123",
-        ).unwrap();
+        )
+        .unwrap();
         NoteStore::add_reference(
             forge.conn(),
             &note.id,
             NoteReferenceEntityType::Bullet,
             "bullet-456",
-        ).unwrap();
+        )
+        .unwrap();
 
         let refs = NoteStore::list_references(forge.conn(), &note.id).unwrap();
         assert_eq!(refs.len(), 2);
@@ -369,14 +400,16 @@ mod tests {
             &note.id,
             NoteReferenceEntityType::Source,
             "source-123",
-        ).unwrap();
+        )
+        .unwrap();
 
         NoteStore::remove_reference(
             forge.conn(),
             &note.id,
             NoteReferenceEntityType::Source,
             "source-123",
-        ).unwrap();
+        )
+        .unwrap();
 
         let refs = NoteStore::list_references(forge.conn(), &note.id).unwrap();
         assert!(refs.is_empty());
@@ -406,19 +439,19 @@ mod tests {
             &note1.id,
             NoteReferenceEntityType::Source,
             "source-abc",
-        ).unwrap();
+        )
+        .unwrap();
         NoteStore::add_reference(
             forge.conn(),
             &note2.id,
             NoteReferenceEntityType::Source,
             "source-abc",
-        ).unwrap();
+        )
+        .unwrap();
 
-        let notes = NoteStore::find_by_entity(
-            forge.conn(),
-            NoteReferenceEntityType::Source,
-            "source-abc",
-        ).unwrap();
+        let notes =
+            NoteStore::find_by_entity(forge.conn(), NoteReferenceEntityType::Source, "source-abc")
+                .unwrap();
         assert_eq!(notes.len(), 2);
     }
 }

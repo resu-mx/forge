@@ -7,10 +7,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Contact, ContactFilter, ContactLink, ContactJDRelationship,
-    ContactOrgRelationship, ContactResumeRelationship, ContactWithOrg,
-    CreateContact, ForgeError, Pagination, UpdateContact,
-    new_id, now_iso,
+    new_id, now_iso, Contact, ContactFilter, ContactJDRelationship, ContactLink,
+    ContactOrgRelationship, ContactResumeRelationship, ContactWithOrg, CreateContact, ForgeError,
+    Pagination, UpdateContact,
 };
 
 /// Data-access repository for contacts and their junction tables.
@@ -65,7 +64,10 @@ impl ContactStore {
             None => return Ok(None),
         };
         let org_name = Self::lookup_org_name(conn, contact.organization_id.as_deref())?;
-        Ok(Some(ContactWithOrg { base: contact, organization_name: org_name }))
+        Ok(Some(ContactWithOrg {
+            base: contact,
+            organization_name: org_name,
+        }))
     }
 
     /// List contacts with optional filtering, search, and pagination.
@@ -129,16 +131,32 @@ impl ContactStore {
         let mut hydrated = Vec::with_capacity(contacts.len());
         for contact in contacts {
             let org_name = Self::lookup_org_name(conn, contact.organization_id.as_deref())?;
-            hydrated.push(ContactWithOrg { base: contact, organization_name: org_name });
+            hydrated.push(ContactWithOrg {
+                base: contact,
+                organization_name: org_name,
+            });
         }
 
-        Ok((hydrated, Pagination { total, offset, limit }))
+        Ok((
+            hydrated,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// Apply a partial update to an existing contact.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateContact) -> Result<Contact, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "contact".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateContact,
+    ) -> Result<Contact, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "contact".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -206,7 +224,10 @@ impl ContactStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM contacts WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "contact".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "contact".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -262,7 +283,9 @@ impl ContactStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?.parse().unwrap_or(ContactOrgRelationship::Other),
+                    row.get::<_, String>(2)?
+                        .parse()
+                        .unwrap_or(ContactOrgRelationship::Other),
                 ))
             })?
             .collect::<Result<_, _>>()?;
@@ -322,7 +345,9 @@ impl ContactStore {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?.parse().unwrap_or(ContactJDRelationship::Other),
+                    row.get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or(ContactJDRelationship::Other),
                 ))
             })?
             .collect::<Result<_, _>>()?;
@@ -380,7 +405,9 @@ impl ContactStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?.parse().unwrap_or(ContactResumeRelationship::Other),
+                    row.get::<_, String>(2)?
+                        .parse()
+                        .unwrap_or(ContactResumeRelationship::Other),
                 ))
             })?
             .collect::<Result<_, _>>()?;
@@ -390,7 +417,10 @@ impl ContactStore {
     // ── Reverse lookups ─────────────────────────────────────────────
 
     /// List contacts linked to a given organization (reverse lookup).
-    pub fn list_by_organization(conn: &Connection, org_id: &str) -> Result<Vec<ContactLink>, ForgeError> {
+    pub fn list_by_organization(
+        conn: &Connection,
+        org_id: &str,
+    ) -> Result<Vec<ContactLink>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, c.title, c.email, co.relationship
              FROM contact_organizations co
@@ -406,7 +436,10 @@ impl ContactStore {
     }
 
     /// List contacts linked to a given job description (reverse lookup).
-    pub fn list_by_job_description(conn: &Connection, jd_id: &str) -> Result<Vec<ContactLink>, ForgeError> {
+    pub fn list_by_job_description(
+        conn: &Connection,
+        jd_id: &str,
+    ) -> Result<Vec<ContactLink>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, c.title, c.email, cjd.relationship
              FROM contact_job_descriptions cjd
@@ -422,7 +455,10 @@ impl ContactStore {
     }
 
     /// List contacts linked to a given resume (reverse lookup).
-    pub fn list_by_resume(conn: &Connection, resume_id: &str) -> Result<Vec<ContactLink>, ForgeError> {
+    pub fn list_by_resume(
+        conn: &Connection,
+        resume_id: &str,
+    ) -> Result<Vec<ContactLink>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, c.title, c.email, cr.relationship
              FROM contact_resumes cr
@@ -466,14 +502,19 @@ impl ContactStore {
         })
     }
 
-    fn lookup_org_name(conn: &Connection, org_id: Option<&str>) -> Result<Option<String>, ForgeError> {
+    fn lookup_org_name(
+        conn: &Connection,
+        org_id: Option<&str>,
+    ) -> Result<Option<String>, ForgeError> {
         match org_id {
             Some(oid) => {
-                let name: Option<String> = conn.query_row(
-                    "SELECT name FROM organizations WHERE id = ?1",
-                    params![oid],
-                    |row| row.get(0),
-                ).optional()?;
+                let name: Option<String> = conn
+                    .query_row(
+                        "SELECT name FROM organizations WHERE id = ?1",
+                        params![oid],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
                 Ok(name)
             }
             None => Ok(None),
@@ -511,7 +552,9 @@ mod tests {
         assert_eq!(contact.name, "Jane Doe");
         assert_eq!(contact.email, Some("jane@example.com".into()));
 
-        let fetched = ContactStore::get(forge.conn(), &contact.id).unwrap().unwrap();
+        let fetched = ContactStore::get(forge.conn(), &contact.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, contact.id);
         assert_eq!(fetched.name, contact.name);
     }
@@ -526,12 +569,8 @@ mod tests {
     #[test]
     fn list_empty() {
         let forge = setup();
-        let (rows, pagination) = ContactStore::list(
-            forge.conn(),
-            &ContactFilter::default(),
-            0,
-            50,
-        ).unwrap();
+        let (rows, pagination) =
+            ContactStore::list(forge.conn(), &ContactFilter::default(), 0, 50).unwrap();
         assert!(rows.is_empty());
         assert_eq!(pagination.total, 0);
     }
@@ -540,18 +579,26 @@ mod tests {
     fn list_with_search() {
         let forge = setup();
         ContactStore::create(forge.conn(), &sample_input()).unwrap();
-        ContactStore::create(forge.conn(), &CreateContact {
-            name: "John Smith".into(),
-            email: Some("john@example.com".into()),
-            ..sample_input()
-        }).unwrap();
+        ContactStore::create(
+            forge.conn(),
+            &CreateContact {
+                name: "John Smith".into(),
+                email: Some("john@example.com".into()),
+                ..sample_input()
+            },
+        )
+        .unwrap();
 
         let (rows, _) = ContactStore::list(
             forge.conn(),
-            &ContactFilter { search: Some("jane".into()), ..Default::default() },
+            &ContactFilter {
+                search: Some("jane".into()),
+                ..Default::default()
+            },
             0,
             50,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].base.name, "Jane Doe");
     }
@@ -560,10 +607,15 @@ mod tests {
     fn update_contact() {
         let forge = setup();
         let created = ContactStore::create(forge.conn(), &sample_input()).unwrap();
-        let updated = ContactStore::update(forge.conn(), &created.id, &UpdateContact {
-            name: Some("Jane Smith".into()),
-            ..Default::default()
-        }).unwrap();
+        let updated = ContactStore::update(
+            forge.conn(),
+            &created.id,
+            &UpdateContact {
+                name: Some("Jane Smith".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.name, "Jane Smith");
     }
 
@@ -572,7 +624,9 @@ mod tests {
         let forge = setup();
         let created = ContactStore::create(forge.conn(), &sample_input()).unwrap();
         ContactStore::delete(forge.conn(), &created.id).unwrap();
-        assert!(ContactStore::get(forge.conn(), &created.id).unwrap().is_none());
+        assert!(ContactStore::get(forge.conn(), &created.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]

@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{Domain, ForgeError, Skill, SkillCategory, SkillWithDomains, new_id};
+use forge_core::{new_id, Domain, ForgeError, Skill, SkillCategory, SkillWithDomains};
 
 /// Capitalize first character only, preserving the rest (e.g. "SAFe" stays "SAFe").
 fn capitalize_first(s: &str) -> String {
@@ -26,7 +26,11 @@ impl SkillStore {
     /// Insert a new skill row. The `name` is capitalized on the first
     /// character (preserving the rest, e.g. "SAFe" stays "SAFe").
     /// Returns `CONFLICT` if a skill with the same name already exists.
-    pub fn create(conn: &Connection, name: &str, category: Option<SkillCategory>) -> Result<Skill, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        name: &str,
+        category: Option<SkillCategory>,
+    ) -> Result<Skill, ForgeError> {
         let id = new_id();
         let cat = category.unwrap_or(SkillCategory::Other);
         let capitalized = capitalize_first(name.trim());
@@ -34,7 +38,8 @@ impl SkillStore {
         conn.execute(
             "INSERT INTO skills (id, name, category) VALUES (?1, ?2, ?3)",
             params![id, capitalized, cat.as_ref()],
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
                 if err.code == rusqlite::ErrorCode::ConstraintViolation {
                     // UNIQUE constraint on skills.name
@@ -54,21 +59,25 @@ impl SkillStore {
 
     /// Fetch a single skill by ID.
     pub fn get(conn: &Connection, id: &str) -> Result<Option<Skill>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, category FROM skills WHERE id = ?1",
-        )?;
+        let mut stmt = conn.prepare("SELECT id, name, category FROM skills WHERE id = ?1")?;
         let result = stmt.query_row(params![id], Self::map_skill).optional()?;
         Ok(result)
     }
 
     /// Fetch a skill with its linked domains populated.
-    pub fn get_with_domains(conn: &Connection, id: &str) -> Result<Option<SkillWithDomains>, ForgeError> {
+    pub fn get_with_domains(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<SkillWithDomains>, ForgeError> {
         let skill = match Self::get(conn, id)? {
             Some(s) => s,
             None => return Ok(None),
         };
         let domains = Self::fetch_domains_for(conn, &skill.id)?;
-        Ok(Some(SkillWithDomains { base: skill, domains }))
+        Ok(Some(SkillWithDomains {
+            base: skill,
+            domains,
+        }))
     }
 
     /// List all skills, optionally filtered by category and/or domain_id.
@@ -83,9 +92,8 @@ impl SkillStore {
     ) -> Result<Vec<Skill>, ForgeError> {
         // If filtering by domain, get skill IDs from the junction first
         let domain_skill_ids: Option<Vec<String>> = if let Some(did) = domain_id {
-            let mut stmt = conn.prepare(
-                "SELECT skill_id FROM skill_domains WHERE domain_id = ?1",
-            )?;
+            let mut stmt =
+                conn.prepare("SELECT skill_id FROM skill_domains WHERE domain_id = ?1")?;
             let ids: Vec<String> = stmt
                 .query_map(params![did], |row| row.get(0))?
                 .collect::<Result<_, _>>()?;
@@ -113,9 +121,11 @@ impl SkillStore {
             if ids.is_empty() {
                 return Ok(Vec::new());
             }
-            let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| {
-                format!("?{}", bind_values.len() + 1 + i)
-            }).collect();
+            let placeholders: Vec<String> = ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", bind_values.len() + 1 + i))
+                .collect();
             conditions.push(format!("id IN ({})", placeholders.join(", ")));
             for id in ids {
                 bind_values.push(Box::new(id.clone()));
@@ -128,9 +138,7 @@ impl SkillStore {
             format!("WHERE {}", conditions.join(" AND "))
         };
 
-        let sql = format!(
-            "SELECT id, name, category FROM skills {where_clause} ORDER BY name ASC"
-        );
+        let sql = format!("SELECT id, name, category FROM skills {where_clause} ORDER BY name ASC");
 
         let mut stmt = conn.prepare(&sql)?;
         let skills: Vec<Skill> = stmt
@@ -151,8 +159,10 @@ impl SkillStore {
         category: Option<SkillCategory>,
     ) -> Result<Skill, ForgeError> {
         // Verify exists
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "skill".into(), id: id.into() })?;
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "skill".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -188,7 +198,10 @@ impl SkillStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM skills WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "skill".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "skill".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -198,16 +211,21 @@ impl SkillStore {
     /// Find a skill by exact name match (case-insensitive). Returns `None`
     /// if no match exists.
     pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Skill>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, category FROM skills WHERE LOWER(name) = LOWER(?1)",
-        )?;
-        let result = stmt.query_row(params![name.trim()], Self::map_skill).optional()?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, category FROM skills WHERE LOWER(name) = LOWER(?1)")?;
+        let result = stmt
+            .query_row(params![name.trim()], Self::map_skill)
+            .optional()?;
         Ok(result)
     }
 
     /// Find a skill by name (case-insensitive), creating it if it doesn't
     /// exist. Supports the combobox "select existing or create new" pattern.
-    pub fn get_or_create(conn: &Connection, name: &str, category: Option<SkillCategory>) -> Result<Skill, ForgeError> {
+    pub fn get_or_create(
+        conn: &Connection,
+        name: &str,
+        category: Option<SkillCategory>,
+    ) -> Result<Skill, ForgeError> {
         if let Some(existing) = Self::find_by_name(conn, name)? {
             return Ok(existing);
         }
@@ -219,15 +237,22 @@ impl SkillStore {
     /// Link a skill to a domain. Idempotent — if the pair already exists,
     /// returns `Ok(())` without error. Returns `NOT_FOUND` if the skill
     /// or domain does not exist.
-    pub fn add_domain(conn: &Connection, skill_id: &str, domain_id: &str) -> Result<(), ForgeError> {
+    pub fn add_domain(
+        conn: &Connection,
+        skill_id: &str,
+        domain_id: &str,
+    ) -> Result<(), ForgeError> {
         // Verify skill exists
-        Self::get(conn, skill_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "skill".into(), id: skill_id.into() })?;
+        Self::get(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "skill".into(),
+            id: skill_id.into(),
+        })?;
 
         conn.execute(
             "INSERT OR IGNORE INTO skill_domains (skill_id, domain_id) VALUES (?1, ?2)",
             params![skill_id, domain_id],
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
                 if err.code == rusqlite::ErrorCode::ConstraintViolation {
                     if msg.as_deref().unwrap_or("").contains("FOREIGN KEY") {
@@ -245,7 +270,11 @@ impl SkillStore {
     }
 
     /// Unlink a skill from a domain. Silent if the pair does not exist.
-    pub fn remove_domain(conn: &Connection, skill_id: &str, domain_id: &str) -> Result<(), ForgeError> {
+    pub fn remove_domain(
+        conn: &Connection,
+        skill_id: &str,
+        domain_id: &str,
+    ) -> Result<(), ForgeError> {
         conn.execute(
             "DELETE FROM skill_domains WHERE skill_id = ?1 AND domain_id = ?2",
             params![skill_id, domain_id],
@@ -256,8 +285,10 @@ impl SkillStore {
     /// Get all domains linked to a skill. Returns `NOT_FOUND` if the
     /// skill does not exist.
     pub fn get_domains(conn: &Connection, skill_id: &str) -> Result<Vec<Domain>, ForgeError> {
-        Self::get(conn, skill_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "skill".into(), id: skill_id.into() })?;
+        Self::get(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "skill".into(),
+            id: skill_id.into(),
+        })?;
 
         Self::fetch_domains_for(conn, skill_id)
     }
@@ -279,10 +310,14 @@ impl SkillStore {
         }
 
         // Verify both exist
-        Self::get(conn, source_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "skill".into(), id: source_id.into() })?;
-        Self::get(conn, target_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "skill".into(), id: target_id.into() })?;
+        Self::get(conn, source_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "skill".into(),
+            id: source_id.into(),
+        })?;
+        Self::get(conn, target_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "skill".into(),
+            id: target_id.into(),
+        })?;
 
         // Junction tables to migrate: (table_name, parent_field)
         let junctions = [
@@ -306,9 +341,7 @@ impl SkillStore {
             conn.execute(&delete_sql, params![source_id, target_id])?;
 
             // Remap remaining source rows to target
-            let update_sql = format!(
-                "UPDATE {table} SET skill_id = ?1 WHERE skill_id = ?2"
-            );
+            let update_sql = format!("UPDATE {table} SET skill_id = ?1 WHERE skill_id = ?2");
             conn.execute(&update_sql, params![target_id, source_id])?;
         }
 
@@ -348,7 +381,8 @@ impl SkillStore {
         Ok(Skill {
             id: row.get(0)?,
             name: row.get(1)?,
-            category: row.get::<_, String>(2)?
+            category: row
+                .get::<_, String>(2)?
                 .parse()
                 .unwrap_or(SkillCategory::Other),
         })
@@ -367,7 +401,8 @@ mod tests {
     #[test]
     fn create_and_get_skill() {
         let forge = setup();
-        let skill = SkillStore::create(forge.conn(), "typescript", Some(SkillCategory::Language)).unwrap();
+        let skill =
+            SkillStore::create(forge.conn(), "typescript", Some(SkillCategory::Language)).unwrap();
         assert_eq!(skill.name, "Typescript"); // first char capitalized
         assert_eq!(skill.category, SkillCategory::Language);
 
@@ -404,7 +439,8 @@ mod tests {
         SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
         SkillStore::create(forge.conn(), "Docker", Some(SkillCategory::Tool)).unwrap();
 
-        let langs = SkillStore::list(forge.conn(), Some(SkillCategory::Language), None, None).unwrap();
+        let langs =
+            SkillStore::list(forge.conn(), Some(SkillCategory::Language), None, None).unwrap();
         assert!(langs.iter().any(|s| s.name == "Rust"));
         assert!(!langs.iter().any(|s| s.name == "Docker"));
     }
@@ -433,7 +469,8 @@ mod tests {
     #[test]
     fn get_or_create_returns_existing() {
         let forge = setup();
-        let created = SkillStore::create(forge.conn(), "Go", Some(SkillCategory::Language)).unwrap();
+        let created =
+            SkillStore::create(forge.conn(), "Go", Some(SkillCategory::Language)).unwrap();
         let got = SkillStore::get_or_create(forge.conn(), "go", Some(SkillCategory::Tool)).unwrap();
         assert_eq!(got.id, created.id);
         assert_eq!(got.category, SkillCategory::Language); // keeps original category
@@ -442,7 +479,9 @@ mod tests {
     #[test]
     fn get_or_create_creates_new() {
         let forge = setup();
-        let skill = SkillStore::get_or_create(forge.conn(), "Elixir", Some(SkillCategory::Language)).unwrap();
+        let skill =
+            SkillStore::get_or_create(forge.conn(), "Elixir", Some(SkillCategory::Language))
+                .unwrap();
         assert_eq!(skill.name, "Elixir");
         assert_eq!(skill.category, SkillCategory::Language);
     }
@@ -450,7 +489,8 @@ mod tests {
     #[test]
     fn update_skill() {
         let forge = setup();
-        let skill = SkillStore::create(forge.conn(), "Pythn", Some(SkillCategory::Language)).unwrap();
+        let skill =
+            SkillStore::create(forge.conn(), "Pythn", Some(SkillCategory::Language)).unwrap();
         let updated = SkillStore::update(forge.conn(), &skill.id, Some("Python"), None).unwrap();
         assert_eq!(updated.name, "Python");
         assert_eq!(updated.category, SkillCategory::Language);

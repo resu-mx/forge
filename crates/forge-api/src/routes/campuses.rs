@@ -21,8 +21,7 @@ async fn list_locations(
     State(state): State<SharedState>,
     Path(org_id): Path<String>,
 ) -> Result<Json<ApiData<Vec<OrgLocation>>>, ApiError> {
-    let data =
-        with_conn(&state, move |conn| CampusStore::list_by_org(conn, &org_id)).await?;
+    let data = with_conn(&state, move |conn| CampusStore::list_by_org(conn, &org_id)).await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -32,8 +31,10 @@ async fn create_location(
     Json(mut input): Json<CreateOrgLocation>,
 ) -> Result<Created<OrgLocation>, ApiError> {
     input.organization_id = org_id;
-    let result =
-        with_conn(&state, move |conn| CampusStore::create_location(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CampusStore::create_location(conn, &input)
+    })
+    .await?;
     Ok(Created(result))
 }
 
@@ -42,8 +43,10 @@ async fn update_location(
     Path(id): Path<String>,
     Json(input): Json<UpdateOrgLocation>,
 ) -> Result<Json<ApiData<OrgLocation>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| CampusStore::update_location(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CampusStore::update_location(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -61,8 +64,7 @@ async fn list_aliases(
     State(state): State<SharedState>,
     Path(org_id): Path<String>,
 ) -> Result<Json<ApiData<Vec<OrgAlias>>>, ApiError> {
-    let data =
-        with_conn(&state, move |conn| CampusStore::list_aliases(conn, &org_id)).await?;
+    let data = with_conn(&state, move |conn| CampusStore::list_aliases(conn, &org_id)).await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -71,8 +73,10 @@ async fn create_alias(
     Path(org_id): Path<String>,
     Json(input): Json<CreateOrgAlias>,
 ) -> Result<Created<OrgAlias>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| CampusStore::create_alias(conn, &org_id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CampusStore::create_alias(conn, &org_id, &input)
+    })
+    .await?;
     Ok(Created(result))
 }
 
@@ -93,14 +97,14 @@ pub fn router() -> Router<SharedState> {
             "/organizations/{org_id}/locations",
             get(list_locations).post(create_location),
         )
-        .route("/locations/{id}", axum::routing::patch(update_location).delete(delete_location))
+        .route(
+            "/locations/{id}",
+            axum::routing::patch(update_location).delete(delete_location),
+        )
         // Aliases
         .route(
             "/organizations/{org_id}/aliases",
             get(list_aliases).post(create_alias),
         )
-        .route(
-            "/aliases/{id}",
-            axum::routing::delete(delete_alias),
-        )
+        .route("/aliases/{id}", axum::routing::delete(delete_alias))
 }

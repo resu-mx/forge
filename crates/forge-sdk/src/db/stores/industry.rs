@@ -5,7 +5,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{CreateIndustryInput, ForgeError, Industry, new_id, now_iso};
+use forge_core::{new_id, now_iso, CreateIndustryInput, ForgeError, Industry};
 
 /// Data-access store for the `industries` table.
 pub struct IndustryStore;
@@ -61,7 +61,10 @@ impl IndustryStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM industries WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "industry".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "industry".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -96,9 +99,14 @@ mod tests {
         };
         let industry = IndustryStore::create(forge.conn(), &input).unwrap();
         assert_eq!(industry.name, "Fintech");
-        assert_eq!(industry.description, Some("Financial technology services".into()));
+        assert_eq!(
+            industry.description,
+            Some("Financial technology services".into())
+        );
 
-        let fetched = IndustryStore::get(forge.conn(), &industry.id).unwrap().unwrap();
+        let fetched = IndustryStore::get(forge.conn(), &industry.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, industry.id);
         assert_eq!(fetched.name, "Fintech");
     }
@@ -106,14 +114,22 @@ mod tests {
     #[test]
     fn list_industries() {
         let forge = setup();
-        IndustryStore::create(forge.conn(), &CreateIndustryInput {
-            name: "Healthcare".into(),
-            description: None,
-        }).unwrap();
-        IndustryStore::create(forge.conn(), &CreateIndustryInput {
-            name: "Defense".into(),
-            description: Some("Military and defense sector".into()),
-        }).unwrap();
+        IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: "Healthcare".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: "Defense".into(),
+                description: Some("Military and defense sector".into()),
+            },
+        )
+        .unwrap();
 
         let rows = IndustryStore::list(forge.conn()).unwrap();
         assert_eq!(rows.len(), 2);
@@ -125,12 +141,18 @@ mod tests {
     #[test]
     fn delete_industry() {
         let forge = setup();
-        let industry = IndustryStore::create(forge.conn(), &CreateIndustryInput {
-            name: "To Delete".into(),
-            description: None,
-        }).unwrap();
+        let industry = IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: "To Delete".into(),
+                description: None,
+            },
+        )
+        .unwrap();
         IndustryStore::delete(forge.conn(), &industry.id).unwrap();
-        assert!(IndustryStore::get(forge.conn(), &industry.id).unwrap().is_none());
+        assert!(IndustryStore::get(forge.conn(), &industry.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]

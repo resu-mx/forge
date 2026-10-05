@@ -88,8 +88,7 @@ async fn update_summary(
     Path(id): Path<String>,
     Json(input): Json<UpdateSummary>,
 ) -> Result<Json<ApiData<Summary>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| SummaryStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| SummaryStore::update(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -105,8 +104,7 @@ async fn toggle_template(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Summary>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| SummaryStore::toggle_template(conn, &id)).await?;
+    let result = with_conn(&state, move |conn| SummaryStore::toggle_template(conn, &id)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -114,8 +112,7 @@ async fn clone_summary(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Created<Summary>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| SummaryStore::clone_summary(conn, &id)).await?;
+    let result = with_conn(&state, move |conn| SummaryStore::clone_summary(conn, &id)).await?;
     Ok(Created(result))
 }
 
@@ -128,6 +125,8 @@ pub fn router() -> Router<SharedState> {
         .route("/summaries/{id}/clone", post(clone_summary))
         .route(
             "/summaries/{id}",
-            get(get_summary).patch(update_summary).delete(delete_summary),
+            get(get_summary)
+                .patch(update_summary)
+                .delete(delete_summary),
         )
 }

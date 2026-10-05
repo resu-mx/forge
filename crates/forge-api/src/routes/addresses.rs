@@ -66,8 +66,7 @@ async fn update_address(
     Path(id): Path<String>,
     Json(input): Json<UpdateAddress>,
 ) -> Result<Json<ApiData<Address>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| AddressStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| AddressStore::update(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -86,6 +85,8 @@ pub fn router() -> Router<SharedState> {
         .route("/addresses", post(create_address).get(list_addresses))
         .route(
             "/addresses/{id}",
-            get(get_address).patch(update_address).delete(delete_address),
+            get(get_address)
+                .patch(update_address)
+                .delete(delete_address),
         )
 }

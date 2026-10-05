@@ -53,10 +53,7 @@ impl HnswIndex {
     ///
     /// Every vector must have length `dim`. Zero-norm vectors are stored
     /// as-is and will produce a similarity score of 0 for every query.
-    pub(crate) fn build(
-        vectors: &[(NodeIndex, &[f32])],
-        dim: usize,
-    ) -> Result<Self, ForgeError> {
+    pub(crate) fn build(vectors: &[(NodeIndex, &[f32])], dim: usize) -> Result<Self, ForgeError> {
         let mut entries = Vec::with_capacity(vectors.len());
         for (id, v) in vectors {
             if v.len() != dim {
@@ -132,7 +129,10 @@ mod tests {
 
         assert_eq!(results.len(), 3, "k=3 with 3 entries returns all three");
         assert_eq!(results[0].0, 0, "nearest must be the (1,0) vector");
-        assert_eq!(results[1].0, 2, "second-nearest must be the (0.7,0.7) vector");
+        assert_eq!(
+            results[1].0, 2,
+            "second-nearest must be the (0.7,0.7) vector"
+        );
         assert_eq!(results[2].0, 1, "farthest must be the (0,1) vector");
 
         // Scores are monotonically non-increasing.
@@ -180,9 +180,8 @@ mod tests {
 
     #[test]
     fn search_caps_at_k_when_index_is_larger() {
-        let owned: Vec<(usize, Vec<f32>)> = (0..10)
-            .map(|i| (i, vec![i as f32 + 1.0, 0.0]))
-            .collect();
+        let owned: Vec<(usize, Vec<f32>)> =
+            (0..10).map(|i| (i, vec![i as f32 + 1.0, 0.0])).collect();
         let refs: Vec<(NodeIndex, &[f32])> =
             owned.iter().map(|(i, v)| (*i, v.as_slice())).collect();
         let idx = HnswIndex::build(&refs, 2).unwrap();

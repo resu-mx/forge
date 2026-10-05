@@ -47,8 +47,10 @@ async fn list_contacts(
     let offset = q.offset.unwrap_or(0).max(0);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
 
-    let (data, pagination) =
-        with_conn(&state, move |conn| ContactStore::list(conn, &filter, offset, limit)).await?;
+    let (data, pagination) = with_conn(&state, move |conn| {
+        ContactStore::list(conn, &filter, offset, limit)
+    })
+    .await?;
 
     Ok(Json(ApiList { data, pagination }))
 }
@@ -72,8 +74,7 @@ async fn update_contact(
     Path(id): Path<String>,
     Json(input): Json<UpdateContact>,
 ) -> Result<Json<ApiData<Contact>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| ContactStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| ContactStore::update(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -92,6 +93,8 @@ pub fn router() -> Router<SharedState> {
         .route("/contacts", post(create_contact).get(list_contacts))
         .route(
             "/contacts/{id}",
-            get(get_contact).patch(update_contact).delete(delete_contact),
+            get(get_contact)
+                .patch(update_contact)
+                .delete(delete_contact),
         )
 }

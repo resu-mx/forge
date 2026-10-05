@@ -5,7 +5,7 @@
 
 use rusqlite::{params, Connection};
 
-use forge_core::{AnswerBankEntry, ForgeError, UpsertAnswerInput, new_id, now_iso};
+use forge_core::{new_id, now_iso, AnswerBankEntry, ForgeError, UpsertAnswerInput};
 
 /// Data access for the `answer_bank` table.
 pub struct AnswerBankStore;
@@ -25,7 +25,10 @@ impl AnswerBankStore {
 
     /// Upsert an answer by field_kind. If the field_kind already exists,
     /// update its label and value; otherwise insert a new row.
-    pub fn upsert(conn: &Connection, input: &UpsertAnswerInput) -> Result<AnswerBankEntry, ForgeError> {
+    pub fn upsert(
+        conn: &Connection,
+        input: &UpsertAnswerInput,
+    ) -> Result<AnswerBankEntry, ForgeError> {
         let now = now_iso();
 
         // Check if exists by field_kind
@@ -75,14 +78,15 @@ impl AnswerBankStore {
     }
 
     /// Fetch by field_kind.
-    fn get_by_field_kind(conn: &Connection, field_kind: &str) -> Result<Option<AnswerBankEntry>, ForgeError> {
+    fn get_by_field_kind(
+        conn: &Connection,
+        field_kind: &str,
+    ) -> Result<Option<AnswerBankEntry>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT id, field_kind, label, value, created_at, updated_at
              FROM answer_bank WHERE field_kind = ?1",
         )?;
-        let result = stmt
-            .query_row(params![field_kind], Self::map_entry)
-            .ok();
+        let result = stmt.query_row(params![field_kind], Self::map_entry).ok();
         Ok(result)
     }
 
@@ -110,11 +114,15 @@ mod tests {
     #[test]
     fn upsert_creates_new_entry() {
         let forge = setup();
-        let entry = AnswerBankStore::upsert(forge.conn(), &UpsertAnswerInput {
-            field_kind: "work_authorization".into(),
-            label: "Work Authorization".into(),
-            value: "US Citizen".into(),
-        }).unwrap();
+        let entry = AnswerBankStore::upsert(
+            forge.conn(),
+            &UpsertAnswerInput {
+                field_kind: "work_authorization".into(),
+                label: "Work Authorization".into(),
+                value: "US Citizen".into(),
+            },
+        )
+        .unwrap();
 
         assert_eq!(entry.field_kind, "work_authorization");
         assert_eq!(entry.label, "Work Authorization");
@@ -124,17 +132,25 @@ mod tests {
     #[test]
     fn upsert_updates_existing_entry() {
         let forge = setup();
-        let first = AnswerBankStore::upsert(forge.conn(), &UpsertAnswerInput {
-            field_kind: "veteran_status".into(),
-            label: "Veteran Status".into(),
-            value: "Yes".into(),
-        }).unwrap();
+        let first = AnswerBankStore::upsert(
+            forge.conn(),
+            &UpsertAnswerInput {
+                field_kind: "veteran_status".into(),
+                label: "Veteran Status".into(),
+                value: "Yes".into(),
+            },
+        )
+        .unwrap();
 
-        let second = AnswerBankStore::upsert(forge.conn(), &UpsertAnswerInput {
-            field_kind: "veteran_status".into(),
-            label: "Veteran Status (updated)".into(),
-            value: "No".into(),
-        }).unwrap();
+        let second = AnswerBankStore::upsert(
+            forge.conn(),
+            &UpsertAnswerInput {
+                field_kind: "veteran_status".into(),
+                label: "Veteran Status (updated)".into(),
+                value: "No".into(),
+            },
+        )
+        .unwrap();
 
         assert_eq!(first.id, second.id); // same row
         assert_eq!(second.label, "Veteran Status (updated)");
@@ -144,16 +160,24 @@ mod tests {
     #[test]
     fn list_entries() {
         let forge = setup();
-        AnswerBankStore::upsert(forge.conn(), &UpsertAnswerInput {
-            field_kind: "eeo_gender".into(),
-            label: "Gender".into(),
-            value: "Male".into(),
-        }).unwrap();
-        AnswerBankStore::upsert(forge.conn(), &UpsertAnswerInput {
-            field_kind: "eeo_race".into(),
-            label: "Race".into(),
-            value: "White".into(),
-        }).unwrap();
+        AnswerBankStore::upsert(
+            forge.conn(),
+            &UpsertAnswerInput {
+                field_kind: "eeo_gender".into(),
+                label: "Gender".into(),
+                value: "Male".into(),
+            },
+        )
+        .unwrap();
+        AnswerBankStore::upsert(
+            forge.conn(),
+            &UpsertAnswerInput {
+                field_kind: "eeo_race".into(),
+                label: "Race".into(),
+                value: "White".into(),
+            },
+        )
+        .unwrap();
 
         let all = AnswerBankStore::list(forge.conn()).unwrap();
         assert_eq!(all.len(), 2);
@@ -165,11 +189,15 @@ mod tests {
     #[test]
     fn delete_by_field_kind() {
         let forge = setup();
-        AnswerBankStore::upsert(forge.conn(), &UpsertAnswerInput {
-            field_kind: "disability_status".into(),
-            label: "Disability".into(),
-            value: "No".into(),
-        }).unwrap();
+        AnswerBankStore::upsert(
+            forge.conn(),
+            &UpsertAnswerInput {
+                field_kind: "disability_status".into(),
+                label: "Disability".into(),
+                value: "No".into(),
+            },
+        )
+        .unwrap();
 
         AnswerBankStore::delete_by_field_kind(forge.conn(), "disability_status").unwrap();
         let all = AnswerBankStore::list(forge.conn()).unwrap();

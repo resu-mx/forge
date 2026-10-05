@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{CreateRoleTypeInput, ForgeError, RoleType, new_id, now_iso};
+use forge_core::{new_id, now_iso, CreateRoleTypeInput, ForgeError, RoleType};
 
 /// Data access for the `role_types` table.
 pub struct RoleTypeStore;
@@ -30,10 +30,11 @@ impl RoleTypeStore {
 
     /// Fetch a single role type by ID.
     pub fn get(conn: &Connection, id: &str) -> Result<Option<RoleType>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at FROM role_types WHERE id = ?1",
-        )?;
-        let result = stmt.query_row(params![id], Self::map_role_type).optional()?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, description, created_at FROM role_types WHERE id = ?1")?;
+        let result = stmt
+            .query_row(params![id], Self::map_role_type)
+            .optional()?;
         Ok(result)
     }
 
@@ -54,7 +55,10 @@ impl RoleTypeStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM role_types WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "role_type".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "role_type".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -106,14 +110,22 @@ mod tests {
     #[test]
     fn list_role_types() {
         let forge = setup();
-        RoleTypeStore::create(forge.conn(), &CreateRoleTypeInput {
-            name: "Manager".into(),
-            description: None,
-        }).unwrap();
-        RoleTypeStore::create(forge.conn(), &CreateRoleTypeInput {
-            name: "Architect".into(),
-            description: Some("System designer".into()),
-        }).unwrap();
+        RoleTypeStore::create(
+            forge.conn(),
+            &CreateRoleTypeInput {
+                name: "Manager".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        RoleTypeStore::create(
+            forge.conn(),
+            &CreateRoleTypeInput {
+                name: "Architect".into(),
+                description: Some("System designer".into()),
+            },
+        )
+        .unwrap();
 
         let list = RoleTypeStore::list(forge.conn()).unwrap();
         assert_eq!(list.len(), 2);
@@ -125,10 +137,14 @@ mod tests {
     #[test]
     fn delete_role_type() {
         let forge = setup();
-        let rt = RoleTypeStore::create(forge.conn(), &CreateRoleTypeInput {
-            name: "Lead".into(),
-            description: None,
-        }).unwrap();
+        let rt = RoleTypeStore::create(
+            forge.conn(),
+            &CreateRoleTypeInput {
+                name: "Lead".into(),
+                description: None,
+            },
+        )
+        .unwrap();
 
         RoleTypeStore::delete(forge.conn(), &rt.id).unwrap();
         assert!(RoleTypeStore::get(forge.conn(), &rt.id).unwrap().is_none());

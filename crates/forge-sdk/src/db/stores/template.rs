@@ -31,11 +31,17 @@ const VALID_ENTRY_TYPES: &[&str] = &[
 pub struct TemplateStore;
 
 fn validation(message: impl Into<String>, field: Option<&str>) -> ForgeError {
-    ForgeError::Validation { message: message.into(), field: field.map(str::to_string) }
+    ForgeError::Validation {
+        message: message.into(),
+        field: field.map(str::to_string),
+    }
 }
 
 fn not_found(id: &str) -> ForgeError {
-    ForgeError::NotFound { entity_type: "template".into(), id: id.into() }
+    ForgeError::NotFound {
+        entity_type: "template".into(),
+        id: id.into(),
+    }
 }
 
 impl TemplateStore {
@@ -106,7 +112,10 @@ impl TemplateStore {
             (&input.archetype, "Archetype", "archetype"),
         ] {
             if value.trim().is_empty() {
-                return Err(validation(format!("{label} must not be empty"), Some(field)));
+                return Err(validation(
+                    format!("{label} must not be empty"),
+                    Some(field),
+                ));
             }
         }
 
@@ -137,12 +146,18 @@ impl TemplateStore {
         if name.trim().is_empty() {
             return Err(validation("Name must not be empty", Some("name")));
         }
-        ResumeStore::get(conn, resume_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.into() })?;
+        ResumeStore::get(conn, resume_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "resume".into(),
+            id: resume_id.into(),
+        })?;
 
         let sections: Vec<TemplateSectionDef> = ResumeStore::list_sections(conn, resume_id)?
             .into_iter()
-            .map(|s| TemplateSectionDef { title: s.title, entry_type: s.entry_type, position: s.position })
+            .map(|s| TemplateSectionDef {
+                title: s.title,
+                entry_type: s.entry_type,
+                position: s.position,
+            })
             .collect();
         if sections.is_empty() {
             return Err(validation("Resume has no sections", Some("sections")));
@@ -182,7 +197,11 @@ impl TemplateStore {
             None => None,
         };
 
-        let name = patch.name.as_deref().map(str::trim).unwrap_or(&existing.name);
+        let name = patch
+            .name
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or(&existing.name);
         let description = match &patch.description {
             Some(d) => d.clone(),
             None => existing.description.clone(),
@@ -196,7 +215,8 @@ impl TemplateStore {
             params![
                 name,
                 description,
-                serde_json::to_string(&sections).map_err(|e| ForgeError::Internal(e.to_string()))?,
+                serde_json::to_string(&sections)
+                    .map_err(|e| ForgeError::Internal(e.to_string()))?,
                 now_iso(),
                 id
             ],
@@ -224,11 +244,17 @@ impl TemplateStore {
             return Err(validation("Name must not be empty", Some("name")));
         }
         if sections.is_empty() {
-            return Err(validation("Sections must be a non-empty array", Some("sections")));
+            return Err(validation(
+                "Sections must be a non-empty array",
+                Some("sections"),
+            ));
         }
         for (i, s) in sections.iter().enumerate() {
             if s.title.trim().is_empty() {
-                return Err(validation(format!("Section {i}: title must not be empty"), Some("sections")));
+                return Err(validation(
+                    format!("Section {i}: title must not be empty"),
+                    Some("sections"),
+                ));
             }
             if !VALID_ENTRY_TYPES.contains(&s.entry_type.as_str()) {
                 return Err(validation(
@@ -259,9 +285,14 @@ impl TemplateStore {
 
     fn map_template(row: &rusqlite::Row) -> rusqlite::Result<ResumeTemplate> {
         let sections_json: String = row.get(3)?;
-        let sections: Vec<TemplateSectionDef> = serde_json::from_str(&sections_json).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
-        })?;
+        let sections: Vec<TemplateSectionDef> =
+            serde_json::from_str(&sections_json).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    3,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
         Ok(ResumeTemplate {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -280,14 +311,21 @@ mod tests {
     use crate::forge::Forge;
 
     fn section(title: &str, entry_type: &str) -> TemplateSectionDef {
-        TemplateSectionDef { title: title.into(), entry_type: entry_type.into(), position: 99 }
+        TemplateSectionDef {
+            title: title.into(),
+            entry_type: entry_type.into(),
+            position: 99,
+        }
     }
 
     fn new_template(name: &str) -> CreateResumeTemplate {
         CreateResumeTemplate {
             name: name.into(),
             description: Some("d".into()),
-            sections: vec![section(" Summary ", "freeform"), section("Work", "experience")],
+            sections: vec![
+                section(" Summary ", "freeform"),
+                section("Work", "experience"),
+            ],
         }
     }
 
@@ -308,7 +346,10 @@ mod tests {
         let all = TemplateStore::list(forge.conn()).unwrap();
         assert!(all.iter().filter(|t| t.is_builtin == 1).count() >= 3);
         let first_user = all.iter().position(|t| t.is_builtin == 0).unwrap();
-        assert!(all[..first_user].iter().all(|t| t.is_builtin == 1), "built-ins sort first");
+        assert!(
+            all[..first_user].iter().all(|t| t.is_builtin == 1),
+            "built-ins sort first"
+        );
     }
 
     #[test]
@@ -318,7 +359,10 @@ mod tests {
         assert_eq!(t.name, "Mine");
         assert_eq!(t.is_builtin, 0);
         assert_eq!(t.sections[0].title, "Summary");
-        assert_eq!(t.sections.iter().map(|s| s.position).collect::<Vec<_>>(), vec![0, 1]);
+        assert_eq!(
+            t.sections.iter().map(|s| s.position).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
     }
 
     #[test]
@@ -353,7 +397,10 @@ mod tests {
         let patched = TemplateStore::update(
             forge.conn(),
             &t.id,
-            &UpdateResumeTemplate { name: Some("New".into()), ..Default::default() },
+            &UpdateResumeTemplate {
+                name: Some("New".into()),
+                ..Default::default()
+            },
         )
         .unwrap();
         assert_eq!(patched.name, "New");
@@ -371,21 +418,29 @@ mod tests {
     #[test]
     fn builtin_cannot_be_deleted_but_user_template_can() {
         let forge = Forge::open_memory().unwrap();
-        let builtin = TemplateStore::list(forge.conn()).unwrap().into_iter().find(|t| t.is_builtin == 1).unwrap();
+        let builtin = TemplateStore::list(forge.conn())
+            .unwrap()
+            .into_iter()
+            .find(|t| t.is_builtin == 1)
+            .unwrap();
         assert!(matches!(
             TemplateStore::delete(forge.conn(), &builtin.id),
             Err(ForgeError::Validation { .. })
         ));
         let mine = TemplateStore::create(forge.conn(), &new_template("Mine")).unwrap();
         TemplateStore::delete(forge.conn(), &mine.id).unwrap();
-        assert!(TemplateStore::get(forge.conn(), &mine.id).unwrap().is_none());
+        assert!(TemplateStore::get(forge.conn(), &mine.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn create_resume_from_template_makes_sections() {
         let forge = Forge::open_memory().unwrap();
         let t = TemplateStore::create(forge.conn(), &new_template("T")).unwrap();
-        let resume = TemplateStore::create_resume_from_template(forge.conn(), &t.id, &resume_input()).unwrap();
+        let resume =
+            TemplateStore::create_resume_from_template(forge.conn(), &t.id, &resume_input())
+                .unwrap();
         let sections = ResumeStore::list_sections(forge.conn(), &resume.id).unwrap();
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].title, "Summary");
@@ -406,7 +461,10 @@ mod tests {
             TemplateStore::create_resume_from_template(forge.conn(), "missing", &resume_input()),
             Err(ForgeError::NotFound { .. })
         ));
-        let count: i64 = forge.conn().query_row("SELECT count(*) FROM resumes", [], |r| r.get(0)).unwrap();
+        let count: i64 = forge
+            .conn()
+            .query_row("SELECT count(*) FROM resumes", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0, "no resume left behind by a failed create");
     }
 }

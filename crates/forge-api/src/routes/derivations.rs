@@ -13,12 +13,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 use forge_core::{
-    BulletStatus, CreatePendingDerivationInput, CreatePerspectiveInput,
-    DerivePerspectiveInput, ForgeError, Framing, PerspectiveStatus, SourceStatus, now_iso,
+    now_iso, BulletStatus, CreatePendingDerivationInput, CreatePerspectiveInput,
+    DerivePerspectiveInput, ForgeError, Framing, PerspectiveStatus, SourceStatus,
 };
 use forge_sdk::db::{
-    ArchetypeStore, BulletStore, DerivationStore, DomainStore, PerspectiveStore,
-    SourceStore,
+    ArchetypeStore, BulletStore, DerivationStore, DomainStore, PerspectiveStore, SourceStore,
 };
 
 use crate::db::with_conn;
@@ -102,7 +101,9 @@ async fn prepare(
             prepare_bullet_derivation(conn, &req.entity_id, &req.client_id)
         } else {
             let params = req.params.ok_or_else(|| ForgeError::Validation {
-                message: "params (archetype, domain, framing) are required for entity_type \"bullet\"".into(),
+                message:
+                    "params (archetype, domain, framing) are required for entity_type \"bullet\""
+                        .into(),
                 field: Some("params".into()),
             })?;
             prepare_perspective_derivation(conn, &req.entity_id, &params, &req.client_id)
@@ -120,7 +121,10 @@ enum CommitBody {
 }
 
 fn parse_commit_body(body: &serde_json::Value) -> Result<CommitBody, ForgeError> {
-    let invalid = |message: String| ForgeError::Validation { message, field: None };
+    let invalid = |message: String| ForgeError::Validation {
+        message,
+        field: None,
+    };
 
     if body.get("bullets").is_some() {
         let validated = forge_ai::validators::bullet::validate(body)
@@ -129,7 +133,11 @@ fn parse_commit_body(body: &serde_json::Value) -> Result<CommitBody, ForgeError>
             .data
             .bullets
             .into_iter()
-            .map(|b| BulletCommitItem { content: b.content, technologies: b.technologies, metrics: b.metrics })
+            .map(|b| BulletCommitItem {
+                content: b.content,
+                technologies: b.technologies,
+                metrics: b.metrics,
+            })
             .collect();
         return Ok(CommitBody::Bullets(items));
     }
@@ -155,8 +163,8 @@ async fn commit(
     let req = parse_commit_body(&body)?;
 
     let result = with_conn(&state, move |conn| {
-        let pending = DerivationStore::get(conn, &derivation_id)?
-            .ok_or_else(|| ForgeError::NotFound {
+        let pending =
+            DerivationStore::get(conn, &derivation_id)?.ok_or_else(|| ForgeError::NotFound {
                 entity_type: "pending_derivation".into(),
                 id: derivation_id.clone(),
             })?;
@@ -176,7 +184,13 @@ async fn commit(
                         field: None,
                     });
                 }
-                let created = commit_bullet_derivation(conn, &pending.id, &pending.entity_id, &pending.snapshot, &bullets)?;
+                let created = commit_bullet_derivation(
+                    conn,
+                    &pending.id,
+                    &pending.entity_id,
+                    &pending.snapshot,
+                    &bullets,
+                )?;
                 // TS returns the created bullets as a bare array.
                 Ok(json!(created))
             }
@@ -188,8 +202,13 @@ async fn commit(
                     });
                 }
                 let perspective = commit_perspective_derivation(
-                    conn, &pending.id, &pending.entity_id, &pending.snapshot,
-                    pending.derivation_params.as_deref(), &content, &reasoning,
+                    conn,
+                    &pending.id,
+                    &pending.entity_id,
+                    &pending.snapshot,
+                    pending.derivation_params.as_deref(),
+                    &content,
+                    &reasoning,
                 )?;
                 // ...and the created perspective as a bare object.
                 Ok(json!(perspective))
@@ -208,11 +227,10 @@ fn prepare_bullet_derivation(
     source_id: &str,
     client_id: &str,
 ) -> Result<PrepareResponse, ForgeError> {
-    let source = SourceStore::get(conn, source_id)?
-        .ok_or_else(|| ForgeError::NotFound {
-            entity_type: "source".into(),
-            id: source_id.into(),
-        })?;
+    let source = SourceStore::get(conn, source_id)?.ok_or_else(|| ForgeError::NotFound {
+        entity_type: "source".into(),
+        id: source_id.into(),
+    })?;
 
     if source.status == SourceStatus::Archived {
         return Err(ForgeError::Validation {
@@ -231,15 +249,18 @@ fn prepare_bullet_derivation(
     let rendered = forge_ai::prompts::source_to_bullet::render(snapshot);
     let expires_at = compute_expires_at();
 
-    let pending = DerivationStore::create(conn, &CreatePendingDerivationInput {
-        entity_type: "source".into(),
-        entity_id: source_id.into(),
-        client_id: client_id.into(),
-        prompt: format!("{}\n\n{}", rendered.system, rendered.user),
-        snapshot: snapshot.clone(),
-        derivation_params: None,
-        expires_at: expires_at.clone(),
-    })?;
+    let pending = DerivationStore::create(
+        conn,
+        &CreatePendingDerivationInput {
+            entity_type: "source".into(),
+            entity_id: source_id.into(),
+            client_id: client_id.into(),
+            prompt: format!("{}\n\n{}", rendered.system, rendered.user),
+            snapshot: snapshot.clone(),
+            derivation_params: None,
+            expires_at: expires_at.clone(),
+        },
+    )?;
 
     Ok(PrepareResponse {
         derivation_id: pending.id,
@@ -256,8 +277,8 @@ fn prepare_perspective_derivation(
     params: &DerivePerspectiveInput,
     client_id: &str,
 ) -> Result<PrepareResponse, ForgeError> {
-    let bullet = BulletStore::get_hydrated(conn, bullet_id)?
-        .ok_or_else(|| ForgeError::NotFound {
+    let bullet =
+        BulletStore::get_hydrated(conn, bullet_id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "bullet".into(),
             id: bullet_id.into(),
         })?;
@@ -278,7 +299,9 @@ fn prepare_perspective_derivation(
 
     // Validate archetype exists
     let (archetypes, _) = ArchetypeStore::list(conn, 0, 1000)?;
-    let archetype_exists = archetypes.iter().any(|a| a.name.eq_ignore_ascii_case(&params.archetype));
+    let archetype_exists = archetypes
+        .iter()
+        .any(|a| a.name.eq_ignore_ascii_case(&params.archetype));
     if !archetype_exists {
         return Err(ForgeError::Validation {
             message: format!("Archetype '{}' does not exist", params.archetype),
@@ -288,7 +311,9 @@ fn prepare_perspective_derivation(
 
     // Validate domain exists
     let domains = DomainStore::list(conn)?;
-    let domain_exists = domains.iter().any(|d| d.name.eq_ignore_ascii_case(&params.domain));
+    let domain_exists = domains
+        .iter()
+        .any(|d| d.name.eq_ignore_ascii_case(&params.domain));
     if !domain_exists {
         return Err(ForgeError::Validation {
             message: format!("Domain '{}' does not exist", params.domain),
@@ -314,15 +339,18 @@ fn prepare_perspective_derivation(
     let expires_at = compute_expires_at();
     let derivation_params = serde_json::to_string(params).ok();
 
-    let pending = DerivationStore::create(conn, &CreatePendingDerivationInput {
-        entity_type: "bullet".into(),
-        entity_id: bullet_id.into(),
-        client_id: client_id.into(),
-        prompt: format!("{}\n\n{}", rendered.system, rendered.user),
-        snapshot: snapshot.clone(),
-        derivation_params,
-        expires_at: expires_at.clone(),
-    })?;
+    let pending = DerivationStore::create(
+        conn,
+        &CreatePendingDerivationInput {
+            entity_type: "bullet".into(),
+            entity_id: bullet_id.into(),
+            client_id: client_id.into(),
+            prompt: format!("{}\n\n{}", rendered.system, rendered.user),
+            snapshot: snapshot.clone(),
+            derivation_params,
+            expires_at: expires_at.clone(),
+        },
+    )?;
 
     Ok(PrepareResponse {
         derivation_id: pending.id,
@@ -348,7 +376,7 @@ fn commit_bullet_derivation(
             &item.content,
             Some(snapshot),
             item.metrics.as_deref(),
-            None, // domain
+            None,                        // domain
             &[(source_id.into(), true)], // primary source
             &item.technologies,
         )?;
@@ -410,16 +438,19 @@ fn commit_perspective_derivation(
             framing: Framing::Accomplishment,
         });
 
-    let perspective = PerspectiveStore::create(conn, &CreatePerspectiveInput {
-        bullet_id: bullet_id.into(),
-        content: content.into(),
-        bullet_content_snapshot: snapshot.into(),
-        target_archetype: params.archetype,
-        domain: params.domain,
-        framing: params.framing,
-        status: Some(PerspectiveStatus::InReview),
-        prompt_log_id: None,
-    })?;
+    let perspective = PerspectiveStore::create(
+        conn,
+        &CreatePerspectiveInput {
+            bullet_id: bullet_id.into(),
+            content: content.into(),
+            bullet_content_snapshot: snapshot.into(),
+            target_archetype: params.archetype,
+            domain: params.domain,
+            framing: params.framing,
+            status: Some(PerspectiveStatus::InReview),
+            prompt_log_id: None,
+        },
+    )?;
 
     // Create prompt log
     let log_id = DerivationStore::create_prompt_log(

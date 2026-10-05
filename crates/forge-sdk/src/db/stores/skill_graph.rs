@@ -60,7 +60,10 @@ impl<'c> SqlSkillGraphStore<'c> {
             rusqlite::Error::FromSqlConversionFailure(
                 9, // arbitrary column index for the error
                 rusqlite::types::Type::Text,
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid NodeSource '{source_str}': {e}"))),
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid NodeSource '{source_str}': {e}"),
+                )),
             )
         })?;
 
@@ -87,7 +90,10 @@ impl<'c> SqlSkillGraphStore<'c> {
             rusqlite::Error::FromSqlConversionFailure(
                 2,
                 rusqlite::types::Type::Text,
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid EdgeType '{edge_type_str}': {e}"))),
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid EdgeType '{edge_type_str}': {e}"),
+                )),
             )
         })?;
         Ok(EdgeRow {
@@ -190,10 +196,9 @@ impl<'c> SkillGraphTraversal for SqlSkillGraphStore<'c> {
         if edge_types.is_empty() {
             return Ok(Vec::new());
         }
-        let edge_types_json = serde_json::to_string(
-            &edge_types.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
-        )
-        .unwrap_or_else(|_| "[]".to_string());
+        let edge_types_json =
+            serde_json::to_string(&edge_types.iter().map(|e| e.as_ref()).collect::<Vec<_>>())
+                .unwrap_or_else(|_| "[]".to_string());
 
         let cols = node_columns("n.");
         let sql = format!(
@@ -212,7 +217,10 @@ impl<'c> SkillGraphTraversal for SqlSkillGraphStore<'c> {
                     rusqlite::Error::FromSqlConversionFailure(
                         0,
                         rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid EdgeType '{et}': {e}"))),
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("invalid EdgeType '{et}': {e}"),
+                        )),
                     )
                 })?;
                 Ok(RelatedSkill {
@@ -434,8 +442,7 @@ pub fn build_structural_snapshot(
     let nodes: Vec<SnapshotNode> = node_stmt
         .query_map([], |row| {
             let aliases_json: String = row.get("aliases")?;
-            let aliases: Vec<String> =
-                serde_json::from_str(&aliases_json).unwrap_or_default();
+            let aliases: Vec<String> = serde_json::from_str(&aliases_json).unwrap_or_default();
             let source_str: String = row.get("source")?;
             let source = NodeSource::from_str(&source_str).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -543,10 +550,10 @@ mod tests {
         //   helm         — Helm (co-occurs with kubernetes)
         //   container    — Container Orchestration (parent of kubernetes)
         let nodes = [
-            ("k8s",       "Kubernetes",              "platform", "[\"K8s\",\"kube\"]"),
-            ("docker",    "Docker",                  "tool",     "[]"),
-            ("helm",      "Helm",                    "tool",     "[]"),
-            ("container", "Container Orchestration", "concept",  "[]"),
+            ("k8s", "Kubernetes", "platform", "[\"K8s\",\"kube\"]"),
+            ("docker", "Docker", "tool", "[]"),
+            ("helm", "Helm", "tool", "[]"),
+            ("container", "Container Orchestration", "concept", "[]"),
         ];
         for (id, name, cat, aliases_json) in nodes {
             let uuid = format!("{:0>36}", id);
@@ -564,12 +571,18 @@ mod tests {
         //   k8s related-to docker
         //   k8s co-occurs helm   (with temporal data)
         let edges = [
-            ("container", "k8s",    "parent-of",    1.0,  None),
-            ("docker",    "k8s",    "prerequisite", 1.0,  None),
-            ("k8s",       "docker", "related-to",   0.4,  None),
-            ("k8s",       "helm",   "co-occurs",    0.85, Some(
-                r#"[{"window":"2026-Q1","weight":0.85,"jd_count":140},{"window":"2025-Q4","weight":0.80,"jd_count":120}]"#,
-            )),
+            ("container", "k8s", "parent-of", 1.0, None),
+            ("docker", "k8s", "prerequisite", 1.0, None),
+            ("k8s", "docker", "related-to", 0.4, None),
+            (
+                "k8s",
+                "helm",
+                "co-occurs",
+                0.85,
+                Some(
+                    r#"[{"window":"2026-Q1","weight":0.85,"jd_count":140},{"window":"2025-Q4","weight":0.80,"jd_count":120}]"#,
+                ),
+            ),
         ];
         for (src, tgt, et, w, td) in edges {
             let src_uuid = format!("{:0>36}", src);
@@ -649,10 +662,7 @@ mod tests {
 
         // Mixing edge types should pick up multiple.
         let mixed = store
-            .find_related(
-                &id_of("k8s"),
-                &[EdgeType::RelatedTo, EdgeType::CoOccurs],
-            )
+            .find_related(&id_of("k8s"), &[EdgeType::RelatedTo, EdgeType::CoOccurs])
             .unwrap();
         assert_eq!(mixed.len(), 2);
 
@@ -738,11 +748,7 @@ mod tests {
         let store = SqlSkillGraphStore::new(&conn);
 
         let sub = store.n_hop_neighbors(&id_of("k8s"), 1, None).unwrap();
-        let names: BTreeSet<String> = sub
-            .nodes
-            .iter()
-            .map(|n| n.canonical_name.clone())
-            .collect();
+        let names: BTreeSet<String> = sub.nodes.iter().map(|n| n.canonical_name.clone()).collect();
 
         // 1-hop from k8s should include: k8s, container (incoming parent-of),
         // docker (outgoing related-to + incoming prerequisite), helm
@@ -764,11 +770,7 @@ mod tests {
         let sub = store
             .n_hop_neighbors(&id_of("k8s"), 2, Some(&[EdgeType::ParentOf]))
             .unwrap();
-        let names: BTreeSet<String> = sub
-            .nodes
-            .iter()
-            .map(|n| n.canonical_name.clone())
-            .collect();
+        let names: BTreeSet<String> = sub.nodes.iter().map(|n| n.canonical_name.clone()).collect();
 
         assert!(names.contains("Kubernetes"));
         assert!(names.contains("Container Orchestration"));
@@ -785,20 +787,14 @@ mod tests {
         // From container, 1 hop reaches k8s. 2 hops should also reach
         // docker, helm, legacy via k8s.
         let one = store.n_hop_neighbors(&id_of("container"), 1, None).unwrap();
-        let one_names: BTreeSet<String> = one
-            .nodes
-            .iter()
-            .map(|n| n.canonical_name.clone())
-            .collect();
+        let one_names: BTreeSet<String> =
+            one.nodes.iter().map(|n| n.canonical_name.clone()).collect();
         assert!(one_names.contains("Kubernetes"));
         assert!(!one_names.contains("Docker"));
 
         let two = store.n_hop_neighbors(&id_of("container"), 2, None).unwrap();
-        let two_names: BTreeSet<String> = two
-            .nodes
-            .iter()
-            .map(|n| n.canonical_name.clone())
-            .collect();
+        let two_names: BTreeSet<String> =
+            two.nodes.iter().map(|n| n.canonical_name.clone()).collect();
         assert!(two_names.contains("Docker"));
         assert!(two_names.contains("Helm"));
         assert!(two_names.contains("k8s (legacy)"));
@@ -818,12 +814,21 @@ mod tests {
         // the seeded skill_categories table → 19 nodes total. Verify both:
         // the structural count includes everything in the DB, and our test
         // nodes are present.
-        assert_eq!(snap.header.metadata.skill_count, snap.header.nodes.len() as u32);
+        assert_eq!(
+            snap.header.metadata.skill_count,
+            snap.header.nodes.len() as u32
+        );
         assert_eq!(snap.header.metadata.skill_count, 19);
 
-        let test_node_names: BTreeSet<&str> = ["Container Orchestration", "Docker", "Helm", "Kubernetes", "k8s (legacy)"]
-            .into_iter()
-            .collect();
+        let test_node_names: BTreeSet<&str> = [
+            "Container Orchestration",
+            "Docker",
+            "Helm",
+            "Kubernetes",
+            "k8s (legacy)",
+        ]
+        .into_iter()
+        .collect();
         let snapshot_names: BTreeSet<&str> = snap
             .header
             .nodes
@@ -839,7 +844,11 @@ mod tests {
         let mut prev_name: Option<&str> = None;
         for n in &snap.header.nodes {
             if let Some(p) = prev_name {
-                assert!(p <= n.canonical_name.as_str(), "nodes not sorted: {p} > {}", n.canonical_name);
+                assert!(
+                    p <= n.canonical_name.as_str(),
+                    "nodes not sorted: {p} > {}",
+                    n.canonical_name
+                );
             }
             prev_name = Some(n.canonical_name.as_str());
         }
@@ -897,6 +906,9 @@ mod tests {
         // both inside the neighborhood. With a 1-hop expansion from k8s, every
         // edge that touches k8s qualifies (the other endpoint is included).
         let edge_count = sub.edges.len();
-        assert!(edge_count >= 4, "expected at least 4 edges, got {edge_count}");
+        assert!(
+            edge_count >= 4,
+            "expected at least 4 edges, got {edge_count}"
+        );
     }
 }

@@ -7,11 +7,10 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    AddResumeCertification, AddResumeEntry, CoverageSummary, CreateResume, ForgeError, Gap,
-    GapAnalysis, GapBulletCandidate,
-    Pagination, Resume, ResumeCertification, ResumeEntry, ResumeEntryWithContent,
-    ResumeSectionEntity, ResumeSkill, ResumeStatus, ResumeWithEntries,
-    ResumeWithEntriesSection, UpdateResume, new_id, now_iso,
+    new_id, now_iso, AddResumeCertification, AddResumeEntry, CoverageSummary, CreateResume,
+    ForgeError, Gap, GapAnalysis, GapBulletCandidate, Pagination, Resume, ResumeCertification,
+    ResumeEntry, ResumeEntryWithContent, ResumeSectionEntity, ResumeSkill, ResumeStatus,
+    ResumeWithEntries, ResumeWithEntriesSection, UpdateResume,
 };
 
 /// Data access for resume-related tables.
@@ -61,7 +60,10 @@ impl ResumeStore {
 
     /// Fetch a resume with all sections and entries hydrated, including
     /// per-entry `perspective_content` from the perspectives table.
-    pub fn get_with_entries(conn: &Connection, id: &str) -> Result<Option<ResumeWithEntries>, ForgeError> {
+    pub fn get_with_entries(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<ResumeWithEntries>, ForgeError> {
         let resume = match Self::get(conn, id)? {
             Some(r) => r,
             None => return Ok(None),
@@ -136,8 +138,7 @@ impl ResumeStore {
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<Resume>, Pagination), ForgeError> {
-        let total: i64 =
-            conn.query_row("SELECT COUNT(*) FROM resumes", [], |row| row.get(0))?;
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM resumes", [], |row| row.get(0))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, target_role, target_employer, archetype, status,
@@ -155,15 +156,24 @@ impl ResumeStore {
             .query_map(params![limit, offset], Self::map_resume)?
             .collect::<Result<_, _>>()?;
 
-        Ok((resumes, Pagination { total, offset, limit }))
+        Ok((
+            resumes,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// Partially update a resume. Only fields present in `UpdateResume`
     /// are patched. Timestamps for override fields are auto-managed.
     pub fn update(conn: &Connection, id: &str, input: &UpdateResume) -> Result<Resume, ForgeError> {
         // Verify exists
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: id.into() })?;
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "resume".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -171,7 +181,11 @@ impl ResumeStore {
         macro_rules! set_field {
             ($field:ident) => {
                 if let Some(ref v) = input.$field {
-                    sets.push(format!("{} = ?{}", stringify!($field), bind_values.len() + 1));
+                    sets.push(format!(
+                        "{} = ?{}",
+                        stringify!($field),
+                        bind_values.len() + 1
+                    ));
                     bind_values.push(Box::new(v.clone()));
                 }
             };
@@ -180,7 +194,11 @@ impl ResumeStore {
         macro_rules! set_option_field {
             ($field:ident) => {
                 if let Some(ref v) = input.$field {
-                    sets.push(format!("{} = ?{}", stringify!($field), bind_values.len() + 1));
+                    sets.push(format!(
+                        "{} = ?{}",
+                        stringify!($field),
+                        bind_values.len() + 1
+                    ));
                     bind_values.push(Box::new(v.clone()));
                 }
             };
@@ -197,7 +215,10 @@ impl ResumeStore {
         }
 
         if let Some(ref v) = input.show_clearance_in_header {
-            sets.push(format!("show_clearance_in_header = ?{}", bind_values.len() + 1));
+            sets.push(format!(
+                "show_clearance_in_header = ?{}",
+                bind_values.len() + 1
+            ));
             bind_values.push(Box::new(*v));
         }
 
@@ -210,7 +231,10 @@ impl ResumeStore {
             bind_values.push(Box::new(v.clone()));
             let now = now_iso();
             if v.is_some() {
-                sets.push(format!("summary_override_updated_at = ?{}", bind_values.len() + 1));
+                sets.push(format!(
+                    "summary_override_updated_at = ?{}",
+                    bind_values.len() + 1
+                ));
                 bind_values.push(Box::new(now));
             }
         }
@@ -220,7 +244,10 @@ impl ResumeStore {
             bind_values.push(Box::new(v.clone()));
             let now = now_iso();
             if v.is_some() {
-                sets.push(format!("markdown_override_updated_at = ?{}", bind_values.len() + 1));
+                sets.push(format!(
+                    "markdown_override_updated_at = ?{}",
+                    bind_values.len() + 1
+                ));
                 bind_values.push(Box::new(now));
             }
         }
@@ -230,7 +257,10 @@ impl ResumeStore {
             bind_values.push(Box::new(v.clone()));
             let now = now_iso();
             if v.is_some() {
-                sets.push(format!("latex_override_updated_at = ?{}", bind_values.len() + 1));
+                sets.push(format!(
+                    "latex_override_updated_at = ?{}",
+                    bind_values.len() + 1
+                ));
                 bind_values.push(Box::new(now));
             }
         }
@@ -261,7 +291,10 @@ impl ResumeStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM resumes WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "resume".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -276,8 +309,10 @@ impl ResumeStore {
         input: &AddResumeEntry,
     ) -> Result<ResumeEntry, ForgeError> {
         // Verify resume exists
-        Self::get(conn, resume_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.into() })?;
+        Self::get(conn, resume_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "resume".into(),
+            id: resume_id.into(),
+        })?;
 
         // Verify section exists and belongs to resume
         Self::get_section(conn, resume_id, &input.section_id)?;
@@ -298,7 +333,9 @@ impl ResumeStore {
 
             if status != "approved" {
                 return Err(ForgeError::Validation {
-                    message: format!("Perspective {pid} has status '{status}', expected 'approved'"),
+                    message: format!(
+                        "Perspective {pid} has status '{status}', expected 'approved'"
+                    ),
                     field: Some("perspective_id".into()),
                 });
             }
@@ -364,10 +401,15 @@ impl ResumeStore {
         position: Option<i32>,
     ) -> Result<ResumeEntry, ForgeError> {
         // Verify entry exists and belongs to resume
-        let existing = Self::get_entry(conn, entry_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume_entry".into(), id: entry_id.into() })?;
+        let existing = Self::get_entry(conn, entry_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "resume_entry".into(),
+            id: entry_id.into(),
+        })?;
         if existing.resume_id != resume_id {
-            return Err(ForgeError::NotFound { entity_type: "resume_entry".into(), id: entry_id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume_entry".into(),
+                id: entry_id.into(),
+            });
         }
 
         let mut sets = Vec::new();
@@ -378,7 +420,10 @@ impl ResumeStore {
             bind_values.push(Box::new(c.clone()));
             // Clear snapshot when content set to None (reference mode)
             if c.is_none() {
-                sets.push(format!("perspective_content_snapshot = ?{}", bind_values.len() + 1));
+                sets.push(format!(
+                    "perspective_content_snapshot = ?{}",
+                    bind_values.len() + 1
+                ));
                 bind_values.push(Box::new(None::<String>));
             }
         }
@@ -418,13 +463,20 @@ impl ResumeStore {
     }
 
     /// Remove an entry from a resume.
-    pub fn remove_entry(conn: &Connection, resume_id: &str, entry_id: &str) -> Result<(), ForgeError> {
+    pub fn remove_entry(
+        conn: &Connection,
+        resume_id: &str,
+        entry_id: &str,
+    ) -> Result<(), ForgeError> {
         let deleted = conn.execute(
             "DELETE FROM resume_entries WHERE id = ?1 AND resume_id = ?2",
             params![entry_id, resume_id],
         )?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "resume_entry".into(), id: entry_id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume_entry".into(),
+                id: entry_id.into(),
+            });
         }
         Ok(())
     }
@@ -463,8 +515,10 @@ impl ResumeStore {
         position: Option<i32>,
     ) -> Result<ResumeSectionEntity, ForgeError> {
         // Verify resume exists
-        Self::get(conn, resume_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.into() })?;
+        Self::get(conn, resume_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "resume".into(),
+            id: resume_id.into(),
+        })?;
 
         let id = new_id();
         let now = now_iso();
@@ -570,7 +624,10 @@ impl ResumeStore {
             params![section_id, resume_id],
         )?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "resume_section".into(), id: section_id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume_section".into(),
+                id: section_id.into(),
+            });
         }
         Ok(())
     }
@@ -588,18 +645,20 @@ impl ResumeStore {
         let section = Self::get_section(conn, resume_id, section_id)?;
         if section.entry_type != "skills" {
             return Err(ForgeError::Validation {
-                message: format!("Section '{}' has entry_type '{}', expected 'skills'", section_id, section.entry_type),
+                message: format!(
+                    "Section '{}' has entry_type '{}', expected 'skills'",
+                    section_id, section.entry_type
+                ),
                 field: Some("section_id".into()),
             });
         }
 
         // Check for duplicate
-        let exists: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM resume_skills WHERE section_id = ?1 AND skill_id = ?2",
-                params![section_id, skill_id],
-                |row| row.get(0),
-            )?;
+        let exists: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM resume_skills WHERE section_id = ?1 AND skill_id = ?2",
+            params![section_id, skill_id],
+            |row| row.get(0),
+        )?;
         if exists {
             return Err(ForgeError::Conflict {
                 message: format!("Skill {skill_id} already pinned to section {section_id}"),
@@ -698,9 +757,8 @@ impl ResumeStore {
         // Verify section belongs to resume
         Self::get_section(conn, resume_id, section_id)?;
 
-        let mut stmt = conn.prepare(
-            "UPDATE resume_skills SET position = ?1 WHERE id = ?2 AND section_id = ?3",
-        )?;
+        let mut stmt = conn
+            .prepare("UPDATE resume_skills SET position = ?1 WHERE id = ?2 AND section_id = ?3")?;
         for (id, position) in skills {
             let updated = stmt.execute(params![position, id, section_id])?;
             if updated == 0 {
@@ -891,8 +949,10 @@ impl ResumeStore {
         /// A domain with fewer included perspectives than this is "thin".
         const THIN_COVERAGE_THRESHOLD: i64 = 2;
 
-        let resume = Self::get(conn, resume_id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.into() })?;
+        let resume = Self::get(conn, resume_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "resume".into(),
+            id: resume_id.into(),
+        })?;
 
         // Domain coverage of the perspectives already in the resume.
         let mut included: Vec<(String, i64)> = Vec::new(); // insertion-ordered counts
@@ -937,7 +997,10 @@ impl ResumeStore {
 
         let mut gaps = Vec::new();
         for domain in &expected {
-            let count = included.iter().find(|(d, _)| d == domain).map_or(0, |(_, n)| *n);
+            let count = included
+                .iter()
+                .find(|(d, _)| d == domain)
+                .map_or(0, |(_, n)| *n);
             if count == 0 {
                 gaps.push(Gap::MissingDomain {
                     domain: domain.clone(),
@@ -949,8 +1012,12 @@ impl ResumeStore {
                 gaps.push(Gap::ThinCoverage {
                     domain: domain.clone(),
                     current_count: count,
-                    description: format!("Only {count} perspective with domain '{domain}' — consider adding more"),
-                    recommendation: format!("Review approved bullets for additional {domain} framing opportunities"),
+                    description: format!(
+                        "Only {count} perspective with domain '{domain}' — consider adding more"
+                    ),
+                    recommendation: format!(
+                        "Review approved bullets for additional {domain} framing opportunities"
+                    ),
                 });
             }
         }
@@ -965,15 +1032,23 @@ impl ResumeStore {
              )",
         )?;
         let unused = stmt
-            .query_map(params![resume.archetype], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .query_map(params![resume.archetype], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         for (bullet_id, bullet_content) in unused {
             gaps.push(Gap::UnusedBullet {
                 source_title: Self::get_source_title_for_bullet(conn, &bullet_id)?,
                 bullet_id,
                 bullet_content,
-                description: format!("This approved bullet has no perspective for archetype '{}'", resume.archetype),
-                recommendation: format!("Derive a perspective targeting '{}' archetype", resume.archetype),
+                description: format!(
+                    "This approved bullet has no perspective for archetype '{}'",
+                    resume.archetype
+                ),
+                recommendation: format!(
+                    "Derive a perspective targeting '{}' archetype",
+                    resume.archetype
+                ),
             });
         }
 
@@ -1013,7 +1088,10 @@ impl ResumeStore {
             params![header_str, now, id],
         )?;
         if updated == 0 {
-            return Err(ForgeError::NotFound { entity_type: "resume".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.into(),
+            });
         }
 
         Self::get(conn, id)?
@@ -1027,14 +1105,21 @@ impl ResumeStore {
         content: Option<&str>,
     ) -> Result<Resume, ForgeError> {
         let now = now_iso();
-        let ts = if content.is_some() { Some(now.as_str()) } else { None };
+        let ts = if content.is_some() {
+            Some(now.as_str())
+        } else {
+            None
+        };
 
         let updated = conn.execute(
             "UPDATE resumes SET markdown_override = ?1, markdown_override_updated_at = ?2, updated_at = ?3 WHERE id = ?4",
             params![content, ts, now, id],
         )?;
         if updated == 0 {
-            return Err(ForgeError::NotFound { entity_type: "resume".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.into(),
+            });
         }
 
         Self::get(conn, id)?
@@ -1048,14 +1133,21 @@ impl ResumeStore {
         content: Option<&str>,
     ) -> Result<Resume, ForgeError> {
         let now = now_iso();
-        let ts = if content.is_some() { Some(now.as_str()) } else { None };
+        let ts = if content.is_some() {
+            Some(now.as_str())
+        } else {
+            None
+        };
 
         let updated = conn.execute(
             "UPDATE resumes SET latex_override = ?1, latex_override_updated_at = ?2, updated_at = ?3 WHERE id = ?4",
             params![content, ts, now, id],
         )?;
         if updated == 0 {
-            return Err(ForgeError::NotFound { entity_type: "resume".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.into(),
+            });
         }
 
         Self::get(conn, id)?
@@ -1071,13 +1163,14 @@ impl ResumeStore {
              FROM resume_entries WHERE id = ?1",
         )?;
 
-        let result = stmt
-            .query_row(params![id], Self::map_entry)
-            .optional()?;
+        let result = stmt.query_row(params![id], Self::map_entry).optional()?;
         Ok(result)
     }
 
-    fn get_section_by_id(conn: &Connection, id: &str) -> Result<Option<ResumeSectionEntity>, ForgeError> {
+    fn get_section_by_id(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<ResumeSectionEntity>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT id, resume_id, title, entry_type, position, created_at, updated_at
              FROM resume_sections WHERE id = ?1",
@@ -1087,7 +1180,11 @@ impl ResumeStore {
     }
 
     /// Get a section, verifying it belongs to the given resume.
-    fn get_section(conn: &Connection, resume_id: &str, section_id: &str) -> Result<ResumeSectionEntity, ForgeError> {
+    fn get_section(
+        conn: &Connection,
+        resume_id: &str,
+        section_id: &str,
+    ) -> Result<ResumeSectionEntity, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT id, resume_id, title, entry_type, position, created_at, updated_at
              FROM resume_sections WHERE id = ?1 AND resume_id = ?2",
@@ -1110,7 +1207,8 @@ impl ResumeStore {
             target_role: row.get(2)?,
             target_employer: row.get(3)?,
             archetype: row.get(4)?,
-            status: row.get::<_, String>(5)?
+            status: row
+                .get::<_, String>(5)?
                 .parse()
                 .unwrap_or(ResumeStatus::Draft),
             header: row.get(6)?,
@@ -1160,12 +1258,12 @@ impl ResumeStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::stores::source::SourceStore;
     use crate::db::stores::bullet::BulletStore;
     use crate::db::stores::perspective::PerspectiveStore;
     use crate::db::stores::skill::SkillStore;
+    use crate::db::stores::source::SourceStore;
     use crate::forge::Forge;
-    use forge_core::{CreateSource, SourceType, CreatePerspectiveInput, Framing, SkillCategory};
+    use forge_core::{CreatePerspectiveInput, CreateSource, Framing, SkillCategory, SourceType};
 
     fn setup() -> Forge {
         Forge::open_memory().unwrap()
@@ -1213,20 +1311,10 @@ mod tests {
         .unwrap();
 
         // Transition bullet to approved
-        BulletStore::transition_status(
-            conn,
-            &bullet.id,
-            forge_core::BulletStatus::InReview,
-            None,
-        )
-        .unwrap();
-        BulletStore::transition_status(
-            conn,
-            &bullet.id,
-            forge_core::BulletStatus::Approved,
-            None,
-        )
-        .unwrap();
+        BulletStore::transition_status(conn, &bullet.id, forge_core::BulletStatus::InReview, None)
+            .unwrap();
+        BulletStore::transition_status(conn, &bullet.id, forge_core::BulletStatus::Approved, None)
+            .unwrap();
 
         let perspective = PerspectiveStore::create(
             conn,
@@ -1278,7 +1366,9 @@ mod tests {
     #[test]
     fn get_resume_returns_none_for_missing() {
         let forge = setup();
-        assert!(ResumeStore::get(forge.conn(), "nonexistent").unwrap().is_none());
+        assert!(ResumeStore::get(forge.conn(), "nonexistent")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -1374,7 +1464,9 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
         ResumeStore::delete(forge.conn(), &resume.id).unwrap();
-        assert!(ResumeStore::get(forge.conn(), &resume.id).unwrap().is_none());
+        assert!(ResumeStore::get(forge.conn(), &resume.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -1391,12 +1483,11 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
 
-        let s1 = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
-        let s2 = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Skills", "skills", None,
-        ).unwrap();
+        let s1 =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
+        let s2 = ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", None)
+            .unwrap();
 
         assert_eq!(s1.position, 0);
         assert_eq!(s2.position, 1);
@@ -1407,9 +1498,8 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
 
-        let s = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Awards", "awards", Some(5),
-        ).unwrap();
+        let s = ResumeStore::create_section(forge.conn(), &resume.id, "Awards", "awards", Some(5))
+            .unwrap();
         assert_eq!(s.position, 5);
     }
 
@@ -1419,8 +1509,16 @@ mod tests {
         let resume = create_resume(forge.conn());
 
         ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", Some(2)).unwrap();
-        ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", Some(0)).unwrap();
-        ResumeStore::create_section(forge.conn(), &resume.id, "Education", "education", Some(1)).unwrap();
+        ResumeStore::create_section(
+            forge.conn(),
+            &resume.id,
+            "Experience",
+            "experience",
+            Some(0),
+        )
+        .unwrap();
+        ResumeStore::create_section(forge.conn(), &resume.id, "Education", "education", Some(1))
+            .unwrap();
 
         let sections = ResumeStore::list_sections(forge.conn(), &resume.id).unwrap();
         assert_eq!(sections.len(), 3);
@@ -1433,13 +1531,18 @@ mod tests {
     fn update_section_title() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Old Title", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Old Title", "experience", None)
+                .unwrap();
 
         let updated = ResumeStore::update_section(
-            forge.conn(), &resume.id, &section.id, Some("Work History"), None,
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            &section.id,
+            Some("Work History"),
+            None,
+        )
+        .unwrap();
         assert_eq!(updated.title, "Work History");
     }
 
@@ -1447,9 +1550,9 @@ mod tests {
     fn delete_section() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
 
         ResumeStore::delete_section(forge.conn(), &resume.id, &section.id).unwrap();
         let sections = ResumeStore::list_sections(forge.conn(), &resume.id).unwrap();
@@ -1469,11 +1572,12 @@ mod tests {
                 archetype: "dev".into(),
                 summary_id: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
-        let section = ResumeStore::create_section(
-            forge.conn(), &r1.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &r1.id, "Experience", "experience", None)
+                .unwrap();
 
         let result = ResumeStore::delete_section(forge.conn(), &r2.id, &section.id);
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
@@ -1485,9 +1589,9 @@ mod tests {
     fn add_entry_auto_position() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
 
         let e1 = ResumeStore::add_entry(
             forge.conn(),
@@ -1499,7 +1603,8 @@ mod tests {
                 position: None,
                 content: Some("Entry 1".into()),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let e2 = ResumeStore::add_entry(
             forge.conn(),
@@ -1511,7 +1616,8 @@ mod tests {
                 position: None,
                 content: Some("Entry 2".into()),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(e1.position, 0);
         assert_eq!(e2.position, 1);
@@ -1521,9 +1627,9 @@ mod tests {
     fn add_entry_with_approved_perspective() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
         let (perspective_id, _) = create_approved_perspective(forge.conn());
 
         let entry = ResumeStore::add_entry(
@@ -1536,7 +1642,8 @@ mod tests {
                 position: None,
                 content: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(entry.perspective_id, Some(perspective_id));
         // Snapshot should be populated
@@ -1547,16 +1654,22 @@ mod tests {
     fn add_entry_rejects_unapproved_perspective() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
 
         // Create a draft perspective (not approved)
         let source_id = create_source(forge.conn());
         let bullet = BulletStore::create(
-            forge.conn(), "Test bullet", None, None, None,
-            &[(source_id, true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "Test bullet",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap();
         let perspective = PerspectiveStore::create(
             forge.conn(),
             &CreatePerspectiveInput {
@@ -1569,7 +1682,8 @@ mod tests {
                 status: None,
                 prompt_log_id: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = ResumeStore::add_entry(
             forge.conn(),
@@ -1589,9 +1703,9 @@ mod tests {
     fn update_entry_content() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
 
         let entry = ResumeStore::add_entry(
             forge.conn(),
@@ -1603,7 +1717,8 @@ mod tests {
                 position: None,
                 content: Some("Original".into()),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let updated = ResumeStore::update_entry(
             forge.conn(),
@@ -1612,7 +1727,8 @@ mod tests {
             Some(Some("Updated".into())),
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(updated.content, Some("Updated".into()));
     }
@@ -1621,9 +1737,9 @@ mod tests {
     fn remove_entry() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
 
         let entry = ResumeStore::add_entry(
             forge.conn(),
@@ -1635,10 +1751,13 @@ mod tests {
                 position: None,
                 content: Some("To remove".into()),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         ResumeStore::remove_entry(forge.conn(), &resume.id, &entry.id).unwrap();
-        assert!(ResumeStore::get_entry(forge.conn(), &entry.id).unwrap().is_none());
+        assert!(ResumeStore::get_entry(forge.conn(), &entry.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -1654,11 +1773,12 @@ mod tests {
                 archetype: "dev".into(),
                 summary_id: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
-        let section = ResumeStore::create_section(
-            forge.conn(), &r1.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &r1.id, "Experience", "experience", None)
+                .unwrap();
         let entry = ResumeStore::add_entry(
             forge.conn(),
             &r1.id,
@@ -1669,7 +1789,8 @@ mod tests {
                 position: None,
                 content: Some("Test".into()),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = ResumeStore::remove_entry(forge.conn(), &r2.id, &entry.id);
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
@@ -1679,18 +1800,34 @@ mod tests {
     fn reorder_entries() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
 
-        let e1 = ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: section.id.clone(), perspective_id: None, source_id: None,
-            position: None, content: Some("First".into()),
-        }).unwrap();
-        let e2 = ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: section.id.clone(), perspective_id: None, source_id: None,
-            position: None, content: Some("Second".into()),
-        }).unwrap();
+        let e1 = ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("First".into()),
+            },
+        )
+        .unwrap();
+        let e2 = ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("Second".into()),
+            },
+        )
+        .unwrap();
 
         // Swap positions
         ResumeStore::reorder_entries(
@@ -1700,10 +1837,15 @@ mod tests {
                 (e1.id.clone(), section.id.clone(), 1),
                 (e2.id.clone(), section.id.clone(), 0),
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let e1_after = ResumeStore::get_entry(forge.conn(), &e1.id).unwrap().unwrap();
-        let e2_after = ResumeStore::get_entry(forge.conn(), &e2.id).unwrap().unwrap();
+        let e1_after = ResumeStore::get_entry(forge.conn(), &e1.id)
+            .unwrap()
+            .unwrap();
+        let e2_after = ResumeStore::get_entry(forge.conn(), &e2.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(e1_after.position, 1);
         assert_eq!(e2_after.position, 0);
     }
@@ -1714,10 +1856,11 @@ mod tests {
     fn add_skill_to_skills_section() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Skills", "skills", None,
-        ).unwrap();
-        let skill = SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", None)
+                .unwrap();
+        let skill =
+            SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
 
         let rs = ResumeStore::add_skill(forge.conn(), &resume.id, &section.id, &skill.id).unwrap();
         assert_eq!(rs.skill_id, skill.id);
@@ -1728,10 +1871,11 @@ mod tests {
     fn add_skill_rejects_non_skills_section() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
-        let skill = SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
+        let skill =
+            SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
 
         let result = ResumeStore::add_skill(forge.conn(), &resume.id, &section.id, &skill.id);
         assert!(matches!(result, Err(ForgeError::Validation { .. })));
@@ -1741,9 +1885,9 @@ mod tests {
     fn add_skill_duplicate_conflict() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Skills", "skills", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", None)
+                .unwrap();
         let skill = SkillStore::create(forge.conn(), "Go", Some(SkillCategory::Language)).unwrap();
 
         ResumeStore::add_skill(forge.conn(), &resume.id, &section.id, &skill.id).unwrap();
@@ -1755,15 +1899,17 @@ mod tests {
     fn remove_skill() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Skills", "skills", None,
-        ).unwrap();
-        let skill = SkillStore::create(forge.conn(), "Python", Some(SkillCategory::Language)).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", None)
+                .unwrap();
+        let skill =
+            SkillStore::create(forge.conn(), "Python", Some(SkillCategory::Language)).unwrap();
 
         ResumeStore::add_skill(forge.conn(), &resume.id, &section.id, &skill.id).unwrap();
         ResumeStore::remove_skill(forge.conn(), &resume.id, &section.id, &skill.id).unwrap();
 
-        let skills = ResumeStore::list_skills_for_section(forge.conn(), &resume.id, &section.id).unwrap();
+        let skills =
+            ResumeStore::list_skills_for_section(forge.conn(), &resume.id, &section.id).unwrap();
         assert!(skills.is_empty());
     }
 
@@ -1771,9 +1917,9 @@ mod tests {
     fn reorder_skills() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Skills", "skills", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", None)
+                .unwrap();
 
         let s1 = SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
         let s2 = SkillStore::create(forge.conn(), "Go", Some(SkillCategory::Language)).unwrap();
@@ -1787,9 +1933,11 @@ mod tests {
             &resume.id,
             &section.id,
             &[(rs1.id.clone(), 1), (rs2.id.clone(), 0)],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let skills = ResumeStore::list_skills_for_section(forge.conn(), &resume.id, &section.id).unwrap();
+        let skills =
+            ResumeStore::list_skills_for_section(forge.conn(), &resume.id, &section.id).unwrap();
         assert_eq!(skills[0].skill_id, s2.id);
         assert_eq!(skills[1].skill_id, s1.id);
     }
@@ -1801,8 +1949,13 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
         let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Certifications", "certifications", None,
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            "Certifications",
+            "certifications",
+            None,
+        )
+        .unwrap();
 
         // Create a certification directly in the DB for testing
         let cert_id = new_id();
@@ -1820,7 +1973,8 @@ mod tests {
                 section_id: section.id.clone(),
                 position: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(rc.certification_id, cert_id);
         assert_eq!(rc.position, 0);
@@ -1831,8 +1985,13 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
         let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Certifications", "certifications", None,
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            "Certifications",
+            "certifications",
+            None,
+        )
+        .unwrap();
 
         let cert_id = new_id();
         let now = now_iso();
@@ -1842,13 +2001,24 @@ mod tests {
         ).unwrap();
 
         ResumeStore::add_certification(
-            forge.conn(), &resume.id,
-            &AddResumeCertification { certification_id: cert_id.clone(), section_id: section.id.clone(), position: None },
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            &AddResumeCertification {
+                certification_id: cert_id.clone(),
+                section_id: section.id.clone(),
+                position: None,
+            },
+        )
+        .unwrap();
 
         let result = ResumeStore::add_certification(
-            forge.conn(), &resume.id,
-            &AddResumeCertification { certification_id: cert_id, section_id: section.id, position: None },
+            forge.conn(),
+            &resume.id,
+            &AddResumeCertification {
+                certification_id: cert_id,
+                section_id: section.id,
+                position: None,
+            },
         );
         assert!(matches!(result, Err(ForgeError::Conflict { .. })));
     }
@@ -1858,8 +2028,13 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
         let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Certifications", "certifications", None,
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            "Certifications",
+            "certifications",
+            None,
+        )
+        .unwrap();
 
         let cert_id = new_id();
         let now = now_iso();
@@ -1869,9 +2044,15 @@ mod tests {
         ).unwrap();
 
         let rc = ResumeStore::add_certification(
-            forge.conn(), &resume.id,
-            &AddResumeCertification { certification_id: cert_id, section_id: section.id, position: None },
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            &AddResumeCertification {
+                certification_id: cert_id,
+                section_id: section.id,
+                position: None,
+            },
+        )
+        .unwrap();
 
         ResumeStore::remove_certification(forge.conn(), &resume.id, &rc.id).unwrap();
         let certs = ResumeStore::list_certifications(forge.conn(), &resume.id).unwrap();
@@ -1886,20 +2067,39 @@ mod tests {
         let resume = create_resume(forge.conn());
 
         let exp_section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", Some(0),
-        ).unwrap();
-        ResumeStore::create_section(
-            forge.conn(), &resume.id, "Skills", "skills", Some(1),
-        ).unwrap();
+            forge.conn(),
+            &resume.id,
+            "Experience",
+            "experience",
+            Some(0),
+        )
+        .unwrap();
+        ResumeStore::create_section(forge.conn(), &resume.id, "Skills", "skills", Some(1)).unwrap();
 
-        ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: exp_section.id.clone(), perspective_id: None, source_id: None,
-            position: None, content: Some("Built APIs".into()),
-        }).unwrap();
-        ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: exp_section.id.clone(), perspective_id: None, source_id: None,
-            position: None, content: Some("Led team".into()),
-        }).unwrap();
+        ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: exp_section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("Built APIs".into()),
+            },
+        )
+        .unwrap();
+        ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: exp_section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("Led team".into()),
+            },
+        )
+        .unwrap();
 
         let result = ResumeStore::get_with_entries(forge.conn(), &resume.id)
             .unwrap()
@@ -1917,25 +2117,33 @@ mod tests {
     fn get_with_entries_includes_perspective_content() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
         let (perspective_id, _) = create_approved_perspective(forge.conn());
 
-        ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: section.id.clone(),
-            perspective_id: Some(perspective_id),
-            source_id: None,
-            position: None,
-            content: None,
-        }).unwrap();
+        ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: section.id.clone(),
+                perspective_id: Some(perspective_id),
+                source_id: None,
+                position: None,
+                content: None,
+            },
+        )
+        .unwrap();
 
         let result = ResumeStore::get_with_entries(forge.conn(), &resume.id)
             .unwrap()
             .unwrap();
         let entry = &result.sections[0].entries[0];
         assert!(entry.perspective_content.is_some());
-        assert_eq!(entry.perspective_content.as_deref(), Some("Architected distributed systems"));
+        assert_eq!(
+            entry.perspective_content.as_deref(),
+            Some("Architected distributed systems")
+        );
     }
 
     // ── Header / override tests ─────────────────────────────────────
@@ -1951,7 +2159,8 @@ mod tests {
 
         let updated = ResumeStore::update_header(forge.conn(), &resume.id, &header).unwrap();
         assert!(updated.header.is_some());
-        let parsed: serde_json::Value = serde_json::from_str(updated.header.as_ref().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(updated.header.as_ref().unwrap()).unwrap();
         assert_eq!(parsed["name"], "Adam");
     }
 
@@ -1960,11 +2169,13 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
 
-        let set = ResumeStore::update_markdown_override(forge.conn(), &resume.id, Some("# Hello")).unwrap();
+        let set = ResumeStore::update_markdown_override(forge.conn(), &resume.id, Some("# Hello"))
+            .unwrap();
         assert_eq!(set.markdown_override.as_deref(), Some("# Hello"));
         assert!(set.markdown_override_updated_at.is_some());
 
-        let cleared = ResumeStore::update_markdown_override(forge.conn(), &resume.id, None).unwrap();
+        let cleared =
+            ResumeStore::update_markdown_override(forge.conn(), &resume.id, None).unwrap();
         assert!(cleared.markdown_override.is_none());
         assert!(cleared.markdown_override_updated_at.is_none());
     }
@@ -1974,7 +2185,9 @@ mod tests {
         let forge = setup();
         let resume = create_resume(forge.conn());
 
-        let set = ResumeStore::update_latex_override(forge.conn(), &resume.id, Some("\\documentclass{}")).unwrap();
+        let set =
+            ResumeStore::update_latex_override(forge.conn(), &resume.id, Some("\\documentclass{}"))
+                .unwrap();
         assert_eq!(set.latex_override.as_deref(), Some("\\documentclass{}"));
         assert!(set.latex_override_updated_at.is_some());
 
@@ -1992,32 +2205,84 @@ mod tests {
 
         // Create two approved bullets
         let b1 = BulletStore::create(
-            forge.conn(), "Bullet A", None, None, Some("infra"),
-            &[(source_id.clone(), true)], &[],
-        ).unwrap();
-        BulletStore::transition_status(forge.conn(), &b1.id, forge_core::BulletStatus::InReview, None).unwrap();
-        BulletStore::transition_status(forge.conn(), &b1.id, forge_core::BulletStatus::Approved, None).unwrap();
+            forge.conn(),
+            "Bullet A",
+            None,
+            None,
+            Some("infra"),
+            &[(source_id.clone(), true)],
+            &[],
+        )
+        .unwrap();
+        BulletStore::transition_status(
+            forge.conn(),
+            &b1.id,
+            forge_core::BulletStatus::InReview,
+            None,
+        )
+        .unwrap();
+        BulletStore::transition_status(
+            forge.conn(),
+            &b1.id,
+            forge_core::BulletStatus::Approved,
+            None,
+        )
+        .unwrap();
 
         let b2 = BulletStore::create(
-            forge.conn(), "Bullet B", None, None, Some("backend"),
-            &[(source_id.clone(), true)], &[],
-        ).unwrap();
-        BulletStore::transition_status(forge.conn(), &b2.id, forge_core::BulletStatus::InReview, None).unwrap();
-        BulletStore::transition_status(forge.conn(), &b2.id, forge_core::BulletStatus::Approved, None).unwrap();
+            forge.conn(),
+            "Bullet B",
+            None,
+            None,
+            Some("backend"),
+            &[(source_id.clone(), true)],
+            &[],
+        )
+        .unwrap();
+        BulletStore::transition_status(
+            forge.conn(),
+            &b2.id,
+            forge_core::BulletStatus::InReview,
+            None,
+        )
+        .unwrap();
+        BulletStore::transition_status(
+            forge.conn(),
+            &b2.id,
+            forge_core::BulletStatus::Approved,
+            None,
+        )
+        .unwrap();
 
         // Create approved perspective for b1 only
-        let p = PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id: b1.id.clone(),
-            content: "SRE perspective".into(),
-            bullet_content_snapshot: "Bullet A".into(),
-            target_archetype: "sre".into(),
-            domain: "infra".into(),
-            framing: Framing::Responsibility,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
-        PerspectiveStore::transition_status(forge.conn(), &p.id, forge_core::PerspectiveStatus::InReview, None).unwrap();
-        PerspectiveStore::transition_status(forge.conn(), &p.id, forge_core::PerspectiveStatus::Approved, None).unwrap();
+        let p = PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id: b1.id.clone(),
+                content: "SRE perspective".into(),
+                bullet_content_snapshot: "Bullet A".into(),
+                target_archetype: "sre".into(),
+                domain: "infra".into(),
+                framing: Framing::Responsibility,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
+        PerspectiveStore::transition_status(
+            forge.conn(),
+            &p.id,
+            forge_core::PerspectiveStatus::InReview,
+            None,
+        )
+        .unwrap();
+        PerspectiveStore::transition_status(
+            forge.conn(),
+            &p.id,
+            forge_core::PerspectiveStatus::Approved,
+            None,
+        )
+        .unwrap();
 
         // b1 is covered for sre/infra, b2 is not
         let gaps = ResumeStore::find_bullets_for_gap(forge.conn(), "sre", "infra").unwrap();
@@ -2031,9 +2296,15 @@ mod tests {
         let forge = setup();
         let source_id = create_source(forge.conn());
         let bullet = BulletStore::create(
-            forge.conn(), "Test", None, None, None,
-            &[(source_id, true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "Test",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap();
 
         let title = ResumeStore::get_source_title_for_bullet(forge.conn(), &bullet.id).unwrap();
         assert_eq!(title, "Test Source");
@@ -2052,13 +2323,21 @@ mod tests {
     fn delete_resume_cascades_sections_and_entries() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
-        ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: section.id.clone(), perspective_id: None, source_id: None,
-            position: None, content: Some("Test".into()),
-        }).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
+        ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("Test".into()),
+            },
+        )
+        .unwrap();
 
         ResumeStore::delete(forge.conn(), &resume.id).unwrap();
 
@@ -2071,15 +2350,25 @@ mod tests {
     fn delete_section_cascades_entries() {
         let forge = setup();
         let resume = create_resume(forge.conn());
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume.id, "Experience", "experience", None,
-        ).unwrap();
-        let entry = ResumeStore::add_entry(forge.conn(), &resume.id, &AddResumeEntry {
-            section_id: section.id.clone(), perspective_id: None, source_id: None,
-            position: None, content: Some("Test".into()),
-        }).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
+        let entry = ResumeStore::add_entry(
+            forge.conn(),
+            &resume.id,
+            &AddResumeEntry {
+                section_id: section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("Test".into()),
+            },
+        )
+        .unwrap();
 
         ResumeStore::delete_section(forge.conn(), &resume.id, &section.id).unwrap();
-        assert!(ResumeStore::get_entry(forge.conn(), &entry.id).unwrap().is_none());
+        assert!(ResumeStore::get_entry(forge.conn(), &entry.id)
+            .unwrap()
+            .is_none());
     }
 }

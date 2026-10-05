@@ -7,8 +7,8 @@
 //! All method bodies are `todo!()` stubs.
 
 use forge_core::{
-    CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionWithOrg,
-    Pagination, UpdateJobDescription,
+    CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionWithOrg, Pagination,
+    UpdateJobDescription,
 };
 
 /// Service layer for job description business logic.
