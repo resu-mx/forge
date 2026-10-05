@@ -27,7 +27,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # Direct-upload Pages project. Must match the project declared in resu-mx/infra.
-  PAGES_PROJECT: resumx-app-direct
+  PAGES_PROJECT: resumx-webapp
 
 jobs:
   build:
