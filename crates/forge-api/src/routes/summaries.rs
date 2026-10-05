@@ -4,6 +4,8 @@
 //! same JSON shapes, so the webui and MCP server continue working.
 
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use rusqlite::Connection;
@@ -26,7 +28,9 @@ use crate::state::SharedState;
 pub struct SummaryListQuery {
     pub offset: Option<i64>,
     pub limit: Option<i64>,
-    pub is_template: Option<i32>,
+    /// Text, not i32: TS parses with parseInt and ignores a non-numeric value
+    /// (summaries.ts:35-40).
+    pub is_template: Option<String>,
     pub industry_id: Option<String>,
     pub role_type_id: Option<String>,
     pub skill_id: Option<String>,
@@ -60,12 +64,62 @@ pub struct AddSummarySkillBody {
     pub skill_id: Option<String>,
 }
 
+/// JS `parseInt(s, 10)`: optional leading whitespace and sign, then the leading digits.
+fn parse_int_like_js(s: &str) -> Option<i32> {
+    let t = s.trim_start();
+    let (sign, rest) = match t.strip_prefix('-') {
+        Some(rest) => (-1, rest),
+        None => (1, t.strip_prefix('+').unwrap_or(t)),
+    };
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..end].parse::<i32>().ok().map(|n| sign * n)
+}
+
+/// TS rejects an unknown sort key or direction (summary-service.ts:106-123). Empty means absent
+/// (summaries.ts:47-48 tests with `if (c.req.query(..))`).
+fn parse_sort(sort_by: Option<&str>, direction: Option<&str>) -> Result<SummarySort, ForgeError> {
+    let sort_by = match sort_by {
+        None | Some("") => None,
+        Some(s) => Some(
+            s.parse::<SummarySortBy>()
+                .map_err(|_| ForgeError::Validation {
+                    message: format!("Invalid sort_by '{s}'. Valid: title, created_at, updated_at"),
+                    field: Some("sort_by".into()),
+                })?,
+        ),
+    };
+    let direction = match direction {
+        None | Some("") => None,
+        Some(d) => Some(
+            d.parse::<SortDirection>()
+                .map_err(|_| ForgeError::Validation {
+                    message: format!("Invalid direction '{d}'. Valid: asc, desc"),
+                    field: Some("direction".into()),
+                })?,
+        ),
+    };
+    Ok(SummarySort { sort_by, direction })
+}
+
+fn require_title(title: &str) -> Result<(), ForgeError> {
+    if title.trim().is_empty() {
+        return Err(ForgeError::Validation {
+            message: "Title must not be empty".into(),
+            field: Some("title".into()),
+        });
+    }
+    Ok(())
+}
+
 // ── Handlers ────────────────────────────────────────────────────────
 
 async fn create_summary(
     State(state): State<SharedState>,
     Json(input): Json<CreateSummary>,
 ) -> Result<Created<Summary>, ApiError> {
+    require_title(&input.title)?;
     let result = with_conn(&state, move |conn| SummaryStore::create(conn, &input)).await?;
     Ok(Created(result))
 }
@@ -74,16 +128,13 @@ async fn list_summaries(
     State(state): State<SharedState>,
     Query(q): Query<SummaryListQuery>,
 ) -> Result<Json<ApiList<Summary>>, ApiError> {
+    let sort = parse_sort(q.sort_by.as_deref(), q.direction.as_deref())?;
     let filter = SummaryFilter {
-        is_template: q.is_template,
+        is_template: q.is_template.as_deref().and_then(parse_int_like_js),
         industry_id: q.industry_id,
         role_type_id: q.role_type_id,
         skill_id: q.skill_id,
         search: q.search,
-    };
-    let sort = SummarySort {
-        sort_by: q.sort_by.and_then(|s| s.parse::<SummarySortBy>().ok()),
-        direction: q.direction.and_then(|s| s.parse::<SortDirection>().ok()),
     };
     let offset = q.offset.unwrap_or(0).max(0);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
@@ -148,6 +199,9 @@ async fn update_summary(
     Path(id): Path<String>,
     Json(input): Json<UpdateSummary>,
 ) -> Result<Json<ApiData<Summary>>, ApiError> {
+    if let Some(title) = input.title.as_deref() {
+        require_title(title)?;
+    }
     let result = with_conn(&state, move |conn| SummaryStore::update(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
@@ -168,12 +222,23 @@ async fn toggle_template(
     Ok(Json(ApiData { data: result }))
 }
 
+/// A missing source answers TS's literal `SUMMARY_NOT_FOUND` envelope
+/// (summary-service.ts:269-272), not `ForgeError::NotFound`'s generic code.
 async fn clone_summary(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-) -> Result<Created<Summary>, ApiError> {
-    let result = with_conn(&state, move |conn| SummaryStore::clone_summary(conn, &id)).await?;
-    Ok(Created(result))
+) -> Result<Response, ApiError> {
+    match with_conn(&state, move |conn| SummaryStore::clone_summary(conn, &id)).await {
+        Ok(result) => Ok(Created(result).into_response()),
+        Err(ApiError(ForgeError::NotFound { .. })) => Ok((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": { "code": "SUMMARY_NOT_FOUND", "message": "Summary not found" }
+            })),
+        )
+            .into_response()),
+        Err(e) => Err(e),
+    }
 }
 
 /// The store methods don't check the summary; TS does, first
@@ -274,4 +339,22 @@ pub fn router() -> Router<SharedState> {
                 .patch(update_summary)
                 .delete(delete_summary),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_int_like_js_matches_parse_int() {
+        assert_eq!(parse_int_like_js("1"), Some(1));
+        assert_eq!(parse_int_like_js("0"), Some(0));
+        assert_eq!(parse_int_like_js(" 2"), Some(2));
+        assert_eq!(parse_int_like_js("+1"), Some(1));
+        assert_eq!(parse_int_like_js("-1"), Some(-1));
+        assert_eq!(parse_int_like_js("1abc"), Some(1));
+        assert_eq!(parse_int_like_js("invalid"), None);
+        assert_eq!(parse_int_like_js(""), None);
+        assert_eq!(parse_int_like_js("-"), None);
+    }
 }
