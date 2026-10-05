@@ -831,6 +831,14 @@ export interface Domain {
   created_at: string
 }
 
+/** A domain with its usage, as `GET /api/domains` returns it. */
+export interface DomainWithUsage extends Domain {
+  /** Perspectives whose `domain` equals this domain's name. */
+  perspective_count: number
+  /** Archetypes linked through `archetype_domains`. */
+  archetype_count: number
+}
+
 /** An editable industry (e.g. fintech, healthcare, defense). */
 export interface Industry {
   id: string

@@ -98,6 +98,60 @@ describe('Domain routes', () => {
     expect(body.data.description).toBe('Updated desc')
   })
 
+  test('PATCH /domains/:id renames and clears the description', async () => {
+    const domainId = seedDomain(ctx.db, { name: 'patch_rename', description: 'Before' })
+    const res = await apiRequest(ctx.app, 'PATCH', `/domains/${domainId}`, {
+      name: 'patch_renamed',
+      description: null,
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.id).toBe(domainId)
+    expect(body.data.name).toBe('patch_renamed')
+    expect(body.data.description).toBeNull()
+  })
+
+  test('PATCH /domains/:id with its own name returns 200', async () => {
+    const domainId = seedDomain(ctx.db, { name: 'patch_same' })
+    const res = await apiRequest(ctx.app, 'PATCH', `/domains/${domainId}`, {
+      name: 'patch_same',
+      description: 'Edited',
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.description).toBe('Edited')
+  })
+
+  test('PATCH /domains/:id with empty name returns 400', async () => {
+    const domainId = seedDomain(ctx.db, { name: 'patch_blank' })
+    const res = await apiRequest(ctx.app, 'PATCH', `/domains/${domainId}`, { name: '   ' })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Name must not be empty')
+  })
+
+  test('PATCH /domains/:id with invalid format returns 400 and changes nothing', async () => {
+    const domainId = seedDomain(ctx.db, { name: 'patch_format' })
+    const res = await apiRequest(ctx.app, 'PATCH', `/domains/${domainId}`, { name: 'Bad Name' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDATION_ERROR')
+    const get = await apiRequest(ctx.app, 'GET', `/domains/${domainId}`)
+    expect((await get.json()).data.name).toBe('patch_format')
+  })
+
+  test('PATCH /domains/:id with unknown id returns 404', async () => {
+    const res = await apiRequest(ctx.app, 'PATCH', '/domains/nonexistent', { description: 'x' })
+    expect(res.status).toBe(404)
+  })
+
+  test('PATCH /domains/:id to a taken name returns 409', async () => {
+    seedDomain(ctx.db, { name: 'patch_taken' })
+    const domainId = seedDomain(ctx.db, { name: 'patch_other' })
+    const res = await apiRequest(ctx.app, 'PATCH', `/domains/${domainId}`, { name: 'patch_taken' })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.code).toBe('CONFLICT')
+  })
+
   // -- DELETE /domains/:id --------------------------------------------------
 
   test('DELETE /domains/:id with no references returns 204', async () => {

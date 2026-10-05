@@ -2,12 +2,7 @@
   import { forge, friendlyError } from '$lib/sdk'
   import { ConfirmDialog, LoadingSpinner, EmptyState, PageHeader } from '$lib/components'
   import { addToast } from '$lib/stores/toast.svelte'
-  import type { Domain } from '@forge/sdk'
-
-  interface DomainWithUsage extends Domain {
-    perspective_count: number
-    archetype_count: number
-  }
+  import type { DomainWithUsage } from '@forge/sdk'
 
   // ---- State ----
   let domains = $state<DomainWithUsage[]>([])
@@ -34,7 +29,7 @@
     loading = true
     const result = await forge.domains.list({ limit: 200 })
     if (result.ok) {
-      domains = result.data as DomainWithUsage[]
+      domains = result.data
     } else {
       addToast(friendlyError(result.error, 'Failed to load domains'), 'error')
     }
@@ -102,18 +97,22 @@
     const result = await forge.domains.delete(deleteTarget.id)
     if (result.ok) {
       addToast(`Domain '${deleteTarget.name}' deleted`, 'success')
-      deleteConfirm = false
-      deleteTarget = null
-      await loadDomains()
     } else {
       addToast(friendlyError(result.error, 'Cannot delete domain'), 'error')
-      deleteConfirm = false
-      deleteTarget = null
     }
+    deleteConfirm = false
+    deleteTarget = null
+    // Refresh in both cases: a 409 means our counts were stale.
+    await loadDomains()
+  }
+
+  /** Counts are present only when the API sent them; never assume "unused". */
+  function hasUsage(domain: DomainWithUsage): boolean {
+    return typeof domain.perspective_count === 'number' && typeof domain.archetype_count === 'number'
   }
 
   function isReferenced(domain: DomainWithUsage): boolean {
-    return domain.perspective_count > 0 || domain.archetype_count > 0
+    return !hasUsage(domain) || domain.perspective_count > 0 || domain.archetype_count > 0
   }
 </script>
 
@@ -184,8 +183,8 @@
               <td>
                 <input type="text" bind:value={editDescription} class="field-input" />
               </td>
-              <td>{domain.perspective_count}</td>
-              <td>{domain.archetype_count}</td>
+              <td>{domain.perspective_count ?? '—'}</td>
+              <td>{domain.archetype_count ?? '—'}</td>
               <td class="actions">
                 <button class="btn btn-sm btn-primary" onclick={saveEdit} disabled={saving}>
                   {saving ? 'Saving...' : 'Save'}
@@ -197,8 +196,8 @@
             <tr>
               <td class="domain-name">{domain.name}</td>
               <td class="domain-desc">{domain.description ?? '--'}</td>
-              <td class="count">{domain.perspective_count}</td>
-              <td class="count">{domain.archetype_count}</td>
+              <td class="count">{domain.perspective_count ?? '—'}</td>
+              <td class="count">{domain.archetype_count ?? '—'}</td>
               <td class="actions">
                 <button class="btn btn-sm btn-ghost" onclick={() => startEdit(domain)}>
                   Edit
@@ -207,7 +206,11 @@
                   class="btn btn-sm btn-danger"
                   onclick={() => confirmDelete(domain)}
                   disabled={isReferenced(domain)}
-                  title={isReferenced(domain) ? 'Cannot delete: referenced by perspectives or archetypes' : 'Delete domain'}
+                  title={!hasUsage(domain)
+                    ? 'Usage unknown; delete disabled'
+                    : isReferenced(domain)
+                      ? 'Cannot delete: referenced by perspectives or archetypes'
+                      : 'Delete domain'}
                 >
                   Delete
                 </button>

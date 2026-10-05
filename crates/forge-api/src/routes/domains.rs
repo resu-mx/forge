@@ -1,12 +1,11 @@
-//! Domain routes: create, paginated list with usage counts, get, delete.
-//! `PATCH /domains/{id}` is resu-mx/forge#17.
+//! Domain routes: create, paginated list with usage counts, get, partial update, delete.
 
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use forge_core::{CreateDomainInput, Domain, DomainWithUsage};
+use forge_core::{CreateDomainInput, Domain, DomainWithUsage, UpdateDomainInput};
 use forge_sdk::db::DomainStore;
 
 use crate::db::with_conn;
@@ -62,6 +61,15 @@ async fn get_domain(
     Ok(Json(ApiData { data: result }))
 }
 
+async fn update_domain(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(input): Json<UpdateDomainInput>,
+) -> Result<Json<ApiData<Domain>>, ApiError> {
+    let result = with_conn(&state, move |conn| DomainStore::update(conn, &id, &input)).await?;
+    Ok(Json(ApiData { data: result }))
+}
+
 async fn delete_domain(
     State(state): State<SharedState>,
     Path(id): Path<String>,
@@ -75,5 +83,8 @@ async fn delete_domain(
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/domains", post(create_domain).get(list_domains))
-        .route("/domains/{id}", get(get_domain).delete(delete_domain))
+        .route(
+            "/domains/{id}",
+            get(get_domain).patch(update_domain).delete(delete_domain),
+        )
 }
