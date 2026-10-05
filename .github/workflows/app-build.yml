@@ -1,14 +1,13 @@
 name: App build
 
 # Builds the browser-first app (Rust API compiled to WASM + the Svelte UI), proves it fits
-# Cloudflare Pages' limits, and, once enabled, uploads the prebuilt output to a direct-upload
-# Pages project with `wrangler pages deploy`. Building here instead of in Cloudflare's Git
-# integration lets the Rust, wasm-bindgen and bun caches persist between runs.
+# Cloudflare Pages' limits, and uploads the prebuilt output to the direct-upload Pages project
+# resumx-webapp (app.resu.mx) with `wrangler pages deploy`. Building here instead of in
+# Cloudflare lets the Rust, wasm-bindgen and bun caches persist between runs.
 #
-# The deploy job is off until the repository variable PAGES_DEPLOY_ENABLED is `true`, so this
-# workflow stays green (build + checks only) until the Pages project and credentials exist. The
-# project, hostname and DNS are owned by Terraform in resu-mx/infra. Until the domain moves, the
-# Git-integrated project `resumx-app` still builds itself with scripts/pages-build.sh.
+# The deploy job runs only while the repository variable PAGES_DEPLOY_ENABLED is `true`; set it to
+# `false` to stop deploying (builds and checks still run). The project, hostname and DNS are owned
+# by Terraform in resu-mx/infra.
 #
 # No `paths:` filter, on purpose: a required check that a path filter skips never reports.
 
@@ -92,7 +91,7 @@ jobs:
         env:
           VITE_FORGE_MODE: wasm
 
-      - name: Check limits and shape (the same script the Pages build runs)
+      - name: Check limits and shape
         run: bash scripts/check-app-build.sh packages/webui/build
 
       - uses: actions/upload-artifact@v4
@@ -105,7 +104,7 @@ jobs:
   deploy:
     name: deploy to Cloudflare Pages
     needs: build
-    # Off until PAGES_DEPLOY_ENABLED=true. Fork PRs get no secrets, so they stop after `build`.
+    # Kill switch: PAGES_DEPLOY_ENABLED=false stops deploys. Fork PRs get no secrets, so they stop after `build`.
     if: >-
       vars.PAGES_DEPLOY_ENABLED == 'true' &&
       (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
