@@ -31,7 +31,7 @@
     if (result.ok) {
       domains = result.data
     } else {
-      addToast(friendlyError(result.error, 'Failed to load domains'), 'error')
+      addToast({ message: friendlyError(result.error, 'Failed to load domains'), type: 'error' })
     }
     loading = false
   }
@@ -47,13 +47,13 @@
       description: createDescription.trim() || undefined,
     })
     if (result.ok) {
-      addToast(`Domain '${result.data.name}' created`, 'success')
+      addToast({ message: `Domain '${result.data.name}' created`, type: 'success' })
       createName = ''
       createDescription = ''
       showCreateForm = false
       await loadDomains()
     } else {
-      addToast(friendlyError(result.error, 'Failed to create domain'), 'error')
+      addToast({ message: friendlyError(result.error, 'Failed to create domain'), type: 'error' })
     }
     creating = false
   }
@@ -77,11 +77,11 @@
       description: editDescription.trim() || null,
     })
     if (result.ok) {
-      addToast('Domain updated', 'success')
+      addToast({ message: 'Domain updated', type: 'success' })
       editingId = null
       await loadDomains()
     } else {
-      addToast(friendlyError(result.error, 'Failed to update domain'), 'error')
+      addToast({ message: friendlyError(result.error, 'Failed to update domain'), type: 'error' })
     }
     saving = false
   }
@@ -96,9 +96,9 @@
     if (!deleteTarget) return
     const result = await forge.domains.delete(deleteTarget.id)
     if (result.ok) {
-      addToast(`Domain '${deleteTarget.name}' deleted`, 'success')
+      addToast({ message: `Domain '${deleteTarget.name}' deleted`, type: 'success' })
     } else {
-      addToast(friendlyError(result.error, 'Cannot delete domain'), 'error')
+      addToast({ message: friendlyError(result.error, 'Cannot delete domain'), type: 'error' })
     }
     deleteConfirm = false
     deleteTarget = null
@@ -225,6 +225,7 @@
 
 {#if deleteConfirm && deleteTarget}
   <ConfirmDialog
+    open={deleteConfirm}
     title="Delete Domain"
     message={`Are you sure you want to delete '${deleteTarget.name}'? This cannot be undone.`}
     onconfirm={handleDelete}
