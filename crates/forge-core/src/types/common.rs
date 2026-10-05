@@ -287,6 +287,16 @@ pub struct RankedKeyword {
     pub matched_skill: bool,
 }
 
+/// Body of `POST /resumes/:id/tagline/regenerate` (TS `RegenerateResult`,
+/// `tagline-service.ts:273-281`; SDK `ResumeTaglineRegenerationResult`, `types.ts:460-465`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResumeTaglineRegenerationResult {
+    /// `""` when nothing was generated; the stored column is NULL then.
+    pub generated_tagline: String,
+    pub has_override: bool,
+    pub keywords: Vec<RankedKeyword>,
+}
+
 // ── Alignment ────────────────────────────────────────────────────────
 
 /// A requirement-to-entry match result.
