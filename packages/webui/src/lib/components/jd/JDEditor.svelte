@@ -41,6 +41,7 @@
   let rawText = $state('')
 
   let jdSkills = $state<Skill[]>([])
+  let skillsError = $state<string | null>(null)
   let saving = $state(false)
   let confirmDeleteOpen = $state(false)
 
@@ -87,9 +88,13 @@
   })
 
   async function loadSkills(jdId: string) {
+    skillsError = null
     const res = await forge.jobDescriptions.listSkills(jdId)
     if (res.ok) {
       jdSkills = res.data
+    } else {
+      jdSkills = []
+      skillsError = friendlyError(res.error, 'Failed to load required skills')
     }
   }
 
@@ -245,6 +250,12 @@
   {#if !createMode && jd}
     <div class="field">
       <label>Required Skills</label>
+      {#if skillsError}
+        <p class="skills-error" role="alert">
+          {skillsError}
+          <button type="button" class="retry-btn" onclick={() => jd && loadSkills(jd.id)}>Retry</button>
+        </p>
+      {/if}
       <JDSkillPicker jdId={jd.id} bind:jdSkills />
       <JDSkillExtraction
         jdId={jd.id}
@@ -298,6 +309,27 @@
 />
 
 <style>
+  .skills-error {
+    color: var(--color-danger);
+    font-size: 0.8rem;
+    margin: 0;
+  }
+
+  .retry-btn {
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .retry-btn:hover {
+    background: var(--color-surface-raised);
+  }
+
   .editor {
     display: flex;
     flex-direction: column;

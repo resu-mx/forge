@@ -16,10 +16,17 @@
   let linkedResumes = $state<ResumeLink[]>([])
   let showPicker = $state(false)
   let loading = $state(true)
+  let loadError = $state<string | null>(null)
 
   async function loadLinkedResumes() {
     const result = await forge.jobDescriptions.listResumes(jdId)
-    if (result.ok) linkedResumes = result.data
+    if (result.ok) {
+      linkedResumes = result.data
+      loadError = null
+    } else {
+      linkedResumes = []
+      loadError = friendlyError(result.error, 'Failed to load linked resumes')
+    }
     loading = false
   }
 
@@ -61,6 +68,8 @@
 
   {#if loading}
     <p class="muted">Loading...</p>
+  {:else if loadError}
+    <p class="load-error" role="alert">{loadError}</p>
   {:else if linkedResumes.length === 0}
     <p class="muted">No resumes linked to this job description.</p>
   {:else}
@@ -100,6 +109,12 @@
 </section>
 
 <style>
+  .load-error {
+    color: var(--color-danger);
+    font-size: 0.8rem;
+    margin: 0;
+  }
+
   .jd-linked-resumes {
     margin-top: 0.5rem;
   }

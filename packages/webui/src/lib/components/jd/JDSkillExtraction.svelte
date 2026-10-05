@@ -20,6 +20,8 @@
   import type { ForgeClient } from '@forge/sdk'
   import type { ExtractedSkill } from '@forge/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
+  import { friendlyError } from '$lib/sdk'
+  import { acceptFailureMessage, acceptSkills } from './extraction-accept'
   import ExtractedSkillCard from './ExtractedSkillCard.svelte'
 
   interface LinkedSkill {
@@ -72,23 +74,32 @@
     return
   }
 
-  async function handleAccept(skill: ExtractedSkill) {
-    const nameToUse = editedNames.get(skill.name) ?? skill.name
-    const result = await forge.jobDescriptions.addSkill(jdId, { name: nameToUse })
-    if (result.ok) {
-      acceptedNames = new Set([...acceptedNames, skill.name])
+  async function acceptAndReport(skills: ExtractedSkill[]) {
+    const outcome = await acceptSkills(
+      skills.map((s) => ({ key: s.name, name: editedNames.get(s.name) ?? s.name })),
+      (name) => forge.jobDescriptions.addSkill(jdId, { name }),
+      (e) => friendlyError(e),
+    )
+    if (outcome.accepted.length > 0) {
+      acceptedNames = new Set([...acceptedNames, ...outcome.accepted])
       onSkillsChanged()
     }
+    // Failed suggestions stay out of acceptedNames, so they remain reviewable.
+    errorMessage = acceptFailureMessage(outcome.failed) ?? ''
   }
 
-  // Sequential accept-all to avoid race conditions in skill auto-creation.
-  // Each accept waits for the previous to complete.
+  async function handleAccept(skill: ExtractedSkill) {
+    await acceptAndReport([skill])
+  }
+
+  // Sequential accept-all (see acceptSkills), with one message for all failures.
   async function handleAcceptAll() {
     acceptingAll = true
-    for (const skill of reviewableSkills) {
-      await handleAccept(skill)
+    try {
+      await acceptAndReport([...reviewableSkills]) // snapshot: reviewableSkills is $derived
+    } finally {
+      acceptingAll = false
     }
-    acceptingAll = false
   }
 
   function handleDismiss(skill: ExtractedSkill) {
