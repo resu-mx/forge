@@ -131,6 +131,10 @@ fn seed_jd_and_python(conn: &Connection) {
     .unwrap();
 }
 
+fn jd_skill(jd: &str, skill: &str) -> String {
+    format!("/api/job-descriptions/{jd}/skills/{skill}")
+}
+
 fn jd_skills(jd: &str) -> String {
     format!("/api/job-descriptions/{jd}/skills")
 }
@@ -246,4 +250,49 @@ async fn post_skill_id_wins_over_name() {
     assert_eq!(body["data"]["name"], "Python");
     let (_, found) = call(&r, "GET", "/api/skills?search=Zebra", None).await;
     assert_eq!(found["data"], json!([]));
+}
+
+#[tokio::test]
+async fn delete_skill_answers_204_and_keeps_the_skill() {
+    let r = router_with(seed_jd_with_two_skills);
+    let (status, body) = call(&r, "DELETE", &jd_skill(JD, TF), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(body, Value::Null);
+
+    let (_, list) = call(&r, "GET", &jd_skills(JD), None).await;
+    assert_eq!(names(&list), ["Kubernetes"]);
+    let (status, _) = call(&r, "GET", &format!("/api/skills/{TF}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn delete_skill_is_204_for_a_missing_link_or_unknown_ids() {
+    let r = router_with(seed_jd_with_two_skills);
+    for path in [
+        jd_skill(JD, TF),
+        jd_skill(JD, TF),
+        jd_skill(JD, "nope"),
+        jd_skill("nope", K8S),
+    ] {
+        let (status, _) = call(&r, "DELETE", &path, None).await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{path}");
+    }
+    let (_, list) = call(&r, "GET", &jd_skills(JD), None).await;
+    assert_eq!(names(&list), ["Kubernetes"]);
+}
+
+#[tokio::test]
+async fn delete_skill_leaves_other_jds_links() {
+    let r = router_with(|conn| {
+        seed_jd_with_two_skills(conn);
+        conn.execute(
+            "INSERT INTO job_description_skills (job_description_id, skill_id) VALUES (?1, ?2)",
+            params![JD_EMPTY, TF],
+        )
+        .unwrap();
+    });
+    let (status, _) = call(&r, "DELETE", &jd_skill(JD, TF), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, list) = call(&r, "GET", &jd_skills(JD_EMPTY), None).await;
+    assert_eq!(names(&list), ["Terraform"]);
 }
