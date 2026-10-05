@@ -51,9 +51,8 @@ static REQUIREMENT_SECTIONS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 });
 
 /// Patterns that match responsibility-section headers specifically.
-static RESPONSIBILITY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)responsibilities").unwrap()
-});
+static RESPONSIBILITY_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)responsibilities").unwrap());
 
 /// Section headers that indicate the end of requirements (e.g., Benefits, About Us).
 static NON_REQUIREMENT_SECTIONS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
@@ -69,16 +68,13 @@ static NON_REQUIREMENT_SECTIONS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 // ── Bullet/List Detection ────────────────────────────────────────────
 
 /// Matches lines starting with bullet characters or numbered list markers.
-static BULLET_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[\s]*(?:[-*+]|\d+[.)]\s|[a-z][.)]\s|>\s)").unwrap()
-});
+static BULLET_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[\s]*(?:[-*+]|\d+[.)]\s|[a-z][.)]\s|>\s)").unwrap());
 
 /// Sentence boundary pattern: period followed by space(s) and an uppercase letter.
 /// The `regex` crate does not support look-ahead, so we match the leading uppercase
 /// letter as part of the match and reconstruct splits manually in `split_sentences`.
-static SENTENCE_BOUNDARY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\.\s+([A-Z])").unwrap()
-});
+static SENTENCE_BOUNDARY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.\s+([A-Z])").unwrap());
 
 // ── Core Parser ──────────────────────────────────────────────────────
 
@@ -117,7 +113,8 @@ pub fn parse_requirements(raw_text: &str) -> ParsedRequirements {
         requirements = Vec::new();
         for section in &sections {
             let is_responsibility = RESPONSIBILITY_PATTERN.is_match(&section.name);
-            let parsed = parse_section_content(&section.content, Some(&section.name), is_responsibility);
+            let parsed =
+                parse_section_content(&section.content, Some(&section.name), is_responsibility);
             requirements.extend(parsed);
         }
     } else {
@@ -165,7 +162,9 @@ fn detect_sections(lines: &[&str]) -> Vec<DetectedSection> {
 
     for line in lines {
         // Check if this line is a non-requirement section header (end current section)
-        let is_end_section = NON_REQUIREMENT_SECTIONS.iter().any(|pat| pat.is_match(line));
+        let is_end_section = NON_REQUIREMENT_SECTIONS
+            .iter()
+            .any(|pat| pat.is_match(line));
         if is_end_section {
             if let Some((name, content_lines)) = current.take() {
                 sections.push(DetectedSection {
@@ -360,7 +359,11 @@ mod tests {
             assert_eq!(req.section.as_deref(), Some("Requirements"));
         }
         // Must NOT include the benefits items
-        let texts: Vec<&str> = result.requirements.iter().map(|r| r.text.as_str()).collect();
+        let texts: Vec<&str> = result
+            .requirements
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect();
         assert!(!texts.iter().any(|t| t.contains("Health insurance")));
         assert!(!texts.iter().any(|t| t.contains("401k")));
     }
@@ -449,7 +452,11 @@ mod tests {
 - Experience with PostgreSQL and Redis databases";
         let result = parse_requirements(input);
         assert_eq!(result.requirements.len(), 2);
-        let expected = result.requirements.iter().map(|r| r.confidence).sum::<f64>()
+        let expected = result
+            .requirements
+            .iter()
+            .map(|r| r.confidence)
+            .sum::<f64>()
             / result.requirements.len() as f64;
         assert!(
             (result.overall_confidence - expected).abs() < f64::EPSILON,

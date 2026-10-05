@@ -45,11 +45,11 @@ async fn create_skill(
     State(state): State<SharedState>,
     Json(body): Json<CreateSkillBody>,
 ) -> Result<Created<Skill>, ApiError> {
-    let category = body
-        .category
-        .and_then(|c| c.parse::<SkillCategory>().ok());
-    let result =
-        with_conn(&state, move |conn| SkillStore::create(conn, &body.name, category)).await?;
+    let category = body.category.and_then(|c| c.parse::<SkillCategory>().ok());
+    let result = with_conn(&state, move |conn| {
+        SkillStore::create(conn, &body.name, category)
+    })
+    .await?;
     Ok(Created(result))
 }
 
@@ -86,9 +86,7 @@ async fn update_skill(
     Path(id): Path<String>,
     Json(body): Json<UpdateSkillBody>,
 ) -> Result<Json<ApiData<Skill>>, ApiError> {
-    let category = body
-        .category
-        .and_then(|c| c.parse::<SkillCategory>().ok());
+    let category = body.category.and_then(|c| c.parse::<SkillCategory>().ok());
     let result = with_conn(&state, move |conn| {
         SkillStore::update(conn, &id, body.name.as_deref(), category)
     })
@@ -109,8 +107,10 @@ async fn merge_skills(
     Path(id): Path<String>,
     Json(body): Json<MergeSkillBody>,
 ) -> Result<Json<ApiData<Skill>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| SkillStore::merge(conn, &id, &body.target_id)).await?;
+    let result = with_conn(&state, move |conn| {
+        SkillStore::merge(conn, &id, &body.target_id)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 

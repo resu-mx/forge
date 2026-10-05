@@ -8,9 +8,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    CreateSource, ForgeError, Pagination, PaginationParams, Source, SourceEducation,
-    SourceExtension, SourceFilter, SourcePresentation, SourceProject, SourceRole, SourceStatus,
-    SourceType, SourceWithExtension, UpdateSource, UpdatedBy, new_id, now_iso,
+    new_id, now_iso, CreateSource, ForgeError, Pagination, PaginationParams, Source,
+    SourceEducation, SourceExtension, SourceFilter, SourcePresentation, SourceProject, SourceRole,
+    SourceStatus, SourceType, SourceWithExtension, UpdateSource, UpdatedBy,
 };
 
 pub struct SourceStore;
@@ -19,12 +19,21 @@ impl SourceStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a source base row + extension row. Returns the full hydrated source.
-    pub fn create(conn: &Connection, input: &CreateSource) -> Result<SourceWithExtension, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreateSource,
+    ) -> Result<SourceWithExtension, ForgeError> {
         if input.title.trim().is_empty() {
-            return Err(ForgeError::Validation { message: "Title must not be empty".into(), field: Some("title".into()) });
+            return Err(ForgeError::Validation {
+                message: "Title must not be empty".into(),
+                field: Some("title".into()),
+            });
         }
         if input.description.trim().is_empty() {
-            return Err(ForgeError::Validation { message: "Description must not be empty".into(), field: Some("description".into()) });
+            return Err(ForgeError::Validation {
+                message: "Description must not be empty".into(),
+                field: Some("description".into()),
+            });
         }
 
         let id = new_id();
@@ -70,13 +79,19 @@ impl SourceStore {
     }
 
     /// Get a source by ID with its extension data.
-    pub fn get_hydrated(conn: &Connection, id: &str) -> Result<Option<SourceWithExtension>, ForgeError> {
+    pub fn get_hydrated(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<SourceWithExtension>, ForgeError> {
         let source = match Self::get(conn, id)? {
             Some(s) => s,
             None => return Ok(None),
         };
         let extension = Self::get_extension(conn, &source.id, &source.source_type)?;
-        Ok(Some(SourceWithExtension { base: source, extension }))
+        Ok(Some(SourceWithExtension {
+            base: source,
+            extension,
+        }))
     }
 
     /// List sources with optional filters and pagination.
@@ -146,25 +161,47 @@ impl SourceStore {
         let mut hydrated = Vec::with_capacity(sources.len());
         for source in sources {
             let extension = Self::get_extension(conn, &source.id, &source.source_type)?;
-            hydrated.push(SourceWithExtension { base: source, extension });
+            hydrated.push(SourceWithExtension {
+                base: source,
+                extension,
+            });
         }
 
-        Ok((hydrated, Pagination { total, offset, limit }))
+        Ok((
+            hydrated,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
 
     /// Update a source's base row and extension row.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateSource) -> Result<SourceWithExtension, ForgeError> {
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateSource,
+    ) -> Result<SourceWithExtension, ForgeError> {
         if matches!(&input.title, Some(v) if v.trim().is_empty()) {
-            return Err(ForgeError::Validation { message: "Title must not be empty".into(), field: Some("title".into()) });
+            return Err(ForgeError::Validation {
+                message: "Title must not be empty".into(),
+                field: Some("title".into()),
+            });
         }
         if matches!(&input.description, Some(v) if v.trim().is_empty()) {
-            return Err(ForgeError::Validation { message: "Description must not be empty".into(), field: Some("description".into()) });
+            return Err(ForgeError::Validation {
+                message: "Description must not be empty".into(),
+                field: Some("description".into()),
+            });
         }
 
-        let source = Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "source".into(), id: id.into() })?;
+        let source = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "source".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -213,7 +250,12 @@ impl SourceStore {
     /// Patch the type-specific extension row. Only fields present in `input` are
     /// written (an explicit `null` clears the column). `source_type` is immutable,
     /// so there is no insert path here. Port of TS `buildExtensionPatch`.
-    fn update_extension(conn: &Connection, id: &str, source_type: SourceType, input: &UpdateSource) -> Result<(), ForgeError> {
+    fn update_extension(
+        conn: &Connection,
+        id: &str,
+        source_type: SourceType,
+        input: &UpdateSource,
+    ) -> Result<(), ForgeError> {
         let mut patch = ColumnPatch::default();
         let table = match source_type {
             SourceType::Role => {
@@ -236,7 +278,10 @@ impl SourceStore {
                 "source_projects"
             }
             SourceType::Education => {
-                patch.set("education_type", input.education_type.map(|e| e.to_string()));
+                patch.set(
+                    "education_type",
+                    input.education_type.map(|e| e.to_string()),
+                );
                 patch.set_opt("organization_id", &input.education_organization_id);
                 patch.set_opt("campus_id", &input.campus_id);
                 patch.set_opt("field", &input.field);
@@ -246,9 +291,15 @@ impl SourceStore {
                 patch.set_opt("url", &input.url);
                 patch.set_opt("start_date", &input.start_date);
                 patch.set_opt("end_date", &input.end_date);
-                patch.set_opt("degree_level", &input.degree_level.map(|d| d.map(|v| v.to_string())));
+                patch.set_opt(
+                    "degree_level",
+                    &input.degree_level.map(|d| d.map(|v| v.to_string())),
+                );
                 patch.set_opt("degree_type", &input.degree_type);
-                patch.set_opt("certificate_subtype", &input.certificate_subtype.map(|c| c.map(|v| v.to_string())));
+                patch.set_opt(
+                    "certificate_subtype",
+                    &input.certificate_subtype.map(|c| c.map(|v| v.to_string())),
+                );
                 patch.set_opt("gpa", &input.gpa);
                 patch.set_opt("location", &input.location);
                 patch.set_opt("edu_description", &input.edu_description);
@@ -256,7 +307,10 @@ impl SourceStore {
             }
             SourceType::Presentation => {
                 patch.set("venue", input.venue.clone());
-                patch.set("presentation_type", input.presentation_type.map(|p| p.to_string()));
+                patch.set(
+                    "presentation_type",
+                    input.presentation_type.map(|p| p.to_string()),
+                );
                 patch.set_opt("url", &input.url);
                 patch.set("coauthors", input.coauthors.clone());
                 "source_presentations"
@@ -267,10 +321,17 @@ impl SourceStore {
         if patch.is_empty() {
             return Ok(());
         }
-        let sql = format!("UPDATE {table} SET {} WHERE source_id = ?{}", patch.sets.join(", "), patch.binds.len() + 1);
+        let sql = format!(
+            "UPDATE {table} SET {} WHERE source_id = ?{}",
+            patch.sets.join(", "),
+            patch.binds.len() + 1
+        );
         let mut binds = patch.binds;
         binds.push(Box::new(id.to_string()));
-        conn.execute(&sql, rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())))?;
+        conn.execute(
+            &sql,
+            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+        )?;
         Ok(())
     }
 
@@ -280,33 +341,42 @@ impl SourceStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM sources WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "source".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "source".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
 
     // ── Extension helpers ────────────────────────────────────────────
 
-    fn get_extension(conn: &Connection, source_id: &str, source_type: &SourceType) -> Result<Option<SourceExtension>, ForgeError> {
+    fn get_extension(
+        conn: &Connection,
+        source_id: &str,
+        source_type: &SourceType,
+    ) -> Result<Option<SourceExtension>, ForgeError> {
         match source_type {
             SourceType::Role => {
                 let mut stmt = conn.prepare(
                     "SELECT source_id, organization_id, start_date, end_date, is_current,
                             work_arrangement, base_salary, total_comp_notes
-                     FROM source_roles WHERE source_id = ?1"
+                     FROM source_roles WHERE source_id = ?1",
                 )?;
-                let role = stmt.query_row(params![source_id], |row| {
-                    Ok(SourceRole {
-                        source_id: row.get(0)?,
-                        organization_id: row.get(1)?,
-                        start_date: row.get(2)?,
-                        end_date: row.get(3)?,
-                        is_current: row.get(4)?,
-                        work_arrangement: row.get(5)?,
-                        base_salary: row.get(6)?,
-                        total_comp_notes: row.get(7)?,
+                let role = stmt
+                    .query_row(params![source_id], |row| {
+                        Ok(SourceRole {
+                            source_id: row.get(0)?,
+                            organization_id: row.get(1)?,
+                            start_date: row.get(2)?,
+                            end_date: row.get(3)?,
+                            is_current: row.get(4)?,
+                            work_arrangement: row.get(5)?,
+                            base_salary: row.get(6)?,
+                            total_comp_notes: row.get(7)?,
+                        })
                     })
-                }).optional()?;
+                    .optional()?;
                 Ok(role.map(SourceExtension::Role))
             }
             SourceType::Project => {
@@ -314,17 +384,19 @@ impl SourceStore {
                     "SELECT source_id, organization_id, is_personal, open_source, url, start_date, end_date
                      FROM source_projects WHERE source_id = ?1"
                 )?;
-                let proj = stmt.query_row(params![source_id], |row| {
-                    Ok(SourceProject {
-                        source_id: row.get(0)?,
-                        organization_id: row.get(1)?,
-                        is_personal: row.get(2)?,
-                        open_source: row.get(3)?,
-                        url: row.get(4)?,
-                        start_date: row.get(5)?,
-                        end_date: row.get(6)?,
+                let proj = stmt
+                    .query_row(params![source_id], |row| {
+                        Ok(SourceProject {
+                            source_id: row.get(0)?,
+                            organization_id: row.get(1)?,
+                            is_personal: row.get(2)?,
+                            open_source: row.get(3)?,
+                            url: row.get(4)?,
+                            start_date: row.get(5)?,
+                            end_date: row.get(6)?,
+                        })
                     })
-                }).optional()?;
+                    .optional()?;
                 Ok(proj.map(SourceExtension::Project))
             }
             SourceType::Education => {
@@ -334,50 +406,69 @@ impl SourceStore {
                             field, gpa, is_in_progress, certificate_subtype, credential_id, expiration_date
                      FROM source_education WHERE source_id = ?1"
                 )?;
-                let edu = stmt.query_row(params![source_id], |row| {
-                    Ok(SourceEducation {
-                        source_id: row.get(0)?,
-                        education_type: row.get::<_, String>(1)?.parse().unwrap_or(forge_core::EducationType::Certificate),
-                        organization_id: row.get(2)?,
-                        campus_id: row.get(3)?,
-                        edu_description: row.get(4)?,
-                        location: row.get(5)?,
-                        start_date: row.get(6)?,
-                        end_date: row.get(7)?,
-                        url: row.get(8)?,
-                        degree_level: row.get::<_, Option<String>>(9)?.and_then(|s| s.parse().ok()),
-                        degree_type: row.get(10)?,
-                        field: row.get(11)?,
-                        gpa: row.get(12)?,
-                        is_in_progress: row.get(13)?,
-                        certificate_subtype: row.get::<_, Option<String>>(14)?.and_then(|s| s.parse().ok()),
-                        credential_id: row.get(15)?,
-                        expiration_date: row.get(16)?,
+                let edu = stmt
+                    .query_row(params![source_id], |row| {
+                        Ok(SourceEducation {
+                            source_id: row.get(0)?,
+                            education_type: row
+                                .get::<_, String>(1)?
+                                .parse()
+                                .unwrap_or(forge_core::EducationType::Certificate),
+                            organization_id: row.get(2)?,
+                            campus_id: row.get(3)?,
+                            edu_description: row.get(4)?,
+                            location: row.get(5)?,
+                            start_date: row.get(6)?,
+                            end_date: row.get(7)?,
+                            url: row.get(8)?,
+                            degree_level: row
+                                .get::<_, Option<String>>(9)?
+                                .and_then(|s| s.parse().ok()),
+                            degree_type: row.get(10)?,
+                            field: row.get(11)?,
+                            gpa: row.get(12)?,
+                            is_in_progress: row.get(13)?,
+                            certificate_subtype: row
+                                .get::<_, Option<String>>(14)?
+                                .and_then(|s| s.parse().ok()),
+                            credential_id: row.get(15)?,
+                            expiration_date: row.get(16)?,
+                        })
                     })
-                }).optional()?;
+                    .optional()?;
                 Ok(edu.map(SourceExtension::Education))
             }
             SourceType::Presentation => {
                 let mut stmt = conn.prepare(
                     "SELECT source_id, venue, presentation_type, url, coauthors
-                     FROM source_presentations WHERE source_id = ?1"
+                     FROM source_presentations WHERE source_id = ?1",
                 )?;
-                let pres = stmt.query_row(params![source_id], |row| {
-                    Ok(SourcePresentation {
-                        source_id: row.get(0)?,
-                        venue: row.get(1)?,
-                        presentation_type: row.get::<_, String>(2)?.parse().unwrap_or(forge_core::PresentationType::ConferenceTalk),
-                        url: row.get(3)?,
-                        coauthors: row.get(4)?,
+                let pres = stmt
+                    .query_row(params![source_id], |row| {
+                        Ok(SourcePresentation {
+                            source_id: row.get(0)?,
+                            venue: row.get(1)?,
+                            presentation_type: row
+                                .get::<_, String>(2)?
+                                .parse()
+                                .unwrap_or(forge_core::PresentationType::ConferenceTalk),
+                            url: row.get(3)?,
+                            coauthors: row.get(4)?,
+                        })
                     })
-                }).optional()?;
+                    .optional()?;
                 Ok(pres.map(SourceExtension::Presentation))
             }
             SourceType::General => Ok(None),
         }
     }
 
-    fn insert_extension(conn: &Connection, source_id: &str, source_type: SourceType, input: &CreateSource) -> Result<(), ForgeError> {
+    fn insert_extension(
+        conn: &Connection,
+        source_id: &str,
+        source_type: SourceType,
+        input: &CreateSource,
+    ) -> Result<(), ForgeError> {
         match source_type {
             SourceType::Role => {
                 conn.execute(
@@ -460,10 +551,16 @@ impl SourceStore {
             id: row.get(0)?,
             title: row.get(1)?,
             description: row.get(2)?,
-            source_type: row.get::<_, String>(3)?.parse().unwrap_or(SourceType::General),
+            source_type: row
+                .get::<_, String>(3)?
+                .parse()
+                .unwrap_or(SourceType::General),
             start_date: row.get(4)?,
             end_date: row.get(5)?,
-            status: row.get::<_, String>(6)?.parse().unwrap_or(SourceStatus::Draft),
+            status: row
+                .get::<_, String>(6)?
+                .parse()
+                .unwrap_or(SourceStatus::Draft),
             updated_by: row.get::<_, String>(7)?.parse().unwrap_or(UpdatedBy::Human),
             last_derived_at: row.get(8)?,
             created_at: row.get(9)?,
@@ -493,7 +590,11 @@ impl ColumnPatch {
     }
 
     /// For double-option fields: absent leaves the column alone, `null` clears it.
-    fn set_opt<T: rusqlite::types::ToSql + Clone + 'static>(&mut self, col: &str, value: &Option<Option<T>>) {
+    fn set_opt<T: rusqlite::types::ToSql + Clone + 'static>(
+        &mut self,
+        col: &str,
+        value: &Option<Option<T>>,
+    ) {
         if let Some(inner) = value {
             self.push(col, Box::new(inner.clone()));
         }
@@ -526,12 +627,16 @@ mod tests {
         let path_str = path.to_str().unwrap();
         let id = {
             let forge = Forge::open(path_str).unwrap();
-            let created = SourceStore::create(forge.conn(), &CreateSource {
-                title: "T".into(),
-                description: "D".into(),
-                source_type: Some(SourceType::Education),
-                ..Default::default()
-            }).unwrap();
+            let created = SourceStore::create(
+                forge.conn(),
+                &CreateSource {
+                    title: "T".into(),
+                    description: "D".into(),
+                    source_type: Some(SourceType::Education),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             created.base.id
         };
         let other = Forge::open(path_str).unwrap();
@@ -540,41 +645,60 @@ mod tests {
             let _ = std::fs::remove_file(format!("{path_str}{suffix}"));
         }
         assert!(found.is_some(), "source was not committed");
-        assert!(found.unwrap().extension.is_some(), "extension row was not committed");
+        assert!(
+            found.unwrap().extension.is_some(),
+            "extension row was not committed"
+        );
     }
 
     #[test]
     fn empty_title_or_description_is_rejected() {
         let forge = setup();
         for (title, description) in [(" ", "d"), ("t", "  ")] {
-            let r = SourceStore::create(forge.conn(), &CreateSource {
-                title: title.into(),
-                description: description.into(),
-                ..Default::default()
-            });
-            assert!(matches!(r, Err(ForgeError::Validation { .. })), "{title:?}/{description:?}");
+            let r = SourceStore::create(
+                forge.conn(),
+                &CreateSource {
+                    title: title.into(),
+                    description: description.into(),
+                    ..Default::default()
+                },
+            );
+            assert!(
+                matches!(r, Err(ForgeError::Validation { .. })),
+                "{title:?}/{description:?}"
+            );
         }
     }
 
     #[test]
     fn update_patches_extension_and_null_clears() {
         let forge = setup();
-        let created = SourceStore::create(forge.conn(), &CreateSource {
-            title: "T".into(),
-            description: "D".into(),
-            source_type: Some(SourceType::Education),
-            field: Some("Physics".into()),
-            location: Some("Pasadena".into()),
-            ..Default::default()
-        }).unwrap();
+        let created = SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "T".into(),
+                description: "D".into(),
+                source_type: Some(SourceType::Education),
+                field: Some("Physics".into()),
+                location: Some("Pasadena".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let patch: UpdateSource =
             serde_json::from_str(r#"{"location": null, "gpa": "3.9"}"#).unwrap();
         let updated = SourceStore::update(forge.conn(), &created.base.id, &patch).unwrap();
-        let Some(SourceExtension::Education(edu)) = updated.extension else { panic!("no education ext") };
+        let Some(SourceExtension::Education(edu)) = updated.extension else {
+            panic!("no education ext")
+        };
         assert_eq!(edu.location, None, "null clears");
         assert_eq!(edu.gpa.as_deref(), Some("3.9"));
-        assert_eq!(edu.field.as_deref(), Some("Physics"), "absent fields are untouched");
+        assert_eq!(
+            edu.field.as_deref(),
+            Some("Physics"),
+            "absent fields are untouched"
+        );
     }
 
     #[test]
@@ -629,7 +753,8 @@ mod tests {
             forge.conn(),
             &SourceFilter::default(),
             &PaginationParams::default(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(sources.is_empty());
         assert_eq!(pagination.total, 0);
     }
@@ -637,24 +762,36 @@ mod tests {
     #[test]
     fn list_with_type_filter() {
         let forge = setup();
-        SourceStore::create(forge.conn(), &CreateSource {
-            title: "Role".into(),
-            description: "d".into(),
-            source_type: Some(SourceType::Role),
-            ..Default::default()
-        }).unwrap();
-        SourceStore::create(forge.conn(), &CreateSource {
-            title: "General".into(),
-            description: "d".into(),
-            source_type: None,
-            ..Default::default()
-        }).unwrap();
+        SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Role".into(),
+                description: "d".into(),
+                source_type: Some(SourceType::Role),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "General".into(),
+                description: "d".into(),
+                source_type: None,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let (sources, _) = SourceStore::list(
             forge.conn(),
-            &SourceFilter { source_type: Some(SourceType::Role), ..Default::default() },
+            &SourceFilter {
+                source_type: Some(SourceType::Role),
+                ..Default::default()
+            },
             &PaginationParams::default(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].base.title, "Role");
     }
@@ -662,30 +799,45 @@ mod tests {
     #[test]
     fn update_source_title() {
         let forge = setup();
-        let created = SourceStore::create(forge.conn(), &CreateSource {
-            title: "Old Title".into(),
-            description: "desc".into(),
-            ..Default::default()
-        }).unwrap();
+        let created = SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Old Title".into(),
+                description: "desc".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
-        let updated = SourceStore::update(forge.conn(), &created.base.id, &UpdateSource {
-            title: Some("New Title".into()),
-            ..Default::default()
-        }).unwrap();
+        let updated = SourceStore::update(
+            forge.conn(),
+            &created.base.id,
+            &UpdateSource {
+                title: Some("New Title".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.base.title, "New Title");
     }
 
     #[test]
     fn delete_source() {
         let forge = setup();
-        let created = SourceStore::create(forge.conn(), &CreateSource {
-            title: "To Delete".into(),
-            description: "desc".into(),
-            ..Default::default()
-        }).unwrap();
+        let created = SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "To Delete".into(),
+                description: "desc".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         SourceStore::delete(forge.conn(), &created.base.id).unwrap();
-        assert!(SourceStore::get(forge.conn(), &created.base.id).unwrap().is_none());
+        assert!(SourceStore::get(forge.conn(), &created.base.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -698,22 +850,34 @@ mod tests {
     #[test]
     fn search_filter() {
         let forge = setup();
-        SourceStore::create(forge.conn(), &CreateSource {
-            title: "Rust Developer".into(),
-            description: "Systems programming".into(),
-            ..Default::default()
-        }).unwrap();
-        SourceStore::create(forge.conn(), &CreateSource {
-            title: "Python Dev".into(),
-            description: "Data science".into(),
-            ..Default::default()
-        }).unwrap();
+        SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Rust Developer".into(),
+                description: "Systems programming".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Python Dev".into(),
+                description: "Data science".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let (sources, _) = SourceStore::list(
             forge.conn(),
-            &SourceFilter { search: Some("rust".into()), ..Default::default() },
+            &SourceFilter {
+                search: Some("rust".into()),
+                ..Default::default()
+            },
             &PaginationParams::default(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].base.title, "Rust Developer");
     }

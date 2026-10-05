@@ -10,9 +10,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
     CertificationCategoryGroup, CertificationEntry, CertificationGroup, ClearanceItem,
-    EducationItem, ExperienceBullet, ExperienceGroup, ExperienceSubheading, ForgeError,
-    IRSection, IRSectionItem, IRSectionType, PresentationItem, ProjectItem, ResumeDocument,
-    ResumeHeader, ResumeSummary, SkillCategoryGroup, SkillGroup, SourceChain, SummaryItem,
+    EducationItem, ExperienceBullet, ExperienceGroup, ExperienceSubheading, ForgeError, IRSection,
+    IRSectionItem, IRSectionType, PresentationItem, ProjectItem, ResumeDocument, ResumeHeader,
+    ResumeSummary, SkillCategoryGroup, SkillGroup, SourceChain, SummaryItem,
 };
 
 /// Resume IR compiler.
@@ -20,28 +20,34 @@ pub struct CompilerService;
 
 impl CompilerService {
     /// Compile a resume into the intermediate representation.
-    pub fn compile(conn: &Connection, resume_id: &str) -> Result<Option<ResumeDocument>, ForgeError> {
+    pub fn compile(
+        conn: &Connection,
+        resume_id: &str,
+    ) -> Result<Option<ResumeDocument>, ForgeError> {
         // Fetch resume base data
-        let resume = match conn.query_row(
-            "SELECT id, name, target_role, header, summary_id,
+        let resume = match conn
+            .query_row(
+                "SELECT id, name, target_role, header, summary_id,
                     generated_tagline, tagline_override,
                     summary_override, show_clearance_in_header
              FROM resumes WHERE id = ?1",
-            params![resume_id],
-            |row| {
-                Ok(ResumeRow {
-                    _id: row.get(0)?,
-                    name: row.get(1)?,
-                    target_role: row.get(2)?,
-                    header: row.get(3)?,
-                    summary_id: row.get(4)?,
-                    generated_tagline: row.get(5)?,
-                    tagline_override: row.get(6)?,
-                    summary_override: row.get(7)?,
-                    show_clearance_in_header: row.get::<_, i32>(8).unwrap_or(1),
-                })
-            },
-        ).optional()? {
+                params![resume_id],
+                |row| {
+                    Ok(ResumeRow {
+                        _id: row.get(0)?,
+                        name: row.get(1)?,
+                        target_role: row.get(2)?,
+                        header: row.get(3)?,
+                        summary_id: row.get(4)?,
+                        generated_tagline: row.get(5)?,
+                        tagline_override: row.get(6)?,
+                        summary_override: row.get(7)?,
+                        show_clearance_in_header: row.get::<_, i32>(8).unwrap_or(1),
+                    })
+                },
+            )
+            .optional()?
+        {
             Some(r) => r,
             None => return Ok(None),
         };
@@ -214,7 +220,8 @@ impl CompilerService {
                     IRSectionItem::CertificationGroup(group) => {
                         for cat in &group.categories {
                             md.push_str(&format!("**{}**: ", cat.label));
-                            let names: Vec<&str> = cat.certs.iter().map(|c| c.name.as_str()).collect();
+                            let names: Vec<&str> =
+                                cat.certs.iter().map(|c| c.name.as_str()).collect();
                             md.push_str(&names.join(", "));
                             md.push_str("\n\n");
                         }
@@ -259,13 +266,18 @@ impl CompilerService {
         tex.push_str("\\usepackage{enumitem}\n");
         tex.push_str("\\usepackage[hidelinks]{hyperref}\n");
         tex.push_str("\\usepackage[margin=0.5in]{geometry}\n\n");
-        tex.push_str("\\titleformat{\\section}{\\scshape\\raggedright\\large}{}{0em}{}[\\titlerule]\n");
+        tex.push_str(
+            "\\titleformat{\\section}{\\scshape\\raggedright\\large}{}{0em}{}[\\titlerule]\n",
+        );
         tex.push_str("\\titlespacing*{\\section}{0pt}{6pt}{4pt}\n\n");
         tex.push_str("\\begin{document}\n\n");
 
         // Header
         tex.push_str("\\begin{center}\n");
-        tex.push_str(&format!("  {{\\Huge \\scshape {}}}\n", latex_escape(&doc.header.name)));
+        tex.push_str(&format!(
+            "  {{\\Huge \\scshape {}}}\n",
+            latex_escape(&doc.header.name)
+        ));
         tex.push_str("  \\vspace{2pt}\n");
 
         if let Some(ref tagline) = doc.header.tagline {
@@ -275,7 +287,11 @@ impl CompilerService {
 
         let mut contact_parts = Vec::new();
         if let Some(ref email) = doc.header.email {
-            contact_parts.push(format!("\\href{{mailto:{}}}{{\\underline{{{}}}}}", email, latex_escape(email)));
+            contact_parts.push(format!(
+                "\\href{{mailto:{}}}{{\\underline{{{}}}}}",
+                email,
+                latex_escape(email)
+            ));
         }
         if let Some(ref phone) = doc.header.phone {
             contact_parts.push(latex_escape(phone));
@@ -297,7 +313,10 @@ impl CompilerService {
         }
 
         if let Some(ref clearance) = doc.header.clearance {
-            tex.push_str(&format!("  \\vspace{{2pt}}\n  \\textit{{{}}}\n", latex_escape(clearance)));
+            tex.push_str(&format!(
+                "  \\vspace{{2pt}}\n  \\textit{{{}}}\n",
+                latex_escape(clearance)
+            ));
         }
 
         tex.push_str("\\end{center}\n\n");
@@ -326,7 +345,9 @@ impl CompilerService {
                                 latex_escape(loc_str)
                             ));
                             if !sub.bullets.is_empty() {
-                                tex.push_str("\\begin{itemize}[leftmargin=0.15in, label={\\textbullet}]\n");
+                                tex.push_str(
+                                    "\\begin{itemize}[leftmargin=0.15in, label={\\textbullet}]\n",
+                                );
                                 for bullet in &sub.bullets {
                                     tex.push_str(&format!(
                                         "  \\item {}\n",
@@ -354,18 +375,14 @@ impl CompilerService {
                             latex_escape(&edu.institution),
                             latex_escape(&edu.date)
                         ));
-                        tex.push_str(&format!(
-                            "\\textit{{{}}}\n\n",
-                            latex_escape(&edu.degree)
-                        ));
+                        tex.push_str(&format!("\\textit{{{}}}\n\n", latex_escape(&edu.degree)));
                     }
                     IRSectionItem::Project(proj) => {
-                        tex.push_str(&format!(
-                            "\\textbf{{{}}}\n",
-                            latex_escape(&proj.name)
-                        ));
+                        tex.push_str(&format!("\\textbf{{{}}}\n", latex_escape(&proj.name)));
                         if !proj.bullets.is_empty() {
-                            tex.push_str("\\begin{itemize}[leftmargin=0.15in, label={\\textbullet}]\n");
+                            tex.push_str(
+                                "\\begin{itemize}[leftmargin=0.15in, label={\\textbullet}]\n",
+                            );
                             for bullet in &proj.bullets {
                                 tex.push_str(&format!(
                                     "  \\item {}\n",
@@ -378,9 +395,8 @@ impl CompilerService {
                     IRSectionItem::CertificationGroup(group) => {
                         tex.push_str("\\begin{itemize}[leftmargin=0.15in, label={}]\n");
                         for cat in &group.categories {
-                            let names: Vec<String> = cat.certs.iter()
-                                .map(|c| latex_escape(&c.name))
-                                .collect();
+                            let names: Vec<String> =
+                                cat.certs.iter().map(|c| latex_escape(&c.name)).collect();
                             tex.push_str(&format!(
                                 "  \\item \\textbf{{{}}}: {}\n",
                                 latex_escape(&cat.label),
@@ -393,18 +409,14 @@ impl CompilerService {
                         tex.push_str(&format!("{}\n\n", latex_escape(&item.content)));
                     }
                     IRSectionItem::Presentation(pres) => {
-                        tex.push_str(&format!(
-                            "\\textbf{{{}}}\n",
-                            latex_escape(&pres.title)
-                        ));
+                        tex.push_str(&format!("\\textbf{{{}}}\n", latex_escape(&pres.title)));
                         if let Some(ref venue) = pres.venue {
-                            tex.push_str(&format!(
-                                "\\textit{{{}}}\n",
-                                latex_escape(venue)
-                            ));
+                            tex.push_str(&format!("\\textit{{{}}}\n", latex_escape(venue)));
                         }
                         if !pres.bullets.is_empty() {
-                            tex.push_str("\\begin{itemize}[leftmargin=0.15in, label={\\textbullet}]\n");
+                            tex.push_str(
+                                "\\begin{itemize}[leftmargin=0.15in, label={\\textbullet}]\n",
+                            );
                             for bullet in &pres.bullets {
                                 tex.push_str(&format!(
                                     "  \\item {}\n",
@@ -426,41 +438,47 @@ impl CompilerService {
 
     fn build_header(conn: &Connection, resume: &ResumeRow) -> Result<ResumeHeader, ForgeError> {
         // Fetch profile
-        let profile = conn.query_row(
-            "SELECT up.name, up.email, up.phone, a.name AS location
+        let profile = conn
+            .query_row(
+                "SELECT up.name, up.email, up.phone, a.name AS location
              FROM user_profile up
              LEFT JOIN addresses a ON a.id = up.address_id
              LIMIT 1",
-            [],
-            |row| {
-                Ok(ProfileRow {
-                    name: row.get(0)?,
-                    email: row.get(1)?,
-                    phone: row.get(2)?,
-                    location: row.get(3)?,
-                })
-            },
-        ).optional()?;
+                [],
+                |row| {
+                    Ok(ProfileRow {
+                        name: row.get(0)?,
+                        email: row.get(1)?,
+                        phone: row.get(2)?,
+                        location: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?;
 
         // Fetch URLs from profile_urls
         let (linkedin, github, website) = if let Some(ref _profile) = profile {
-            let profile_id: Option<String> = conn.query_row(
-                "SELECT id FROM user_profile LIMIT 1",
-                [],
-                |row| row.get(0),
-            ).optional()?;
+            let profile_id: Option<String> = conn
+                .query_row("SELECT id FROM user_profile LIMIT 1", [], |row| row.get(0))
+                .optional()?;
 
             if let Some(pid) = profile_id {
-                let mut url_stmt = conn.prepare(
-                    "SELECT key, url FROM profile_urls WHERE profile_id = ?1",
-                )?;
+                let mut url_stmt =
+                    conn.prepare("SELECT key, url FROM profile_urls WHERE profile_id = ?1")?;
                 let urls: Vec<(String, String)> = url_stmt
                     .query_map(params![pid], |row| Ok((row.get(0)?, row.get(1)?)))?
                     .collect::<Result<_, _>>()?;
 
-                let linkedin = urls.iter().find(|(k, _)| k == "linkedin").map(|(_, v)| v.clone());
-                let github = urls.iter().find(|(k, _)| k == "github").map(|(_, v)| v.clone());
-                let website = urls.iter()
+                let linkedin = urls
+                    .iter()
+                    .find(|(k, _)| k == "linkedin")
+                    .map(|(_, v)| v.clone());
+                let github = urls
+                    .iter()
+                    .find(|(k, _)| k == "github")
+                    .map(|(_, v)| v.clone());
+                let website = urls
+                    .iter()
                     .find(|(k, _)| k == "blog" || k == "portfolio" || k == "website")
                     .map(|(_, v)| v.clone());
                 (linkedin, github, website)
@@ -473,10 +491,16 @@ impl CompilerService {
 
         // Tagline resolution: tagline_override > generated_tagline > header.tagline > target_role
         let header_tagline = resume.header.as_ref().and_then(|h| {
-            serde_json::from_str::<serde_json::Value>(h).ok()
-                .and_then(|v| v.get("tagline").and_then(|t| t.as_str().map(|s| s.to_string())))
+            serde_json::from_str::<serde_json::Value>(h)
+                .ok()
+                .and_then(|v| {
+                    v.get("tagline")
+                        .and_then(|t| t.as_str().map(|s| s.to_string()))
+                })
         });
-        let tagline = resume.tagline_override.clone()
+        let tagline = resume
+            .tagline_override
+            .clone()
             .or_else(|| resume.generated_tagline.clone())
             .or(header_tagline)
             .or_else(|| Some(resume.target_role.clone()));
@@ -490,7 +514,9 @@ impl CompilerService {
 
         let p = profile.as_ref();
         Ok(ResumeHeader {
-            name: p.map(|p| p.name.clone()).unwrap_or_else(|| resume.name.clone()),
+            name: p
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| resume.name.clone()),
             tagline,
             location: p.and_then(|p| p.location.clone()),
             email: p.and_then(|p| p.email.clone()),
@@ -537,7 +563,10 @@ impl CompilerService {
                     if rank < best_rank {
                         best_rank = rank;
                         best_level = Some(level.to_string());
-                        best_poly = val.get("polygraph").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        best_poly = val
+                            .get("polygraph")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                     }
                 }
             }
@@ -551,12 +580,15 @@ impl CompilerService {
                 "confidential" => "Confidential",
                 _ => &level,
             };
-            let poly_str = best_poly.as_ref().map(|p| match p.as_str() {
-                "full_scope" => " with Full-Scope Poly",
-                "ci" => " with CI Poly",
-                "lifestyle" => " with Lifestyle Poly",
-                _ => "",
-            }).unwrap_or("");
+            let poly_str = best_poly
+                .as_ref()
+                .map(|p| match p.as_str() {
+                    "full_scope" => " with Full-Scope Poly",
+                    "ci" => " with CI Poly",
+                    "lifestyle" => " with Lifestyle Poly",
+                    _ => "",
+                })
+                .unwrap_or("");
 
             format!("Active {} Clearance{}", display_level, poly_str)
         });
@@ -564,7 +596,10 @@ impl CompilerService {
         Ok(line)
     }
 
-    fn build_summary(conn: &Connection, resume: &ResumeRow) -> Result<Option<ResumeSummary>, ForgeError> {
+    fn build_summary(
+        conn: &Connection,
+        resume: &ResumeRow,
+    ) -> Result<Option<ResumeSummary>, ForgeError> {
         // summary_override takes priority
         if let Some(ref content) = resume.summary_override {
             return Ok(Some(ResumeSummary {
@@ -577,11 +612,18 @@ impl CompilerService {
 
         // Try summary via FK
         if let Some(ref sid) = resume.summary_id {
-            let summary = conn.query_row(
-                "SELECT title, description FROM summaries WHERE id = ?1",
-                params![sid],
-                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
-            ).optional()?;
+            let summary = conn
+                .query_row(
+                    "SELECT title, description FROM summaries WHERE id = ?1",
+                    params![sid],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                        ))
+                    },
+                )
+                .optional()?;
 
             if let Some((title, description)) = summary {
                 if let Some(desc) = description {
@@ -600,7 +642,10 @@ impl CompilerService {
 
     // ── Section dispatch ────────────────────────────────────────────
 
-    fn build_section_items(conn: &Connection, section: &SectionRow) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_section_items(
+        conn: &Connection,
+        section: &SectionRow,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         match section.entry_type.as_str() {
             "experience" => Self::build_experience_items(conn, &section.id),
             "skills" => Self::build_skill_items(conn, &section.id),
@@ -616,7 +661,10 @@ impl CompilerService {
 
     // ── Experience ──────────────────────────────────────────────────
 
-    fn build_experience_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_experience_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT
                re.id AS entry_id,
@@ -683,7 +731,9 @@ impl CompilerService {
         // Group by organization, then by role (source_title)
         let mut org_map: BTreeMap<String, Vec<&ExperienceRow>> = BTreeMap::new();
         for row in &rows {
-            let org_key = row.organization_id.clone()
+            let org_key = row
+                .organization_id
+                .clone()
                 .or_else(|| row.org_name.clone())
                 .unwrap_or_else(|| "Other".into());
             org_map.entry(org_key).or_default().push(row);
@@ -702,8 +752,9 @@ impl CompilerService {
             // Group by role (source_title)
             let mut role_map: BTreeMap<String, Vec<&&ExperienceRow>> = BTreeMap::new();
             for row in org_rows {
-                let role_key = row.source_title.clone()
-                    .unwrap_or_else(|| format!("untitled:{}", row.source_id.as_deref().unwrap_or("unknown")));
+                let role_key = row.source_title.clone().unwrap_or_else(|| {
+                    format!("untitled:{}", row.source_id.as_deref().unwrap_or("unknown"))
+                });
                 role_map.entry(role_key).or_default().push(row);
             }
 
@@ -728,34 +779,47 @@ impl CompilerService {
                     role_first.is_current.unwrap_or(0),
                 );
 
-                let bullets: Vec<ExperienceBullet> = role_rows.iter().map(|r| {
-                    let content = r.entry_content.clone()
-                        .or_else(|| r.perspective_content.clone())
-                        .or_else(|| r.bullet_content.clone())
-                        .unwrap_or_default();
+                let bullets: Vec<ExperienceBullet> = role_rows
+                    .iter()
+                    .map(|r| {
+                        let content = r
+                            .entry_content
+                            .clone()
+                            .or_else(|| r.perspective_content.clone())
+                            .or_else(|| r.bullet_content.clone())
+                            .unwrap_or_default();
 
-                    let source_chain = if r.perspective_id.is_some() && r.bullet_id.is_some()
-                        && r.source_id.is_some() && r.source_title.is_some()
-                    {
-                        Some(SourceChain {
-                            source_id: r.source_id.clone().unwrap(),
-                            source_title: truncate(r.source_title.as_deref().unwrap(), 60),
-                            bullet_id: r.bullet_id.clone().unwrap(),
-                            bullet_preview: truncate(r.bullet_content.as_deref().unwrap_or(""), 60),
-                            perspective_id: r.perspective_id.clone().unwrap(),
-                            perspective_preview: truncate(r.perspective_content.as_deref().unwrap_or(""), 60),
-                        })
-                    } else {
-                        None
-                    };
+                        let source_chain = if r.perspective_id.is_some()
+                            && r.bullet_id.is_some()
+                            && r.source_id.is_some()
+                            && r.source_title.is_some()
+                        {
+                            Some(SourceChain {
+                                source_id: r.source_id.clone().unwrap(),
+                                source_title: truncate(r.source_title.as_deref().unwrap(), 60),
+                                bullet_id: r.bullet_id.clone().unwrap(),
+                                bullet_preview: truncate(
+                                    r.bullet_content.as_deref().unwrap_or(""),
+                                    60,
+                                ),
+                                perspective_id: r.perspective_id.clone().unwrap(),
+                                perspective_preview: truncate(
+                                    r.perspective_content.as_deref().unwrap_or(""),
+                                    60,
+                                ),
+                            })
+                        } else {
+                            None
+                        };
 
-                    ExperienceBullet {
-                        content,
-                        entry_id: Some(r.entry_id.clone()),
-                        source_chain,
-                        is_cloned: false,
-                    }
-                }).collect();
+                        ExperienceBullet {
+                            content,
+                            entry_id: Some(r.entry_id.clone()),
+                            source_chain,
+                            is_cloned: false,
+                        }
+                    })
+                    .collect();
 
                 subheadings.push(ExperienceSubheading {
                     id: format!("sub-{}", role_first.entry_id),
@@ -779,7 +843,10 @@ impl CompilerService {
 
     // ── Skills ──────────────────────────────────────────────────────
 
-    fn build_skill_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_skill_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT s.name AS skill_name, COALESCE(sc.display_name, s.category) AS category_display
              FROM resume_skills rs
@@ -790,9 +857,7 @@ impl CompilerService {
         )?;
 
         let rows: Vec<(String, String)> = stmt
-            .query_map(params![section_id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })?
+            .query_map(params![section_id], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<_, _>>()?;
 
         // Group by category, preserving order
@@ -819,7 +884,10 @@ impl CompilerService {
 
     // ── Education ───────────────────────────────────────────────────
 
-    fn build_education_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_education_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT
                re.id AS entry_id,
@@ -882,7 +950,9 @@ impl CompilerService {
                     .unwrap_or_default();
 
                 Ok(IRSectionItem::Education(EducationItem {
-                    institution: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "Unknown".into()),
+                    institution: row
+                        .get::<_, Option<String>>(6)?
+                        .unwrap_or_else(|| "Unknown".into()),
                     degree,
                     date,
                     entry_id: row.get(0)?,
@@ -909,7 +979,10 @@ impl CompilerService {
 
     // ── Projects ────────────────────────────────────────────────────
 
-    fn build_project_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_project_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT
                re.id AS entry_id,
@@ -966,8 +1039,12 @@ impl CompilerService {
         // Group by source_title (project name)
         let mut project_map: Vec<(String, Vec<&ProjectRow>)> = Vec::new();
         for row in &rows {
-            let key = row.source_title.clone()
-                .unwrap_or_else(|| format!("untitled:{}", row.source_id.as_deref().unwrap_or(&row.entry_id)));
+            let key = row.source_title.clone().unwrap_or_else(|| {
+                format!(
+                    "untitled:{}",
+                    row.source_id.as_deref().unwrap_or(&row.entry_id)
+                )
+            });
             if let Some(entry) = project_map.iter_mut().find(|(k, _)| k == &key) {
                 entry.1.push(row);
             } else {
@@ -984,37 +1061,49 @@ impl CompilerService {
                 key.clone()
             };
 
-            let date = first.end_date.as_ref()
+            let date = first
+                .end_date
+                .as_ref()
                 .and_then(|d| d.get(..4).map(|s| s.to_string()));
 
-            let bullets: Vec<ExperienceBullet> = proj_rows.iter().map(|r| {
-                let content = r.entry_content.clone()
-                    .or_else(|| r.perspective_content.clone())
-                    .or_else(|| r.bullet_content.clone())
-                    .unwrap_or_default();
+            let bullets: Vec<ExperienceBullet> = proj_rows
+                .iter()
+                .map(|r| {
+                    let content = r
+                        .entry_content
+                        .clone()
+                        .or_else(|| r.perspective_content.clone())
+                        .or_else(|| r.bullet_content.clone())
+                        .unwrap_or_default();
 
-                let source_chain = if r.perspective_id.is_some() && r.bullet_id.is_some()
-                    && r.source_id.is_some() && r.source_title.is_some()
-                {
-                    Some(SourceChain {
-                        source_id: r.source_id.clone().unwrap(),
-                        source_title: truncate(r.source_title.as_deref().unwrap(), 60),
-                        bullet_id: r.bullet_id.clone().unwrap(),
-                        bullet_preview: truncate(r.bullet_content.as_deref().unwrap_or(""), 60),
-                        perspective_id: r.perspective_id.clone().unwrap(),
-                        perspective_preview: truncate(r.perspective_content.as_deref().unwrap_or(""), 60),
-                    })
-                } else {
-                    None
-                };
+                    let source_chain = if r.perspective_id.is_some()
+                        && r.bullet_id.is_some()
+                        && r.source_id.is_some()
+                        && r.source_title.is_some()
+                    {
+                        Some(SourceChain {
+                            source_id: r.source_id.clone().unwrap(),
+                            source_title: truncate(r.source_title.as_deref().unwrap(), 60),
+                            bullet_id: r.bullet_id.clone().unwrap(),
+                            bullet_preview: truncate(r.bullet_content.as_deref().unwrap_or(""), 60),
+                            perspective_id: r.perspective_id.clone().unwrap(),
+                            perspective_preview: truncate(
+                                r.perspective_content.as_deref().unwrap_or(""),
+                                60,
+                            ),
+                        })
+                    } else {
+                        None
+                    };
 
-                ExperienceBullet {
-                    content,
-                    entry_id: Some(r.entry_id.clone()),
-                    source_chain,
-                    is_cloned: false,
-                }
-            }).collect();
+                    ExperienceBullet {
+                        content,
+                        entry_id: Some(r.entry_id.clone()),
+                        source_chain,
+                        is_cloned: false,
+                    }
+                })
+                .collect();
 
             let has_real_bullets = bullets.iter().any(|b| !b.content.is_empty());
             let description = if has_real_bullets {
@@ -1038,7 +1127,10 @@ impl CompilerService {
 
     // ── Certifications ──────────────────────────────────────────────
 
-    fn build_certification_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_certification_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT rc.id AS entry_id, c.short_name,
                     o.name AS issuer_name
@@ -1080,7 +1172,9 @@ impl CompilerService {
             .map(|(label, certs)| CertificationCategoryGroup { label, certs })
             .collect();
 
-        Ok(vec![IRSectionItem::CertificationGroup(CertificationGroup { categories })])
+        Ok(vec![IRSectionItem::CertificationGroup(
+            CertificationGroup { categories },
+        )])
     }
 
     // ── Clearance ───────────────────────────────────────────────────
@@ -1109,8 +1203,12 @@ impl CompilerService {
                     }
                     c
                 } else {
-                    let val: serde_json::Value = serde_json::from_str(&details_json).unwrap_or_default();
-                    let level = val.get("level").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                    let val: serde_json::Value =
+                        serde_json::from_str(&details_json).unwrap_or_default();
+                    let level = val
+                        .get("level")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
                     let display_level = match level {
                         "top_secret_sci" | "ts_sci" => "TS/SCI",
                         "top_secret" => "Top Secret",
@@ -1145,7 +1243,10 @@ impl CompilerService {
 
     // ── Presentations ───────────────────────────────────────────────
 
-    fn build_presentation_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_presentation_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT
                re.id AS entry_id,
@@ -1214,8 +1315,12 @@ impl CompilerService {
         // Group by source_title
         let mut pres_map: Vec<(String, Vec<&PresRow>)> = Vec::new();
         for row in &rows {
-            let key = row.source_title.clone()
-                .unwrap_or_else(|| format!("untitled:{}", row.source_id.as_deref().unwrap_or(&row.entry_id)));
+            let key = row.source_title.clone().unwrap_or_else(|| {
+                format!(
+                    "untitled:{}",
+                    row.source_id.as_deref().unwrap_or(&row.entry_id)
+                )
+            });
             if let Some(entry) = pres_map.iter_mut().find(|(k, _)| k == &key) {
                 entry.1.push(row);
             } else {
@@ -1232,25 +1337,36 @@ impl CompilerService {
                 key.clone()
             };
 
-            let date = first.end_date.as_ref()
+            let date = first
+                .end_date
+                .as_ref()
                 .and_then(|d| d.get(..4).map(|s| s.to_string()));
 
-            let bullets: Vec<ExperienceBullet> = pres_rows.iter().map(|r| {
-                let content = r.entry_content.clone()
-                    .or_else(|| r.perspective_content.clone())
-                    .or_else(|| r.bullet_content.clone())
-                    .unwrap_or_default();
+            let bullets: Vec<ExperienceBullet> = pres_rows
+                .iter()
+                .map(|r| {
+                    let content = r
+                        .entry_content
+                        .clone()
+                        .or_else(|| r.perspective_content.clone())
+                        .or_else(|| r.bullet_content.clone())
+                        .unwrap_or_default();
 
-                ExperienceBullet {
-                    content,
-                    entry_id: Some(r.entry_id.clone()),
-                    source_chain: None,
-                    is_cloned: false,
-                }
-            }).collect();
+                    ExperienceBullet {
+                        content,
+                        entry_id: Some(r.entry_id.clone()),
+                        source_chain: None,
+                        is_cloned: false,
+                    }
+                })
+                .collect();
 
             let has_real_bullets = bullets.iter().any(|b| !b.content.is_empty());
-            let description = if has_real_bullets { None } else { first.source_description.clone() };
+            let description = if has_real_bullets {
+                None
+            } else {
+                first.source_description.clone()
+            };
 
             items.push(IRSectionItem::Presentation(PresentationItem {
                 title,
@@ -1271,7 +1387,10 @@ impl CompilerService {
 
     // ── Freeform / Awards ───────────────────────────────────────────
 
-    fn build_freeform_items(conn: &Connection, section_id: &str) -> Result<Vec<IRSectionItem>, ForgeError> {
+    fn build_freeform_items(
+        conn: &Connection,
+        section_id: &str,
+    ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT re.id, re.content, p.content AS perspective_content
              FROM resume_entries re
@@ -1355,9 +1474,18 @@ fn format_date_range(start: Option<&str>, end: Option<&str>, is_current: i32) ->
             let month = &date[5..7];
             let year = &date[..4];
             let month_name = match month {
-                "01" => "Jan", "02" => "Feb", "03" => "Mar", "04" => "Apr",
-                "05" => "May", "06" => "Jun", "07" => "Jul", "08" => "Aug",
-                "09" => "Sep", "10" => "Oct", "11" => "Nov", "12" => "Dec",
+                "01" => "Jan",
+                "02" => "Feb",
+                "03" => "Mar",
+                "04" => "Apr",
+                "05" => "May",
+                "06" => "Jun",
+                "07" => "Jul",
+                "08" => "Aug",
+                "09" => "Sep",
+                "10" => "Oct",
+                "11" => "Nov",
+                "12" => "Dec",
                 _ => month,
             };
             format!("{} {}", month_name, year)
@@ -1404,7 +1532,11 @@ fn build_org_display_string(
     }
 }
 
-fn build_location_string(city: Option<&str>, state: Option<&str>, work_arrangement: Option<&str>) -> Option<String> {
+fn build_location_string(
+    city: Option<&str>,
+    state: Option<&str>,
+    work_arrangement: Option<&str>,
+) -> Option<String> {
     match (city, state) {
         (Some(c), Some(s)) => Some(format!("{}, {}", c, s)),
         (Some(c), None) => Some(c.to_string()),
@@ -1464,7 +1596,8 @@ mod tests {
                 archetype: "sre".into(),
                 summary_id: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
         resume.id
     }
 
@@ -1481,7 +1614,9 @@ mod tests {
         create_profile(forge.conn());
         let resume_id = create_resume(forge.conn());
 
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(doc.resume_id, resume_id);
         assert_eq!(doc.header.name, "Adam Smith");
         assert_eq!(doc.header.email, Some("adam@example.com".into()));
@@ -1496,15 +1631,22 @@ mod tests {
         let resume_id = create_resume(forge.conn());
 
         // Default: falls back to target_role
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(doc.header.tagline, Some("Site Reliability Engineer".into()));
 
         // Set tagline_override — should take priority
-        forge.conn().execute(
-            "UPDATE resumes SET tagline_override = 'Custom Tagline' WHERE id = ?1",
-            params![resume_id],
-        ).unwrap();
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE resumes SET tagline_override = 'Custom Tagline' WHERE id = ?1",
+                params![resume_id],
+            )
+            .unwrap();
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(doc.header.tagline, Some("Custom Tagline".into()));
     }
 
@@ -1514,12 +1656,17 @@ mod tests {
         create_profile(forge.conn());
         let resume_id = create_resume(forge.conn());
 
-        forge.conn().execute(
-            "UPDATE resumes SET summary_override = 'Custom summary text' WHERE id = ?1",
-            params![resume_id],
-        ).unwrap();
+        forge
+            .conn()
+            .execute(
+                "UPDATE resumes SET summary_override = 'Custom summary text' WHERE id = ?1",
+                params![resume_id],
+            )
+            .unwrap();
 
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
         assert!(doc.summary.is_some());
         let summary = doc.summary.unwrap();
         assert_eq!(summary.content, "Custom summary text");
@@ -1538,20 +1685,34 @@ mod tests {
 
         // Create experience section with a simple entry
         let section = ResumeStore::create_section(
-            forge.conn(), &resume_id, "Experience", "experience", Some(0),
-        ).unwrap();
+            forge.conn(),
+            &resume_id,
+            "Experience",
+            "experience",
+            Some(0),
+        )
+        .unwrap();
 
-        ResumeStore::add_entry(forge.conn(), &resume_id, &AddResumeEntry {
-            section_id: section.id.clone(),
-            perspective_id: None,
-            source_id: None,
-            position: None,
-            content: Some("Led infrastructure migration".into()),
-        }).unwrap();
+        ResumeStore::add_entry(
+            forge.conn(),
+            &resume_id,
+            &AddResumeEntry {
+                section_id: section.id.clone(),
+                perspective_id: None,
+                source_id: None,
+                position: None,
+                content: Some("Led infrastructure migration".into()),
+            },
+        )
+        .unwrap();
 
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
         // Find the experience section (not the summary)
-        let exp_section = doc.sections.iter()
+        let exp_section = doc
+            .sections
+            .iter()
             .find(|s| s.section_type == IRSectionType::Experience)
             .unwrap();
         assert_eq!(exp_section.title, "Experience");
@@ -1564,9 +1725,9 @@ mod tests {
         create_profile(forge.conn());
         let resume_id = create_resume(forge.conn());
 
-        let section = ResumeStore::create_section(
-            forge.conn(), &resume_id, "Skills", "skills", Some(0),
-        ).unwrap();
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume_id, "Skills", "skills", Some(0))
+                .unwrap();
 
         let rust = SkillStore::create(forge.conn(), "Rust", Some(SkillCategory::Language)).unwrap();
         let go = SkillStore::create(forge.conn(), "Go", Some(SkillCategory::Language)).unwrap();
@@ -1576,8 +1737,12 @@ mod tests {
         ResumeStore::add_skill(forge.conn(), &resume_id, &section.id, &go.id).unwrap();
         ResumeStore::add_skill(forge.conn(), &resume_id, &section.id, &docker.id).unwrap();
 
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
-        let skills_section = doc.sections.iter()
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
+        let skills_section = doc
+            .sections
+            .iter()
             .find(|s| s.section_type == IRSectionType::Skills)
             .unwrap();
         assert_eq!(skills_section.items.len(), 1);
@@ -1599,8 +1764,13 @@ mod tests {
         let resume_id = create_resume(forge.conn());
 
         let section = ResumeStore::create_section(
-            forge.conn(), &resume_id, "Certifications", "certifications", Some(0),
-        ).unwrap();
+            forge.conn(),
+            &resume_id,
+            "Certifications",
+            "certifications",
+            Some(0),
+        )
+        .unwrap();
 
         // Create org + cert
         let org_id = forge_core::new_id();
@@ -1617,16 +1787,22 @@ mod tests {
         ).unwrap();
 
         ResumeStore::add_certification(
-            forge.conn(), &resume_id,
+            forge.conn(),
+            &resume_id,
             &forge_core::AddResumeCertification {
                 certification_id: cert_id,
                 section_id: section.id.clone(),
                 position: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
-        let doc = CompilerService::compile(forge.conn(), &resume_id).unwrap().unwrap();
-        let cert_section = doc.sections.iter()
+        let doc = CompilerService::compile(forge.conn(), &resume_id)
+            .unwrap()
+            .unwrap();
+        let cert_section = doc
+            .sections
+            .iter()
             .find(|s| s.section_type == IRSectionType::Certifications)
             .unwrap();
 
@@ -1699,15 +1875,26 @@ mod tests {
 
     #[test]
     fn format_date_range_variants() {
-        assert_eq!(format_date_range(Some("2024-03-01"), Some("2025-07-15"), 0), "Mar 2024 - Jul 2025");
-        assert_eq!(format_date_range(Some("2024-03-01"), None, 1), "Mar 2024 - Present");
+        assert_eq!(
+            format_date_range(Some("2024-03-01"), Some("2025-07-15"), 0),
+            "Mar 2024 - Jul 2025"
+        );
+        assert_eq!(
+            format_date_range(Some("2024-03-01"), None, 1),
+            "Mar 2024 - Present"
+        );
         assert_eq!(format_date_range(None, None, 0), "");
     }
 
     #[test]
     fn build_org_display_city_and_state() {
         assert_eq!(
-            build_org_display_string(Some("Raytheon"), Some("Arlington"), Some("VA"), Some("hybrid")),
+            build_org_display_string(
+                Some("Raytheon"),
+                Some("Arlington"),
+                Some("VA"),
+                Some("hybrid")
+            ),
             "Raytheon (Arlington, VA)"
         );
     }
@@ -1755,7 +1942,12 @@ mod tests {
     #[test]
     fn build_org_display_location_wins_over_arrangement() {
         assert_eq!(
-            build_org_display_string(Some("Cisco"), Some("San Jose"), Some("CA"), Some("contract")),
+            build_org_display_string(
+                Some("Cisco"),
+                Some("San Jose"),
+                Some("CA"),
+                Some("contract")
+            ),
             "Cisco (San Jose, CA)"
         );
     }

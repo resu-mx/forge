@@ -6,8 +6,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    CreateCredential, Credential, CredentialStatus, CredentialType, ForgeError,
-    UpdateCredential, new_id, now_iso,
+    new_id, now_iso, CreateCredential, Credential, CredentialStatus, CredentialType, ForgeError,
+    UpdateCredential,
 };
 
 /// Data access for the `credentials` table.
@@ -50,7 +50,9 @@ impl CredentialStore {
                     issued_date, expiry_date, created_at, updated_at
              FROM credentials WHERE id = ?1",
         )?;
-        let result = stmt.query_row(params![id], Self::map_credential).optional()?;
+        let result = stmt
+            .query_row(params![id], Self::map_credential)
+            .optional()?;
         Ok(result)
     }
 
@@ -83,9 +85,15 @@ impl CredentialStore {
 
     // ── Update ───────────────────────────────────────────────────────
 
-    pub fn update(conn: &Connection, id: &str, input: &UpdateCredential) -> Result<Credential, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "credential".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateCredential,
+    ) -> Result<Credential, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "credential".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -142,7 +150,10 @@ impl CredentialStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM credentials WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "credential".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "credential".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -152,11 +163,13 @@ impl CredentialStore {
     fn map_credential(row: &rusqlite::Row) -> rusqlite::Result<Credential> {
         Ok(Credential {
             id: row.get(0)?,
-            credential_type: row.get::<_, String>(1)?
+            credential_type: row
+                .get::<_, String>(1)?
                 .parse()
                 .unwrap_or(CredentialType::Clearance),
             label: row.get(2)?,
-            status: row.get::<_, String>(3)?
+            status: row
+                .get::<_, String>(3)?
                 .parse()
                 .unwrap_or(CredentialStatus::Active),
             organization_id: row.get(4)?,
@@ -181,21 +194,27 @@ mod tests {
     #[test]
     fn create_and_get_credential() {
         let forge = setup();
-        let cred = CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::Clearance,
-            label: "TS/SCI".into(),
-            status: Some(CredentialStatus::Active),
-            organization_id: None,
-            details: Some(r#"{"level":"top_secret","polygraph":"full_scope"}"#.into()),
-            issued_date: Some("2020-01-15".into()),
-            expiry_date: Some("2025-01-15".into()),
-        }).unwrap();
+        let cred = CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::Clearance,
+                label: "TS/SCI".into(),
+                status: Some(CredentialStatus::Active),
+                organization_id: None,
+                details: Some(r#"{"level":"top_secret","polygraph":"full_scope"}"#.into()),
+                issued_date: Some("2020-01-15".into()),
+                expiry_date: Some("2025-01-15".into()),
+            },
+        )
+        .unwrap();
 
         assert_eq!(cred.label, "TS/SCI");
         assert_eq!(cred.credential_type, CredentialType::Clearance);
         assert_eq!(cred.status, CredentialStatus::Active);
 
-        let fetched = CredentialStore::get(forge.conn(), &cred.id).unwrap().unwrap();
+        let fetched = CredentialStore::get(forge.conn(), &cred.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, cred.id);
         assert_eq!(fetched.label, "TS/SCI");
     }
@@ -203,30 +222,40 @@ mod tests {
     #[test]
     fn get_returns_none_for_missing() {
         let forge = setup();
-        assert!(CredentialStore::get(forge.conn(), "nonexistent").unwrap().is_none());
+        assert!(CredentialStore::get(forge.conn(), "nonexistent")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn list_credentials() {
         let forge = setup();
-        CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::Clearance,
-            label: "Secret".into(),
-            status: None,
-            organization_id: None,
-            details: None,
-            issued_date: None,
-            expiry_date: None,
-        }).unwrap();
-        CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::DriversLicense,
-            label: "TX CDL".into(),
-            status: None,
-            organization_id: None,
-            details: None,
-            issued_date: None,
-            expiry_date: None,
-        }).unwrap();
+        CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::Clearance,
+                label: "Secret".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
+        CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::DriversLicense,
+                label: "TX CDL".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
 
         let all = CredentialStore::list(forge.conn()).unwrap();
         assert_eq!(all.len(), 2);
@@ -235,18 +264,32 @@ mod tests {
     #[test]
     fn find_by_type_filters() {
         let forge = setup();
-        CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::Clearance,
-            label: "Secret".into(),
-            status: None, organization_id: None, details: None,
-            issued_date: None, expiry_date: None,
-        }).unwrap();
-        CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::DriversLicense,
-            label: "TX CDL".into(),
-            status: None, organization_id: None, details: None,
-            issued_date: None, expiry_date: None,
-        }).unwrap();
+        CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::Clearance,
+                label: "Secret".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
+        CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::DriversLicense,
+                label: "TX CDL".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
 
         let clearances = CredentialStore::find_by_type(forge.conn(), "clearance").unwrap();
         assert_eq!(clearances.len(), 1);
@@ -256,18 +299,30 @@ mod tests {
     #[test]
     fn update_credential() {
         let forge = setup();
-        let cred = CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::Clearance,
-            label: "Secret".into(),
-            status: None, organization_id: None, details: None,
-            issued_date: None, expiry_date: None,
-        }).unwrap();
+        let cred = CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::Clearance,
+                label: "Secret".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
 
-        let updated = CredentialStore::update(forge.conn(), &cred.id, &UpdateCredential {
-            label: Some("TS/SCI".into()),
-            status: Some(CredentialStatus::Expired),
-            ..Default::default()
-        }).unwrap();
+        let updated = CredentialStore::update(
+            forge.conn(),
+            &cred.id,
+            &UpdateCredential {
+                label: Some("TS/SCI".into()),
+                status: Some(CredentialStatus::Expired),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         assert_eq!(updated.label, "TS/SCI");
         assert_eq!(updated.status, CredentialStatus::Expired);
@@ -276,22 +331,32 @@ mod tests {
     #[test]
     fn update_missing_returns_not_found() {
         let forge = setup();
-        let result = CredentialStore::update(forge.conn(), "nonexistent", &UpdateCredential::default());
+        let result =
+            CredentialStore::update(forge.conn(), "nonexistent", &UpdateCredential::default());
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
     }
 
     #[test]
     fn delete_credential() {
         let forge = setup();
-        let cred = CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::BarAdmission,
-            label: "TX Bar".into(),
-            status: None, organization_id: None, details: None,
-            issued_date: None, expiry_date: None,
-        }).unwrap();
+        let cred = CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::BarAdmission,
+                label: "TX Bar".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
 
         CredentialStore::delete(forge.conn(), &cred.id).unwrap();
-        assert!(CredentialStore::get(forge.conn(), &cred.id).unwrap().is_none());
+        assert!(CredentialStore::get(forge.conn(), &cred.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -306,25 +371,38 @@ mod tests {
     #[test]
     fn default_status_is_active() {
         let forge = setup();
-        let cred = CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::MedicalLicense,
-            label: "MD License".into(),
-            status: None,
-            organization_id: None, details: None,
-            issued_date: None, expiry_date: None,
-        }).unwrap();
+        let cred = CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::MedicalLicense,
+                label: "MD License".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
         assert_eq!(cred.status, CredentialStatus::Active);
     }
 
     #[test]
     fn default_details_is_empty_json() {
         let forge = setup();
-        let cred = CredentialStore::create(forge.conn(), &CreateCredential {
-            credential_type: CredentialType::Clearance,
-            label: "Test".into(),
-            status: None, organization_id: None, details: None,
-            issued_date: None, expiry_date: None,
-        }).unwrap();
+        let cred = CredentialStore::create(
+            forge.conn(),
+            &CreateCredential {
+                credential_type: CredentialType::Clearance,
+                label: "Test".into(),
+                status: None,
+                organization_id: None,
+                details: None,
+                issued_date: None,
+                expiry_date: None,
+            },
+        )
+        .unwrap();
         assert_eq!(cred.details, "{}");
     }
 }

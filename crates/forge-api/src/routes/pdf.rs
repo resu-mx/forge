@@ -27,16 +27,24 @@ pub struct ResumeTypst {
 
 /// Compile the resume's IR and render it as Typst. 404 for an unknown resume.
 pub fn resume_typst(conn: &Connection, id: &str) -> Result<ResumeTypst, ForgeError> {
-    let resume = ResumeStore::get(conn, id)?
-        .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: id.into() })?;
-    let doc = CompilerService::compile(conn, id)?
-        .ok_or_else(|| ForgeError::NotFound { entity_type: "resume".into(), id: id.into() })?;
+    let resume = ResumeStore::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+        entity_type: "resume".into(),
+        id: id.into(),
+    })?;
+    let doc = CompilerService::compile(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+        entity_type: "resume".into(),
+        id: id.into(),
+    })?;
     let notice = resume
         .latex_override
         .as_deref()
         .is_some_and(|s| !s.trim().is_empty())
         .then_some(LATEX_OVERRIDE_NOTICE);
-    Ok(ResumeTypst { name: resume.name, source: CompilerService::render_typst(&doc), notice })
+    Ok(ResumeTypst {
+        name: resume.name,
+        source: CompilerService::render_typst(&doc),
+        notice,
+    })
 }
 
 /// Attach the notice header, if any.

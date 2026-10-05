@@ -3,8 +3,8 @@
 //! Mirrors the TS `createServices(db)` factory. Binary crates construct
 //! one `Forge` instance and pass references to route handlers.
 
-use rusqlite::Connection;
 use forge_core::ForgeError;
+use rusqlite::Connection;
 
 use crate::db::migrate::run_migrations;
 

@@ -43,10 +43,15 @@ async fn update_profile(
         }));
     }
     let input: UpdateProfile = serde_json::from_value(body).map_err(|e| {
-        ApiError(forge_core::ForgeError::Validation { message: e.to_string(), field: None })
+        ApiError(forge_core::ForgeError::Validation {
+            message: e.to_string(),
+            field: None,
+        })
     })?;
-    let result =
-        with_conn(&state, move |conn| ProfileStore::update_profile(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        ProfileStore::update_profile(conn, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 

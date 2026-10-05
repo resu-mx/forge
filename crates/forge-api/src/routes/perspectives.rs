@@ -8,8 +8,8 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    Framing, PaginationParams, Perspective, PerspectiveFilter,
-    PerspectiveStatus, PerspectiveWithChain, UpdatePerspectiveInput,
+    Framing, PaginationParams, Perspective, PerspectiveFilter, PerspectiveStatus,
+    PerspectiveWithChain, UpdatePerspectiveInput,
 };
 use forge_sdk::db::PerspectiveStore;
 
@@ -90,8 +90,10 @@ async fn list_perspectives(
         limit: Some(q.limit.unwrap_or(50).clamp(1, 200)),
     };
 
-    let (data, pagination) =
-        with_conn(&state, move |conn| PerspectiveStore::list(conn, &filter, &pg)).await?;
+    let (data, pagination) = with_conn(&state, move |conn| {
+        PerspectiveStore::list(conn, &filter, &pg)
+    })
+    .await?;
 
     Ok(Json(ApiList { data, pagination }))
 }
@@ -117,8 +119,10 @@ async fn update_perspective(
     Path(id): Path<String>,
     Json(input): Json<UpdatePerspectiveInput>,
 ) -> Result<Json<ApiData<Perspective>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| PerspectiveStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        PerspectiveStore::update(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -148,12 +152,7 @@ async fn reject_perspective(
 ) -> Result<Json<ApiData<Perspective>>, ApiError> {
     let reason = body.rejection_reason.unwrap_or_default();
     let result = with_conn(&state, move |conn| {
-        PerspectiveStore::transition_status(
-            conn,
-            &id,
-            PerspectiveStatus::Rejected,
-            Some(&reason),
-        )
+        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::Rejected, Some(&reason))
     })
     .await?;
     Ok(Json(ApiData { data: result }))
@@ -174,7 +173,10 @@ async fn reopen_perspective(
 
 pub fn router() -> Router<SharedState> {
     Router::new()
-        .route("/perspectives", post(create_perspective).get(list_perspectives))
+        .route(
+            "/perspectives",
+            post(create_perspective).get(list_perspectives),
+        )
         .route(
             "/perspectives/{id}",
             get(get_perspective)

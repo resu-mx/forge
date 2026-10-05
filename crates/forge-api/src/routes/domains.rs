@@ -58,8 +58,5 @@ async fn delete_domain(
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/domains", post(create_domain).get(list_domains))
-        .route(
-            "/domains/{id}",
-            get(get_domain).delete(delete_domain),
-        )
+        .route("/domains/{id}", get(get_domain).delete(delete_domain))
 }

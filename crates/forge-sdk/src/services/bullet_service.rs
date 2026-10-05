@@ -96,11 +96,7 @@ impl BulletService {
     ///
     /// If `technologies` is provided, all existing technology links are
     /// replaced (delete-then-insert pattern).
-    pub fn update_bullet(
-        &self,
-        id: &str,
-        input: &UpdateBulletInput,
-    ) -> Result<Bullet, ForgeError> {
+    pub fn update_bullet(&self, id: &str, input: &UpdateBulletInput) -> Result<Bullet, ForgeError> {
         todo!()
     }
 

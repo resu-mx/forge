@@ -55,10 +55,12 @@ pub fn validate(data: &Value) -> ValidationResult<SkillExtractionResponse> {
         message: "Missing required field \"skills\"".into(),
     })?;
 
-    let skills_arr = skills_val.as_array().ok_or_else(|| ValidationError::Schema {
-        field: "skills".into(),
-        message: "\"skills\" must be an array".into(),
-    })?;
+    let skills_arr = skills_val
+        .as_array()
+        .ok_or_else(|| ValidationError::Schema {
+            field: "skills".into(),
+            message: "\"skills\" must be an array".into(),
+        })?;
 
     if skills_arr.is_empty() {
         warnings.push(Warning {
@@ -86,13 +88,14 @@ pub fn validate(data: &Value) -> ValidationResult<SkillExtractionResponse> {
         }
 
         // name — required, non-empty, trimmed
-        let name = skill
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ValidationError::Schema {
-                field: format!("{prefix}.name"),
-                message: format!("{prefix}.name must be a string"),
-            })?;
+        let name =
+            skill
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ValidationError::Schema {
+                    field: format!("{prefix}.name"),
+                    message: format!("{prefix}.name must be a string"),
+                })?;
 
         let name = name.trim();
         if name.is_empty() {
@@ -114,9 +117,7 @@ pub fn validate(data: &Value) -> ValidationResult<SkillExtractionResponse> {
         if !VALID_CATEGORIES.contains(&category) {
             warnings.push(Warning {
                 field: format!("{prefix}.category"),
-                message: format!(
-                    "{prefix}.category \"{category}\" is not a recognized category"
-                ),
+                message: format!("{prefix}.category \"{category}\" is not a recognized category"),
             });
         }
 
@@ -228,7 +229,10 @@ mod tests {
     fn warns_on_extra_root_fields() {
         let data = json!({ "skills": [], "metadata": {} });
         let result = validate(&data).unwrap();
-        assert!(result.warnings.iter().any(|w| w.message.contains("metadata")));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("metadata")));
     }
 
     #[test]
@@ -248,10 +252,9 @@ mod tests {
 
     #[test]
     fn rejects_empty_name() {
-        let err = validate(
-            &json!({ "skills": [{ "name": "", "category": "tool", "confidence": 0.5 }] }),
-        )
-        .unwrap_err();
+        let err =
+            validate(&json!({ "skills": [{ "name": "", "category": "tool", "confidence": 0.5 }] }))
+                .unwrap_err();
         assert!(err.to_string().contains("name"));
     }
 

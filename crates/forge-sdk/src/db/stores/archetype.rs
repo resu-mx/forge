@@ -4,8 +4,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Archetype, ArchetypeWithDomains, ArchetypeWithCounts, CreateArchetypeInput,
-    Domain, ForgeError, Pagination, UpdateArchetypeInput, new_id, now_iso,
+    new_id, now_iso, Archetype, ArchetypeWithCounts, ArchetypeWithDomains, CreateArchetypeInput,
+    Domain, ForgeError, Pagination, UpdateArchetypeInput,
 };
 
 /// Data access for the `archetypes` and `archetype_domains` tables.
@@ -15,7 +15,10 @@ impl ArchetypeStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Insert a new archetype row.
-    pub fn create(conn: &Connection, input: &CreateArchetypeInput) -> Result<Archetype, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreateArchetypeInput,
+    ) -> Result<Archetype, ForgeError> {
         let id = new_id();
         let now = now_iso();
 
@@ -32,15 +35,19 @@ impl ArchetypeStore {
 
     /// Fetch a single archetype by ID.
     pub fn get(conn: &Connection, id: &str) -> Result<Option<Archetype>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at FROM archetypes WHERE id = ?1",
-        )?;
-        let result = stmt.query_row(params![id], Self::map_archetype).optional()?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, description, created_at FROM archetypes WHERE id = ?1")?;
+        let result = stmt
+            .query_row(params![id], Self::map_archetype)
+            .optional()?;
         Ok(result)
     }
 
     /// Fetch an archetype with its linked domains.
-    pub fn get_with_domains(conn: &Connection, id: &str) -> Result<Option<ArchetypeWithDomains>, ForgeError> {
+    pub fn get_with_domains(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<ArchetypeWithDomains>, ForgeError> {
         let base = match Self::get(conn, id)? {
             Some(a) => a,
             None => return Ok(None),
@@ -55,11 +62,7 @@ impl ArchetypeStore {
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<Archetype>, Pagination), ForgeError> {
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM archetypes",
-            [],
-            |row| row.get(0),
-        )?;
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM archetypes", [], |row| row.get(0))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, description, created_at
@@ -71,7 +74,14 @@ impl ArchetypeStore {
             .query_map(params![limit, offset], Self::map_archetype)?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     /// List archetypes with aggregated counts.
@@ -80,11 +90,7 @@ impl ArchetypeStore {
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<ArchetypeWithCounts>, Pagination), ForgeError> {
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM archetypes",
-            [],
-            |row| row.get(0),
-        )?;
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM archetypes", [], |row| row.get(0))?;
 
         let mut stmt = conn.prepare(
             "SELECT a.id, a.name, a.description, a.created_at,
@@ -111,15 +117,28 @@ impl ArchetypeStore {
             })?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
 
     /// Partially update an archetype.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateArchetypeInput) -> Result<Archetype, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "archetype".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateArchetypeInput,
+    ) -> Result<Archetype, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "archetype".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -157,7 +176,10 @@ impl ArchetypeStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM archetypes WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "archetype".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "archetype".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -165,7 +187,11 @@ impl ArchetypeStore {
     // ── Domain junction ──────────────────────────────────────────────
 
     /// Link a domain to an archetype.
-    pub fn add_domain(conn: &Connection, archetype_id: &str, domain_id: &str) -> Result<(), ForgeError> {
+    pub fn add_domain(
+        conn: &Connection,
+        archetype_id: &str,
+        domain_id: &str,
+    ) -> Result<(), ForgeError> {
         let now = now_iso();
         conn.execute(
             "INSERT OR IGNORE INTO archetype_domains (archetype_id, domain_id, created_at) VALUES (?1, ?2, ?3)",
@@ -175,7 +201,11 @@ impl ArchetypeStore {
     }
 
     /// Unlink a domain from an archetype.
-    pub fn remove_domain(conn: &Connection, archetype_id: &str, domain_id: &str) -> Result<(), ForgeError> {
+    pub fn remove_domain(
+        conn: &Connection,
+        archetype_id: &str,
+        domain_id: &str,
+    ) -> Result<(), ForgeError> {
         conn.execute(
             "DELETE FROM archetype_domains WHERE archetype_id = ?1 AND domain_id = ?2",
             params![archetype_id, domain_id],
@@ -232,7 +262,8 @@ mod tests {
         conn.execute(
             "INSERT INTO domains (id, name, description, created_at) VALUES (?1, ?2, NULL, ?3)",
             params![id, name, now],
-        ).unwrap();
+        )
+        .unwrap();
         Domain {
             id,
             name: name.into(),
@@ -250,9 +281,14 @@ mod tests {
         };
         let arch = ArchetypeStore::create(forge.conn(), &input).unwrap();
         assert_eq!(arch.name, "Security Engineer");
-        assert_eq!(arch.description, Some("Offensive and defensive security roles".into()));
+        assert_eq!(
+            arch.description,
+            Some("Offensive and defensive security roles".into())
+        );
 
-        let fetched = ArchetypeStore::get(forge.conn(), &arch.id).unwrap().unwrap();
+        let fetched = ArchetypeStore::get(forge.conn(), &arch.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, arch.id);
         assert_eq!(fetched.name, "Security Engineer");
     }
@@ -271,14 +307,22 @@ mod tests {
         let (_, before) = ArchetypeStore::list(forge.conn(), 0, 100).unwrap();
         let seeded = before.total;
 
-        ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "SWE".into(),
-            description: None,
-        }).unwrap();
-        ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "SRE".into(),
-            description: None,
-        }).unwrap();
+        ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "SWE".into(),
+                description: None,
+            },
+        )
+        .unwrap();
+        ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "SRE".into(),
+                description: None,
+            },
+        )
+        .unwrap();
 
         let (archs, pagination) = ArchetypeStore::list(forge.conn(), 0, 100).unwrap();
         assert_eq!(archs.len() as i64, seeded + 2);
@@ -288,15 +332,24 @@ mod tests {
     #[test]
     fn update_archetype() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "Old Name".into(),
-            description: None,
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "Old Name".into(),
+                description: None,
+            },
+        )
+        .unwrap();
 
-        let updated = ArchetypeStore::update(forge.conn(), &arch.id, &UpdateArchetypeInput {
-            name: Some("New Name".into()),
-            description: Some(Some("Now has a description".into())),
-        }).unwrap();
+        let updated = ArchetypeStore::update(
+            forge.conn(),
+            &arch.id,
+            &UpdateArchetypeInput {
+                name: Some("New Name".into()),
+                description: Some(Some("Now has a description".into())),
+            },
+        )
+        .unwrap();
         assert_eq!(updated.name, "New Name");
         assert_eq!(updated.description, Some("Now has a description".into()));
     }
@@ -304,20 +357,30 @@ mod tests {
     #[test]
     fn update_missing_returns_not_found() {
         let forge = setup();
-        let result = ArchetypeStore::update(forge.conn(), "nonexistent", &UpdateArchetypeInput::default());
+        let result = ArchetypeStore::update(
+            forge.conn(),
+            "nonexistent",
+            &UpdateArchetypeInput::default(),
+        );
         assert!(matches!(result, Err(ForgeError::NotFound { .. })));
     }
 
     #[test]
     fn delete_archetype() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "To Delete".into(),
-            description: None,
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "To Delete".into(),
+                description: None,
+            },
+        )
+        .unwrap();
 
         ArchetypeStore::delete(forge.conn(), &arch.id).unwrap();
-        assert!(ArchetypeStore::get(forge.conn(), &arch.id).unwrap().is_none());
+        assert!(ArchetypeStore::get(forge.conn(), &arch.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -330,10 +393,14 @@ mod tests {
     #[test]
     fn add_domain_and_list_domains() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "SecEng".into(),
-            description: None,
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "SecEng".into(),
+                description: None,
+            },
+        )
+        .unwrap();
 
         let d1 = create_domain(forge.conn(), "Security");
         let d2 = create_domain(forge.conn(), "Cloud");
@@ -351,10 +418,14 @@ mod tests {
     #[test]
     fn add_domain_is_idempotent() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "SWE".into(),
-            description: None,
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "SWE".into(),
+                description: None,
+            },
+        )
+        .unwrap();
         let d1 = create_domain(forge.conn(), "Backend");
 
         ArchetypeStore::add_domain(forge.conn(), &arch.id, &d1.id).unwrap();
@@ -367,10 +438,14 @@ mod tests {
     #[test]
     fn remove_domain() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "SRE".into(),
-            description: None,
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "SRE".into(),
+                description: None,
+            },
+        )
+        .unwrap();
         let d1 = create_domain(forge.conn(), "Infra");
         let d2 = create_domain(forge.conn(), "Observability");
 
@@ -387,15 +462,21 @@ mod tests {
     #[test]
     fn get_with_domains() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "Full-Stack".into(),
-            description: Some("End-to-end development".into()),
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "Full-Stack".into(),
+                description: Some("End-to-end development".into()),
+            },
+        )
+        .unwrap();
         let d1 = create_domain(forge.conn(), "Frontend");
 
         ArchetypeStore::add_domain(forge.conn(), &arch.id, &d1.id).unwrap();
 
-        let awd = ArchetypeStore::get_with_domains(forge.conn(), &arch.id).unwrap().unwrap();
+        let awd = ArchetypeStore::get_with_domains(forge.conn(), &arch.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(awd.base.name, "Full-Stack");
         assert_eq!(awd.domains.len(), 1);
         assert_eq!(awd.domains[0].name, "Frontend");
@@ -404,21 +485,28 @@ mod tests {
     #[test]
     fn delete_cascades_domain_links() {
         let forge = setup();
-        let arch = ArchetypeStore::create(forge.conn(), &CreateArchetypeInput {
-            name: "Temp".into(),
-            description: None,
-        }).unwrap();
+        let arch = ArchetypeStore::create(
+            forge.conn(),
+            &CreateArchetypeInput {
+                name: "Temp".into(),
+                description: None,
+            },
+        )
+        .unwrap();
         let d = create_domain(forge.conn(), "Whatever");
         ArchetypeStore::add_domain(forge.conn(), &arch.id, &d.id).unwrap();
 
         ArchetypeStore::delete(forge.conn(), &arch.id).unwrap();
 
         // Junction rows should be gone too
-        let count: i64 = forge.conn().query_row(
-            "SELECT COUNT(*) FROM archetype_domains WHERE archetype_id = ?1",
-            params![arch.id],
-            |row| row.get(0),
-        ).unwrap();
+        let count: i64 = forge
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM archetype_domains WHERE archetype_id = ?1",
+                params![arch.id],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 }

@@ -1,8 +1,8 @@
 //! Prompt template rendering for LLM derivation.
 
-pub mod source_to_bullet;
 pub mod bullet_to_perspective;
 pub mod jd_skill_extraction;
+pub mod source_to_bullet;
 
 /// Rendered prompt ready for LLM invocation.
 #[derive(Debug, Clone)]

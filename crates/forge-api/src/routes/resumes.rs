@@ -8,9 +8,8 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use forge_core::{
-    AddResumeCertification, AddResumeEntry, CreateResume, GapAnalysis, Resume,
-    ResumeCertification, ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate,
-    ResumeWithEntries, UpdateResume,
+    AddResumeCertification, AddResumeEntry, CreateResume, GapAnalysis, Resume, ResumeCertification,
+    ResumeEntry, ResumeSectionEntity, ResumeSkill, ResumeTemplate, ResumeWithEntries, UpdateResume,
 };
 use forge_sdk::db::{ResumeStore, TemplateStore};
 
@@ -72,9 +71,11 @@ async fn create_resume(
     Json(body): Json<CreateResumeBody>,
 ) -> Result<Created<Resume>, ApiError> {
     let result = with_conn(&state, move |conn| match &body.template_id {
-        Some(template_id) => {
-            forge_sdk::db::TemplateStore::create_resume_from_template(conn, template_id, &body.input)
-        }
+        Some(template_id) => forge_sdk::db::TemplateStore::create_resume_from_template(
+            conn,
+            template_id,
+            &body.input,
+        ),
         None => ResumeStore::create(conn, &body.input),
     })
     .await?;
@@ -99,11 +100,9 @@ async fn get_resume(
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<ResumeWithEntries>>, ApiError> {
     let result = with_conn(&state, move |conn| {
-        ResumeStore::get_with_entries(conn, &id)?.ok_or_else(|| {
-            forge_core::ForgeError::NotFound {
-                entity_type: "Resume".into(),
-                id: id.clone(),
-            }
+        ResumeStore::get_with_entries(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
+            entity_type: "Resume".into(),
+            id: id.clone(),
         })
     })
     .await?;
@@ -115,8 +114,7 @@ async fn update_resume(
     Path(id): Path<String>,
     Json(input): Json<UpdateResume>,
 ) -> Result<Json<ApiData<Resume>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| ResumeStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| ResumeStore::update(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -135,9 +133,10 @@ async fn add_entry(
     Path(resume_id): Path<String>,
     Json(input): Json<AddResumeEntry>,
 ) -> Result<Created<ResumeEntry>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| ResumeStore::add_entry(conn, &resume_id, &input))
-            .await?;
+    let result = with_conn(&state, move |conn| {
+        ResumeStore::add_entry(conn, &resume_id, &input)
+    })
+    .await?;
     Ok(Created(result))
 }
 
@@ -197,7 +196,13 @@ async fn create_section(
     Json(body): Json<CreateSectionBody>,
 ) -> Result<Created<ResumeSectionEntity>, ApiError> {
     let result = with_conn(&state, move |conn| {
-        ResumeStore::create_section(conn, &resume_id, &body.title, &body.entry_type, body.position)
+        ResumeStore::create_section(
+            conn,
+            &resume_id,
+            &body.title,
+            &body.entry_type,
+            body.position,
+        )
     })
     .await?;
     Ok(Created(result))
@@ -242,7 +247,13 @@ async fn update_section(
     Json(body): Json<UpdateSectionBody>,
 ) -> Result<Json<ApiData<ResumeSectionEntity>>, ApiError> {
     let data = with_conn(&state, move |conn| {
-        ResumeStore::update_section(conn, &resume_id, &section_id, body.title.as_deref(), body.position)
+        ResumeStore::update_section(
+            conn,
+            &resume_id,
+            &section_id,
+            body.title.as_deref(),
+            body.position,
+        )
     })
     .await?;
     Ok(Json(ApiData { data }))
@@ -282,7 +293,10 @@ async fn remove_section_skill(
     State(state): State<SharedState>,
     Path((resume_id, section_id, skill_id)): Path<(String, String, String)>,
 ) -> Result<NoContent, ApiError> {
-    with_conn(&state, move |conn| ResumeStore::remove_skill(conn, &resume_id, &section_id, &skill_id)).await?;
+    with_conn(&state, move |conn| {
+        ResumeStore::remove_skill(conn, &resume_id, &section_id, &skill_id)
+    })
+    .await?;
     Ok(NoContent)
 }
 
@@ -302,8 +316,15 @@ async fn reorder_section_skills(
     Path((resume_id, section_id)): Path<(String, String)>,
     Json(body): Json<ReorderSkillsBody>,
 ) -> Result<Json<ApiData<Option<()>>>, ApiError> {
-    let skills: Vec<(String, i32)> = body.skills.into_iter().map(|s| (s.skill_id, s.position)).collect();
-    with_conn(&state, move |conn| ResumeStore::reorder_skills(conn, &resume_id, &section_id, &skills)).await?;
+    let skills: Vec<(String, i32)> = body
+        .skills
+        .into_iter()
+        .map(|s| (s.skill_id, s.position))
+        .collect();
+    with_conn(&state, move |conn| {
+        ResumeStore::reorder_skills(conn, &resume_id, &section_id, &skills)
+    })
+    .await?;
     Ok(Json(ApiData { data: None }))
 }
 
@@ -314,7 +335,10 @@ async fn add_resume_certification(
     Path(resume_id): Path<String>,
     Json(input): Json<AddResumeCertification>,
 ) -> Result<Created<ResumeCertification>, ApiError> {
-    let data = with_conn(&state, move |conn| ResumeStore::add_certification(conn, &resume_id, &input)).await?;
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::add_certification(conn, &resume_id, &input)
+    })
+    .await?;
     Ok(Created(data))
 }
 
@@ -322,7 +346,10 @@ async fn list_resume_certifications(
     State(state): State<SharedState>,
     Path(resume_id): Path<String>,
 ) -> Result<Json<ApiData<Vec<ResumeCertification>>>, ApiError> {
-    let data = with_conn(&state, move |conn| ResumeStore::list_certifications(conn, &resume_id)).await?;
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::list_certifications(conn, &resume_id)
+    })
+    .await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -330,7 +357,10 @@ async fn remove_resume_certification(
     State(state): State<SharedState>,
     Path((resume_id, rc_id)): Path<(String, String)>,
 ) -> Result<NoContent, ApiError> {
-    with_conn(&state, move |conn| ResumeStore::remove_certification(conn, &resume_id, &rc_id)).await?;
+    with_conn(&state, move |conn| {
+        ResumeStore::remove_certification(conn, &resume_id, &rc_id)
+    })
+    .await?;
     Ok(NoContent)
 }
 
@@ -358,7 +388,10 @@ async fn analyze_gaps(
     State(state): State<SharedState>,
     Path(resume_id): Path<String>,
 ) -> Result<Json<ApiData<GapAnalysis>>, ApiError> {
-    let data = with_conn(&state, move |conn| ResumeStore::analyze_gaps(conn, &resume_id)).await?;
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::analyze_gaps(conn, &resume_id)
+    })
+    .await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -369,7 +402,10 @@ async fn get_ir(
 ) -> Result<Json<ApiData<forge_core::ResumeDocument>>, ApiError> {
     let data = with_conn(&state, move |conn| {
         forge_sdk::services::CompilerService::compile(conn, &resume_id)?.ok_or_else(|| {
-            forge_core::ForgeError::NotFound { entity_type: "resume".into(), id: resume_id.clone() }
+            forge_core::ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: resume_id.clone(),
+            }
         })
     })
     .await?;
@@ -381,7 +417,10 @@ async fn update_header(
     Path(resume_id): Path<String>,
     Json(header): Json<serde_json::Value>,
 ) -> Result<Json<ApiData<Resume>>, ApiError> {
-    let data = with_conn(&state, move |conn| ResumeStore::update_header(conn, &resume_id, &header)).await?;
+    let data = with_conn(&state, move |conn| {
+        ResumeStore::update_header(conn, &resume_id, &header)
+    })
+    .await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -429,8 +468,16 @@ async fn resume_pdf(
     let rendered = with_conn(&state, move |conn| super::pdf::resume_typst(conn, &id)).await?;
     let source = supplied.as_deref().unwrap_or(&rendered.source);
     // A hand-supplied source replaces the generated one, so the LaTeX notice no longer applies.
-    let notice = if supplied.is_some() { None } else { rendered.notice };
-    Ok(super::pdf::pdf_response(source, "inline; filename=\"resume.pdf\"", notice))
+    let notice = if supplied.is_some() {
+        None
+    } else {
+        rendered.notice
+    };
+    Ok(super::pdf::pdf_response(
+        source,
+        "inline; filename=\"resume.pdf\"",
+        notice,
+    ))
 }
 
 // ── Router ──────────────────────────────────────────────────────────
@@ -449,7 +496,10 @@ pub fn router() -> Router<SharedState> {
             "/resumes/{resume_id}/entries/{entry_id}",
             patch(update_entry).delete(remove_entry),
         )
-        .route("/resumes/{id}/sections", post(create_section).get(list_sections))
+        .route(
+            "/resumes/{id}/sections",
+            post(create_section).get(list_sections),
+        )
         .route(
             "/resumes/{resume_id}/sections/{section_id}",
             patch(update_section).delete(delete_section),
@@ -478,7 +528,10 @@ pub fn router() -> Router<SharedState> {
         .route("/resumes/{id}/gaps", get(analyze_gaps))
         .route("/resumes/{id}/ir", get(get_ir))
         .route("/resumes/{id}/header", patch(update_header))
-        .route("/resumes/{id}/markdown-override", patch(update_markdown_override))
+        .route(
+            "/resumes/{id}/markdown-override",
+            patch(update_markdown_override),
+        )
         .route("/resumes/{id}/latex-override", patch(update_latex_override))
         .route("/resumes/{id}/pdf", post(resume_pdf))
 }

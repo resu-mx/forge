@@ -37,8 +37,7 @@ async fn create_archetype(
     State(state): State<SharedState>,
     Json(input): Json<CreateArchetypeInput>,
 ) -> Result<Created<Archetype>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| ArchetypeStore::create(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| ArchetypeStore::create(conn, &input)).await?;
     Ok(Created(result))
 }
 
@@ -49,8 +48,10 @@ async fn list_archetypes(
     let offset = q.offset.unwrap_or(0).max(0);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
 
-    let (data, pagination) =
-        with_conn(&state, move |conn| ArchetypeStore::list(conn, offset, limit)).await?;
+    let (data, pagination) = with_conn(&state, move |conn| {
+        ArchetypeStore::list(conn, offset, limit)
+    })
+    .await?;
 
     Ok(Json(ApiList { data, pagination }))
 }
@@ -76,8 +77,10 @@ async fn update_archetype(
     Path(id): Path<String>,
     Json(input): Json<UpdateArchetypeInput>,
 ) -> Result<Json<ApiData<Archetype>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| ArchetypeStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        ArchetypeStore::update(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -95,8 +98,7 @@ async fn get_archetype_domains(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Vec<Domain>>>, ApiError> {
-    let data =
-        with_conn(&state, move |conn| ArchetypeStore::list_domains(conn, &id)).await?;
+    let data = with_conn(&state, move |conn| ArchetypeStore::list_domains(conn, &id)).await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -127,10 +129,7 @@ async fn remove_archetype_domain(
 
 pub fn router() -> Router<SharedState> {
     Router::new()
-        .route(
-            "/archetypes",
-            post(create_archetype).get(list_archetypes),
-        )
+        .route("/archetypes", post(create_archetype).get(list_archetypes))
         .route(
             "/archetypes/{id}",
             get(get_archetype)

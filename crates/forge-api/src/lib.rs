@@ -55,7 +55,9 @@ async fn envelope_plain_errors(resp: Response<Body>) -> Response<Body> {
         _ => ("BAD_REQUEST", status),
     };
 
-    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap_or_default();
+    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap_or_default();
     let mut message = String::from_utf8_lossy(&bytes).trim().to_string();
     if message.is_empty() {
         message = status.canonical_reason().unwrap_or("error").to_string();

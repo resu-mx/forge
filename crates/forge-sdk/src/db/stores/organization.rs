@@ -10,8 +10,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    CreateOrganizationInput, ForgeError, OrgTag, Organization, OrganizationFilter,
-    OrganizationStatus, Pagination, new_id, now_iso,
+    new_id, now_iso, CreateOrganizationInput, ForgeError, OrgTag, Organization, OrganizationFilter,
+    OrganizationStatus, Pagination,
 };
 
 /// Data access for the `organizations`, `org_tags`, `org_aliases`, and
@@ -25,7 +25,10 @@ impl OrganizationStore {
     ///
     /// If `tags` is omitted, defaults to `[org_type]` (e.g. `["company"]`).
     /// The `worked` field is a boolean stored as `0/1`.
-    pub fn create(conn: &Connection, input: &CreateOrganizationInput) -> Result<Organization, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreateOrganizationInput,
+    ) -> Result<Organization, ForgeError> {
         let id = new_id();
         let now = now_iso();
         let org_type = input.org_type.as_deref().unwrap_or("company");
@@ -75,7 +78,9 @@ impl OrganizationStore {
              FROM organizations WHERE id = ?1",
         )?;
 
-        let row = stmt.query_row(params![id], Self::map_org_without_tags).optional()?;
+        let row = stmt
+            .query_row(params![id], Self::map_org_without_tags)
+            .optional()?;
         match row {
             None => Ok(None),
             Some(mut org) => {
@@ -177,7 +182,14 @@ impl OrganizationStore {
             hydrated.push(org);
         }
 
-        Ok((hydrated, Pagination { total, offset: off, limit: lim }))
+        Ok((
+            hydrated,
+            Pagination {
+                total,
+                offset: off,
+                limit: lim,
+            },
+        ))
     }
 
     /// Partially update an organization. If `tags` is provided, the tag
@@ -188,8 +200,10 @@ impl OrganizationStore {
         input: &CreateOrganizationInput,
     ) -> Result<Organization, ForgeError> {
         // Verify exists
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "organization".into(), id: id.into() })?;
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "organization".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -268,7 +282,10 @@ impl OrganizationStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM organizations WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "organization".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "organization".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -277,9 +294,8 @@ impl OrganizationStore {
 
     /// Fetch all tags for an organization, sorted alphabetically.
     pub fn get_tags(conn: &Connection, org_id: &str) -> Result<Vec<OrgTag>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT tag FROM org_tags WHERE organization_id = ?1 ORDER BY tag ASC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT tag FROM org_tags WHERE organization_id = ?1 ORDER BY tag ASC")?;
         let tags: Vec<OrgTag> = stmt
             .query_map(params![org_id], |row| {
                 let tag_str: String = row.get(0)?;
@@ -292,7 +308,11 @@ impl OrganizationStore {
     /// Replace the entire tag list for an organization (delete-all then
     /// insert). Invalid tags are silently dropped, matching the historical
     /// `INSERT OR IGNORE` semantics.
-    pub fn replace_tags(conn: &Connection, org_id: &str, tags: &[String]) -> Result<(), ForgeError> {
+    pub fn replace_tags(
+        conn: &Connection,
+        org_id: &str,
+        tags: &[String],
+    ) -> Result<(), ForgeError> {
         conn.execute(
             "DELETE FROM org_tags WHERE organization_id = ?1",
             params![org_id],
@@ -311,9 +331,8 @@ impl OrganizationStore {
         conn: &Connection,
         pattern: &str,
     ) -> Result<Vec<String>, ForgeError> {
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT organization_id FROM org_aliases WHERE alias LIKE ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT DISTINCT organization_id FROM org_aliases WHERE alias LIKE ?1")?;
         let ids: Vec<String> = stmt
             .query_map(params![pattern], |row| row.get(0))?
             .collect::<Result<_, _>>()?;
@@ -349,7 +368,8 @@ impl OrganizationStore {
             linkedin_url: row.get(8)?,
             glassdoor_url: row.get(9)?,
             glassdoor_rating: row.get(10)?,
-            status: row.get::<_, Option<String>>(11)?
+            status: row
+                .get::<_, Option<String>>(11)?
                 .and_then(|s| s.parse::<OrganizationStatus>().ok()),
             created_at: row.get(12)?,
             updated_at: row.get(13)?,
@@ -389,7 +409,9 @@ mod tests {
         assert_eq!(org.worked, 1);
         assert!(org.tags.contains(&OrgTag::Company)); // default tag from org_type
 
-        let fetched = OrganizationStore::get(forge.conn(), &org.id).unwrap().unwrap();
+        let fetched = OrganizationStore::get(forge.conn(), &org.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, org.id);
         assert_eq!(fetched.name, "Acme Corp");
     }
@@ -426,12 +448,7 @@ mod tests {
     #[test]
     fn list_empty() {
         let forge = setup();
-        let (orgs, pagination) = OrganizationStore::list(
-            forge.conn(),
-            None,
-            None,
-            None,
-        ).unwrap();
+        let (orgs, pagination) = OrganizationStore::list(forge.conn(), None, None, None).unwrap();
         assert!(orgs.is_empty());
         assert_eq!(pagination.total, 0);
     }
@@ -460,9 +477,7 @@ mod tests {
             org_type: Some("company".into()),
             ..Default::default()
         };
-        let (orgs, _) = OrganizationStore::list(
-            forge.conn(), Some(&filter), None, None,
-        ).unwrap();
+        let (orgs, _) = OrganizationStore::list(forge.conn(), Some(&filter), None, None).unwrap();
         assert_eq!(orgs.len(), 1);
         assert_eq!(orgs[0].name, "CompanyA");
     }
@@ -491,9 +506,7 @@ mod tests {
             search: Some("goo".into()),
             ..Default::default()
         };
-        let (orgs, _) = OrganizationStore::list(
-            forge.conn(), Some(&filter), None, None,
-        ).unwrap();
+        let (orgs, _) = OrganizationStore::list(forge.conn(), Some(&filter), None, None).unwrap();
         assert_eq!(orgs.len(), 1);
         assert_eq!(orgs[0].name, "Google");
     }
@@ -556,7 +569,9 @@ mod tests {
         };
         let org = OrganizationStore::create(forge.conn(), &input).unwrap();
         OrganizationStore::delete(forge.conn(), &org.id).unwrap();
-        assert!(OrganizationStore::get(forge.conn(), &org.id).unwrap().is_none());
+        assert!(OrganizationStore::get(forge.conn(), &org.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -586,7 +601,12 @@ mod tests {
         let org = OrganizationStore::create(forge.conn(), &input).unwrap();
         assert!(org.tags.contains(&OrgTag::Company));
 
-        OrganizationStore::replace_tags(forge.conn(), &org.id, &["vendor".into(), "platform".into()]).unwrap();
+        OrganizationStore::replace_tags(
+            forge.conn(),
+            &org.id,
+            &["vendor".into(), "platform".into()],
+        )
+        .unwrap();
         let tags = OrganizationStore::get_tags(forge.conn(), &org.id).unwrap();
         assert!(!tags.contains(&OrgTag::Company));
         assert!(tags.contains(&OrgTag::Vendor));

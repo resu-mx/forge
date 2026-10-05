@@ -8,9 +8,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{
-    CreatePendingDerivationInput, ForgeError, PendingDerivation, new_id, now_iso,
-};
+use forge_core::{new_id, now_iso, CreatePendingDerivationInput, ForgeError, PendingDerivation};
 
 /// Data access for the `pending_derivations` table.
 pub struct DerivationStore;
@@ -20,7 +18,10 @@ impl DerivationStore {
     ///
     /// The UNIQUE index on (entity_type, entity_id) prevents concurrent
     /// prepares on the same entity.
-    pub fn create(conn: &Connection, input: &CreatePendingDerivationInput) -> Result<PendingDerivation, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreatePendingDerivationInput,
+    ) -> Result<PendingDerivation, ForgeError> {
         let id = new_id();
         let now = now_iso();
 
@@ -70,7 +71,11 @@ impl DerivationStore {
     }
 
     /// Check if an unexpired lock exists for the given entity.
-    pub fn has_active_lock(conn: &Connection, entity_type: &str, entity_id: &str) -> Result<bool, ForgeError> {
+    pub fn has_active_lock(
+        conn: &Connection,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<bool, ForgeError> {
         let now = now_iso();
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pending_derivations
@@ -98,7 +103,10 @@ impl DerivationStore {
     }
 
     /// Check if a derivation has expired. If expired, deletes it and returns true.
-    pub fn check_and_cleanup_if_expired(conn: &Connection, pending: &PendingDerivation) -> Result<bool, ForgeError> {
+    pub fn check_and_cleanup_if_expired(
+        conn: &Connection,
+        pending: &PendingDerivation,
+    ) -> Result<bool, ForgeError> {
         let now = now_iso();
         if pending.expires_at <= now {
             Self::delete(conn, &pending.id)?;
@@ -179,7 +187,9 @@ mod tests {
         assert_eq!(pending.entity_id, "src-123");
         assert_eq!(pending.client_id, "mcp-client-1");
 
-        let fetched = DerivationStore::get(forge.conn(), &pending.id).unwrap().unwrap();
+        let fetched = DerivationStore::get(forge.conn(), &pending.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(fetched.id, pending.id);
     }
 
@@ -213,15 +223,19 @@ mod tests {
     #[test]
     fn has_active_lock_returns_true_for_unexpired() {
         let forge = setup();
-        DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "source".into(),
-            entity_id: "src-456".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: None,
-            expires_at: future_time(),
-        }).unwrap();
+        DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "source".into(),
+                entity_id: "src-456".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: None,
+                expires_at: future_time(),
+            },
+        )
+        .unwrap();
 
         assert!(DerivationStore::has_active_lock(forge.conn(), "source", "src-456").unwrap());
     }
@@ -229,15 +243,19 @@ mod tests {
     #[test]
     fn has_active_lock_returns_false_for_expired() {
         let forge = setup();
-        DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "source".into(),
-            entity_id: "src-789".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: None,
-            expires_at: past_time(),
-        }).unwrap();
+        DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "source".into(),
+                entity_id: "src-789".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: None,
+                expires_at: past_time(),
+            },
+        )
+        .unwrap();
 
         assert!(!DerivationStore::has_active_lock(forge.conn(), "source", "src-789").unwrap());
     }
@@ -245,41 +263,57 @@ mod tests {
     #[test]
     fn delete_releases_lock() {
         let forge = setup();
-        let pending = DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "bullet".into(),
-            entity_id: "bul-123".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: Some(r#"{"archetype":"swe","domain":"backend","framing":"accomplishment"}"#.into()),
-            expires_at: future_time(),
-        }).unwrap();
+        let pending = DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "bullet".into(),
+                entity_id: "bul-123".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: Some(
+                    r#"{"archetype":"swe","domain":"backend","framing":"accomplishment"}"#.into(),
+                ),
+                expires_at: future_time(),
+            },
+        )
+        .unwrap();
 
         DerivationStore::delete(forge.conn(), &pending.id).unwrap();
-        assert!(DerivationStore::get(forge.conn(), &pending.id).unwrap().is_none());
+        assert!(DerivationStore::get(forge.conn(), &pending.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn cleanup_expired_removes_old_locks() {
         let forge = setup();
-        DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "source".into(),
-            entity_id: "old-1".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: None,
-            expires_at: past_time(),
-        }).unwrap();
-        DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "source".into(),
-            entity_id: "fresh-1".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: None,
-            expires_at: future_time(),
-        }).unwrap();
+        DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "source".into(),
+                entity_id: "old-1".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: None,
+                expires_at: past_time(),
+            },
+        )
+        .unwrap();
+        DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "source".into(),
+                entity_id: "fresh-1".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: None,
+                expires_at: future_time(),
+            },
+        )
+        .unwrap();
 
         let deleted = DerivationStore::cleanup_expired(forge.conn()).unwrap();
         assert_eq!(deleted, 1);
@@ -291,37 +325,51 @@ mod tests {
     #[test]
     fn check_and_cleanup_if_expired_deletes_expired() {
         let forge = setup();
-        let pending = DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "source".into(),
-            entity_id: "exp-1".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: None,
-            expires_at: past_time(),
-        }).unwrap();
+        let pending = DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "source".into(),
+                entity_id: "exp-1".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: None,
+                expires_at: past_time(),
+            },
+        )
+        .unwrap();
 
-        let expired = DerivationStore::check_and_cleanup_if_expired(forge.conn(), &pending).unwrap();
+        let expired =
+            DerivationStore::check_and_cleanup_if_expired(forge.conn(), &pending).unwrap();
         assert!(expired);
-        assert!(DerivationStore::get(forge.conn(), &pending.id).unwrap().is_none());
+        assert!(DerivationStore::get(forge.conn(), &pending.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn check_and_cleanup_if_expired_keeps_valid() {
         let forge = setup();
-        let pending = DerivationStore::create(forge.conn(), &CreatePendingDerivationInput {
-            entity_type: "source".into(),
-            entity_id: "valid-1".into(),
-            client_id: "c".into(),
-            prompt: "p".into(),
-            snapshot: "s".into(),
-            derivation_params: None,
-            expires_at: future_time(),
-        }).unwrap();
+        let pending = DerivationStore::create(
+            forge.conn(),
+            &CreatePendingDerivationInput {
+                entity_type: "source".into(),
+                entity_id: "valid-1".into(),
+                client_id: "c".into(),
+                prompt: "p".into(),
+                snapshot: "s".into(),
+                derivation_params: None,
+                expires_at: future_time(),
+            },
+        )
+        .unwrap();
 
-        let expired = DerivationStore::check_and_cleanup_if_expired(forge.conn(), &pending).unwrap();
+        let expired =
+            DerivationStore::check_and_cleanup_if_expired(forge.conn(), &pending).unwrap();
         assert!(!expired);
-        assert!(DerivationStore::get(forge.conn(), &pending.id).unwrap().is_some());
+        assert!(DerivationStore::get(forge.conn(), &pending.id)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -334,7 +382,8 @@ mod tests {
             "source-to-bullet-v1",
             "prompt input text",
             r#"{"bullets":[{"content":"test","technologies":[],"metrics":null}]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         assert!(!log_id.is_empty());
     }
 }

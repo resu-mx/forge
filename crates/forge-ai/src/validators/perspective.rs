@@ -31,13 +31,13 @@ pub fn validate(data: &Value) -> ValidationResult<PerspectiveDerivationResponse>
         });
     }
 
-    let content = obj
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ValidationError::Schema {
-            field: "content".into(),
-            message: "Missing or invalid \"content\" field (must be a string)".into(),
-        })?;
+    let content =
+        obj.get("content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ValidationError::Schema {
+                field: "content".into(),
+                message: "Missing or invalid \"content\" field (must be a string)".into(),
+            })?;
 
     if content.trim().is_empty() {
         return Err(ValidationError::Schema {

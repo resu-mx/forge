@@ -118,8 +118,7 @@ async fn update_bullet(
     Path(id): Path<String>,
     Json(input): Json<UpdateBulletInput>,
 ) -> Result<Json<ApiData<Bullet>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| BulletStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| BulletStore::update(conn, &id, &input)).await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -217,7 +216,10 @@ async fn unlink_bullet_skill(
     State(state): State<SharedState>,
     Path((bullet_id, skill_id)): Path<(String, String)>,
 ) -> Result<NoContent, ApiError> {
-    with_conn(&state, move |conn| BulletStore::unlink_skill(conn, &bullet_id, &skill_id)).await?;
+    with_conn(&state, move |conn| {
+        BulletStore::unlink_skill(conn, &bullet_id, &skill_id)
+    })
+    .await?;
     Ok(NoContent)
 }
 
@@ -261,8 +263,17 @@ pub fn router() -> Router<SharedState> {
         .route("/bullets/{id}/reject", patch(reject_bullet))
         .route("/bullets/{id}/reopen", patch(reopen_bullet))
         .route("/bullets/{id}/submit", patch(submit_bullet))
-        .route("/bullets/{id}/derive-perspectives", post(derive_perspectives_replaced))
-        .route("/bullets/{id}/skills", get(list_bullet_skills).post(link_bullet_skill))
-        .route("/bullets/{bullet_id}/skills/{skill_id}", delete(unlink_bullet_skill))
+        .route(
+            "/bullets/{id}/derive-perspectives",
+            post(derive_perspectives_replaced),
+        )
+        .route(
+            "/bullets/{id}/skills",
+            get(list_bullet_skills).post(link_bullet_skill),
+        )
+        .route(
+            "/bullets/{bullet_id}/skills/{skill_id}",
+            delete(unlink_bullet_skill),
+        )
         .route("/bullets/{id}/sources", get(list_bullet_sources))
 }

@@ -156,7 +156,10 @@ async fn remove_reference(
     Path((id, entity_type, entity_id)): Path<(String, String, String)>,
 ) -> Result<NoContent, ApiError> {
     let entity_type = parse_entity_type(&entity_type)?;
-    with_conn(&state, move |conn| NoteStore::remove_reference(conn, &id, entity_type, &entity_id)).await?;
+    with_conn(&state, move |conn| {
+        NoteStore::remove_reference(conn, &id, entity_type, &entity_id)
+    })
+    .await?;
     Ok(NoContent)
 }
 
@@ -165,7 +168,10 @@ async fn notes_for_entity(
     Path((entity_type, entity_id)): Path<(String, String)>,
 ) -> Result<Json<ApiData<Vec<UserNote>>>, ApiError> {
     let entity_type = parse_entity_type(&entity_type)?;
-    let data = with_conn(&state, move |conn| NoteStore::find_by_entity(conn, entity_type, &entity_id)).await?;
+    let data = with_conn(&state, move |conn| {
+        NoteStore::find_by_entity(conn, entity_type, &entity_id)
+    })
+    .await?;
     Ok(Json(ApiData { data }))
 }
 
@@ -176,7 +182,13 @@ pub fn router() -> Router<SharedState> {
             "/notes/{id}",
             get(get_note).patch(update_note).delete(delete_note),
         )
-        .route("/notes/by-entity/{entity_type}/{entity_id}", get(notes_for_entity))
+        .route(
+            "/notes/by-entity/{entity_type}/{entity_id}",
+            get(notes_for_entity),
+        )
         .route("/notes/{id}/references", post(add_reference))
-        .route("/notes/{id}/references/{entity_type}/{entity_id}", delete(remove_reference))
+        .route(
+            "/notes/{id}/references/{entity_type}/{entity_id}",
+            delete(remove_reference),
+        )
 }

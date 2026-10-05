@@ -102,7 +102,10 @@ pub fn render_typst(doc: &ResumeDocument) -> String {
 
     if let Some(summary) = &doc.summary {
         if !summary.content.trim().is_empty() {
-            out.push_str(&format!("#sec({})\n", lit(summary.title.as_deref().unwrap_or("Summary"))));
+            out.push_str(&format!(
+                "#sec({})\n",
+                lit(summary.title.as_deref().unwrap_or("Summary"))
+            ));
             out.push_str(&format!("#{}\n\n", lit(&summary.content)));
         }
     }
@@ -115,18 +118,25 @@ pub fn render_typst(doc: &ResumeDocument) -> String {
 
 fn render_header(h: &ResumeHeader, out: &mut String) {
     out.push_str("#align(center)[\n");
-    out.push_str(&format!("  #text(size: 22pt, weight: \"bold\", smallcaps({}))\n", lit(&h.name)));
+    out.push_str(&format!(
+        "  #text(size: 22pt, weight: \"bold\", smallcaps({}))\n",
+        lit(&h.name)
+    ));
     if let Some(tagline) = h.tagline.as_deref().filter(|s| !s.is_empty()) {
         out.push_str(&format!("  #linebreak() #small({})\n", lit(tagline)));
     }
     if let Some(clearance) = h.clearance.as_deref().filter(|s| !s.is_empty()) {
-        out.push_str(&format!("  #linebreak() #small(strong({}))\n", lit(clearance)));
+        out.push_str(&format!(
+            "  #linebreak() #small(strong({}))\n",
+            lit(clearance)
+        ));
     }
 
     // Contact line, in the same order as the LaTeX template.
     let mut parts: Vec<String> = Vec::new();
     let text_part = |s: &str| format!("small({})", lit(s));
-    let link_part = |url: String, label: &str| format!("small(link({}, underline({})))", lit(&url), lit(label));
+    let link_part =
+        |url: String, label: &str| format!("small(link({}, underline({})))", lit(&url), lit(label));
     if let Some(location) = h.location.as_deref().filter(|s| !s.is_empty()) {
         parts.push(text_part(location));
     }
@@ -137,7 +147,11 @@ fn render_header(h: &ResumeHeader, out: &mut String) {
         let digits: String = phone.chars().filter(char::is_ascii_digit).collect();
         parts.push(link_part(format!("tel:+{digits}"), phone));
     }
-    for (url, label) in [(&h.linkedin, "LinkedIn"), (&h.github, "GitHub"), (&h.website, "Website")] {
+    for (url, label) in [
+        (&h.linkedin, "LinkedIn"),
+        (&h.github, "GitHub"),
+        (&h.website, "Website"),
+    ] {
         if let Some(url) = url.as_deref().filter(|s| !s.is_empty()) {
             parts.push(link_part(url.to_string(), label));
         }
@@ -145,7 +159,12 @@ fn render_header(h: &ResumeHeader, out: &mut String) {
     if !parts.is_empty() {
         out.push_str(&format!(
             "  #linebreak() #({}).join(small[ #sym.bar.v ])\n",
-            parts.iter().map(|p| format!("[#{p}]")).collect::<Vec<_>>().join(", ") + ","
+            parts
+                .iter()
+                .map(|p| format!("[#{p}]"))
+                .collect::<Vec<_>>()
+                .join(", ")
+                + ","
         ));
     }
     out.push_str("]\n\n");
@@ -208,9 +227,18 @@ fn render_experience(group: &ExperienceGroup, out: &mut String) {
             None => sub.title.clone(),
         };
         if i == 0 {
-            out.push_str(&format!("#sub({}, \"\", {}, {})\n", lit(&group.organization), lit(&title), lit(&sub.date_range)));
+            out.push_str(&format!(
+                "#sub({}, \"\", {}, {})\n",
+                lit(&group.organization),
+                lit(&title),
+                lit(&sub.date_range)
+            ));
         } else {
-            out.push_str(&format!("#subsub({}, {})\n", lit(&title), lit(&sub.date_range)));
+            out.push_str(&format!(
+                "#subsub({}, {})\n",
+                lit(&title),
+                lit(&sub.date_range)
+            ));
         }
         bullets(&sub.bullets, out);
     }
@@ -237,24 +265,49 @@ fn render_education(edu: &EducationItem, out: &mut String) {
             out.push_str(&format!("#items({})\n", lit(content)));
         }
         "certificate" => {
-            let expires = if date.is_empty() { String::new() } else { format!("Exp. {date}") };
+            let expires = if date.is_empty() {
+                String::new()
+            } else {
+                format!("Exp. {date}")
+            };
             let issuer = edu.issuing_body.as_deref().unwrap_or(&edu.institution);
-            let credential = edu.credential_id.as_deref().map(|c| format!(" -- Credential ID: {c}")).unwrap_or_default();
+            let credential = edu
+                .credential_id
+                .as_deref()
+                .map(|c| format!(" -- Credential ID: {c}"))
+                .unwrap_or_default();
             let line2 = if issuer.is_empty() {
                 credential.trim_start_matches(" -- ").to_string()
             } else {
                 format!("{issuer}{credential}")
             };
-            out.push_str(&format!("#sub({}, {}, {}, \"\")\n", lit(&edu.degree), lit(&expires), lit(&line2)));
+            out.push_str(&format!(
+                "#sub({}, {}, {}, \"\")\n",
+                lit(&edu.degree),
+                lit(&expires),
+                lit(&line2)
+            ));
         }
         "course" => {
             let location = education_location(edu);
-            let line2 = if location.is_empty() { edu.institution.clone() } else { format!("{}, {location}", edu.institution) };
-            out.push_str(&format!("#sub({}, {}, {}, \"\")\n", lit(&edu.degree), lit(date), lit(&line2)));
+            let line2 = if location.is_empty() {
+                edu.institution.clone()
+            } else {
+                format!("{}, {location}", edu.institution)
+            };
+            out.push_str(&format!(
+                "#sub({}, {}, {}, \"\")\n",
+                lit(&edu.degree),
+                lit(date),
+                lit(&line2)
+            ));
         }
         _ => {
             let degree_type = edu.degree_type.as_deref().unwrap_or("");
-            let mut degree_line = match (degree_type.is_empty(), edu.field.as_deref().filter(|f| !f.is_empty())) {
+            let mut degree_line = match (
+                degree_type.is_empty(),
+                edu.field.as_deref().filter(|f| !f.is_empty()),
+            ) {
                 (false, Some(field)) => format!("{degree_type} in {field}"),
                 (false, None) => degree_type.to_string(),
                 (true, _) => edu.degree.clone(),
@@ -274,14 +327,23 @@ fn render_education(edu: &EducationItem, out: &mut String) {
 }
 
 fn render_project(project: &ProjectItem, out: &mut String) {
-    out.push_str(&format!("#projhead(strong({}), {})\n", lit(&project.name), opt(&project.date)));
+    out.push_str(&format!(
+        "#projhead(strong({}), {})\n",
+        lit(&project.name),
+        opt(&project.date)
+    ));
     bullets(&project.bullets, out);
 }
 
 fn render_presentation(p: &PresentationItem, out: &mut String) {
     let venue = match p.venue.as_deref().filter(|v| !v.is_empty()) {
         Some(venue) => {
-            let date = p.date.as_deref().filter(|d| !d.is_empty()).map(|d| format!(", {d}")).unwrap_or_default();
+            let date = p
+                .date
+                .as_deref()
+                .filter(|d| !d.is_empty())
+                .map(|d| format!(", {d}"))
+                .unwrap_or_default();
             format!(" | {venue}{date}")
         }
         None => String::new(),
@@ -303,7 +365,12 @@ mod tests {
     };
 
     fn bullet(content: &str) -> ExperienceBullet {
-        ExperienceBullet { content: content.into(), entry_id: None, source_chain: None, is_cloned: false }
+        ExperienceBullet {
+            content: content.into(),
+            entry_id: None,
+            source_chain: None,
+            is_cloned: false,
+        }
     }
 
     fn header() -> ResumeHeader {
@@ -321,11 +388,22 @@ mod tests {
     }
 
     fn doc(sections: Vec<IRSection>) -> ResumeDocument {
-        ResumeDocument { resume_id: "r".into(), header: header(), summary: None, sections }
+        ResumeDocument {
+            resume_id: "r".into(),
+            header: header(),
+            summary: None,
+            sections,
+        }
     }
 
     fn section(title: &str, kind: IRSectionType, items: Vec<IRSectionItem>) -> IRSection {
-        IRSection { id: "s".into(), section_type: kind, title: title.into(), display_order: 0, items }
+        IRSection {
+            id: "s".into(),
+            section_type: kind,
+            title: title.into(),
+            display_order: 0,
+            items,
+        }
     }
 
     #[test]
@@ -357,10 +435,19 @@ mod tests {
         )]));
         // The hostile text appears only escaped inside a literal, never bare.
         let escaped = lit(hostile);
-        assert!(out.contains(&format!("#sub({escaped}, ")), "organization is a literal");
-        assert!(out.contains(&format!("#items({escaped})")), "bullet is a literal");
+        assert!(
+            out.contains(&format!("#sub({escaped}, ")),
+            "organization is a literal"
+        );
+        assert!(
+            out.contains(&format!("#items({escaped})")),
+            "bullet is a literal"
+        );
         let without_literals = out.replace(&escaped, "");
-        assert!(!without_literals.contains("/etc/passwd"), "no unescaped copy: {without_literals}");
+        assert!(
+            !without_literals.contains("/etc/passwd"),
+            "no unescaped copy: {without_literals}"
+        );
     }
 
     #[test]
@@ -369,7 +456,10 @@ mod tests {
         assert!(out.contains("smallcaps(\"Ada Lovelace\")"));
         assert!(out.contains("small(\"Analytical engineer\")"));
         assert!(out.contains("link(\"mailto:ada@example.com\", underline(\"ada@example.com\"))"));
-        assert!(out.contains("link(\"tel:+15550100100\", underline(\"+1 (555) 010-0100\"))"), "digits only in the tel: link");
+        assert!(
+            out.contains("link(\"tel:+15550100100\", underline(\"+1 (555) 010-0100\"))"),
+            "digits only in the tel: link"
+        );
         assert!(out.contains("underline(\"LinkedIn\")"));
         assert!(!out.contains("GitHub"), "absent fields are omitted");
         assert!(out.contains("#set document(title: \"Ada Lovelace\""));
@@ -382,7 +472,10 @@ mod tests {
                 "Technical Skills",
                 IRSectionType::Skills,
                 vec![IRSectionItem::SkillGroup(SkillGroup {
-                    categories: vec![SkillCategoryGroup { label: "Languages".into(), skills: vec!["Rust".into(), "Go".into()] }],
+                    categories: vec![SkillCategoryGroup {
+                        label: "Languages".into(),
+                        skills: vec!["Rust".into(), "Go".into()],
+                    }],
                 })],
             ),
             section(
@@ -391,12 +484,21 @@ mod tests {
                 vec![IRSectionItem::CertificationGroup(CertificationGroup {
                     categories: vec![CertificationCategoryGroup {
                         label: "Cloud".into(),
-                        certs: vec![CertificationEntry { name: "CKA".into(), entry_id: None, source_id: None }],
+                        certs: vec![CertificationEntry {
+                            name: "CKA".into(),
+                            entry_id: None,
+                            source_id: None,
+                        }],
                     }],
                 })],
             ),
         ]);
-        d.summary = Some(ResumeSummary { summary_id: None, title: None, content: "Builds things.".into(), is_override: false });
+        d.summary = Some(ResumeSummary {
+            summary_id: None,
+            title: None,
+            content: "Builds things.".into(),
+            is_override: false,
+        });
         let out = render_typst(&d);
         assert!(out.contains("#sec(\"Summary\")\n#\"Builds things.\""));
         assert!(out.contains("#labelled((\"Languages\", \"Rust, Go\"))"));
@@ -450,23 +552,34 @@ mod tests {
             campus_state: Some("CA".into()),
         };
         let render = |e: EducationItem| {
-            render_typst(&doc(vec![section("Education", IRSectionType::Education, vec![IRSectionItem::Education(e)])]))
+            render_typst(&doc(vec![section(
+                "Education",
+                IRSectionType::Education,
+                vec![IRSectionItem::Education(e)],
+            )]))
         };
 
         let degree = render(base());
-        assert!(degree.contains("#sub(\"Caltech\", \"Pasadena, CA\", \"Ph.D. in Physics, GPA: 4.0\", \"2018\")"), "{degree}");
+        assert!(
+            degree.contains(
+                "#sub(\"Caltech\", \"Pasadena, CA\", \"Ph.D. in Physics, GPA: 4.0\", \"2018\")"
+            ),
+            "{degree}"
+        );
 
         let mut cert = base();
         cert.education_type = Some("certificate".into());
         cert.degree = "CKA".into();
         cert.issuing_body = Some("CNCF".into());
         cert.credential_id = Some("ABC-123".into());
-        assert!(render(cert).contains("#sub(\"CKA\", \"Exp. 2018\", \"CNCF -- Credential ID: ABC-123\", \"\")"));
+        assert!(render(cert)
+            .contains("#sub(\"CKA\", \"Exp. 2018\", \"CNCF -- Credential ID: ABC-123\", \"\")"));
 
         let mut course = base();
         course.education_type = Some("course".into());
         course.degree = "Distributed Systems".into();
-        assert!(render(course).contains("#sub(\"Distributed Systems\", \"2018\", \"Caltech, Pasadena, CA\", \"\")"));
+        assert!(render(course)
+            .contains("#sub(\"Distributed Systems\", \"2018\", \"Caltech, Pasadena, CA\", \"\")"));
 
         let mut self_taught = base();
         self_taught.education_type = Some("self_taught".into());

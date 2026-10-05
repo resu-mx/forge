@@ -7,8 +7,8 @@
 //! All method bodies are `todo!()` stubs.
 
 use forge_core::{
-    CreateSummary, ForgeError, Pagination, Resume, Skill, Summary,
-    SummaryFilter, SummarySort, SummaryWithRelations, UpdateSummary,
+    CreateSummary, ForgeError, Pagination, Resume, Skill, Summary, SummaryFilter, SummarySort,
+    SummaryWithRelations, UpdateSummary,
 };
 
 /// Service layer for summary business logic.

@@ -19,8 +19,8 @@
 //! Embedding on create is wired via `createEmbedHook(.., 'perspective')`.
 
 use forge_core::{
-    ForgeError, Framing, PaginationParams, Perspective, PerspectiveFilter,
-    PerspectiveWithChain, UpdatePerspectiveInput,
+    ForgeError, Framing, PaginationParams, Perspective, PerspectiveFilter, PerspectiveWithChain,
+    UpdatePerspectiveInput,
 };
 
 /// Input for creating a perspective through the service layer.
@@ -85,10 +85,7 @@ impl PerspectiveService {
     /// where `is_primary = true`. Returns an error with code `NOT_FOUND`
     /// if the chain is incomplete (missing bullet, or no primary source
     /// link).
-    pub fn get_perspective_with_chain(
-        &self,
-        id: &str,
-    ) -> Result<PerspectiveWithChain, ForgeError> {
+    pub fn get_perspective_with_chain(&self, id: &str) -> Result<PerspectiveWithChain, ForgeError> {
         todo!()
     }
 
@@ -159,11 +156,7 @@ impl PerspectiveService {
     ///
     /// Sets `rejection_reason` on the perspective row. Leaves `approved_at`
     /// and `approved_by` untouched.
-    pub fn reject_perspective(
-        &self,
-        id: &str,
-        reason: &str,
-    ) -> Result<Perspective, ForgeError> {
+    pub fn reject_perspective(&self, id: &str, reason: &str) -> Result<Perspective, ForgeError> {
         todo!()
     }
 

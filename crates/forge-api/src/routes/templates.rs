@@ -66,6 +66,8 @@ pub fn router() -> Router<SharedState> {
         .route("/templates", get(list_templates).post(create_template))
         .route(
             "/templates/{id}",
-            get(get_template).patch(update_template).delete(delete_template),
+            get(get_template)
+                .patch(update_template)
+                .delete(delete_template),
         )
 }

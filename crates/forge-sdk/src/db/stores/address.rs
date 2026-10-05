@@ -5,7 +5,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{Address, CreateAddress, ForgeError, Pagination, UpdateAddress, new_id, now_iso};
+use forge_core::{new_id, now_iso, Address, CreateAddress, ForgeError, Pagination, UpdateAddress};
 
 /// Data-access store for the `addresses` table.
 pub struct AddressStore;
@@ -59,11 +59,7 @@ impl AddressStore {
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<Address>, Pagination), ForgeError> {
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM addresses",
-            [],
-            |row| row.get(0),
-        )?;
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM addresses", [], |row| row.get(0))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, street_1, street_2, city, state, zip, country_code,
@@ -77,15 +73,28 @@ impl AddressStore {
             .query_map(params![limit, offset], Self::map_address)?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
 
     /// Apply a partial update to an existing address.
-    pub fn update(conn: &Connection, id: &str, input: &UpdateAddress) -> Result<Address, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "address".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateAddress,
+    ) -> Result<Address, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "address".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -147,7 +156,10 @@ impl AddressStore {
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
         let deleted = conn.execute("DELETE FROM addresses WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "address".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "address".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -207,12 +219,16 @@ mod tests {
     #[test]
     fn list_with_pagination() {
         let forge = setup();
-        AddressStore::create(forge.conn(), &CreateAddress {
-            name: "Office".into(),
-            city: Some("Chicago".into()),
-            country_code: Some("US".into()),
-            ..sample_input()
-        }).unwrap();
+        AddressStore::create(
+            forge.conn(),
+            &CreateAddress {
+                name: "Office".into(),
+                city: Some("Chicago".into()),
+                country_code: Some("US".into()),
+                ..sample_input()
+            },
+        )
+        .unwrap();
         AddressStore::create(forge.conn(), &sample_input()).unwrap();
 
         let (rows, pagination) = AddressStore::list(forge.conn(), 0, 50).unwrap();
@@ -230,11 +246,16 @@ mod tests {
         let forge = setup();
         let created = AddressStore::create(forge.conn(), &sample_input()).unwrap();
 
-        let updated = AddressStore::update(forge.conn(), &created.id, &UpdateAddress {
-            name: Some("Work".into()),
-            city: Some(Some("Chicago".into())),
-            ..Default::default()
-        }).unwrap();
+        let updated = AddressStore::update(
+            forge.conn(),
+            &created.id,
+            &UpdateAddress {
+                name: Some("Work".into()),
+                city: Some(Some("Chicago".into())),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(updated.name, "Work");
         assert_eq!(updated.city, Some("Chicago".into()));
         // Unchanged fields preserved
@@ -246,7 +267,9 @@ mod tests {
         let forge = setup();
         let created = AddressStore::create(forge.conn(), &sample_input()).unwrap();
         AddressStore::delete(forge.conn(), &created.id).unwrap();
-        assert!(AddressStore::get(forge.conn(), &created.id).unwrap().is_none());
+        assert!(AddressStore::get(forge.conn(), &created.id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]

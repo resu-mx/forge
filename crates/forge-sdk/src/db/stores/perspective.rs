@@ -6,10 +6,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Bullet, BulletStatus, CreatePerspectiveInput, ForgeError, Framing, Pagination,
-    PaginationParams, Perspective, PerspectiveFilter, PerspectiveStatus,
-    PerspectiveWithChain, Source, SourceStatus, SourceType, UpdatePerspectiveInput,
-    UpdatedBy, new_id, now_iso,
+    new_id, now_iso, Bullet, BulletStatus, CreatePerspectiveInput, ForgeError, Framing, Pagination,
+    PaginationParams, Perspective, PerspectiveFilter, PerspectiveStatus, PerspectiveWithChain,
+    Source, SourceStatus, SourceType, UpdatePerspectiveInput, UpdatedBy,
 };
 
 /// Valid status transitions for perspectives.
@@ -28,7 +27,10 @@ pub struct PerspectiveStore;
 impl PerspectiveStore {
     // ── Create ───────────────────────────────────────────────────────
 
-    pub fn create(conn: &Connection, input: &CreatePerspectiveInput) -> Result<Perspective, ForgeError> {
+    pub fn create(
+        conn: &Connection,
+        input: &CreatePerspectiveInput,
+    ) -> Result<Perspective, ForgeError> {
         let id = new_id();
         let now = now_iso();
         let status = input.status.unwrap_or(PerspectiveStatus::Draft);
@@ -74,14 +76,25 @@ impl PerspectiveStore {
             });
         }
         let snapshot: String = conn
-            .query_row("SELECT content FROM bullets WHERE id = ?1", params![bullet_id], |row| row.get(0))
+            .query_row(
+                "SELECT content FROM bullets WHERE id = ?1",
+                params![bullet_id],
+                |row| row.get(0),
+            )
             .optional()?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "bullet".into(), id: bullet_id.into() })?;
+            .ok_or_else(|| ForgeError::NotFound {
+                entity_type: "bullet".into(),
+                id: bullet_id.into(),
+            })?;
 
         let id = new_id();
         let now = now_iso();
         let (status, approved_at, approved_by) = if auto_approve {
-            (PerspectiveStatus::Approved, Some(now.clone()), Some("direct"))
+            (
+                PerspectiveStatus::Approved,
+                Some(now.clone()),
+                Some("direct"),
+            )
         } else {
             (PerspectiveStatus::Draft, None, None)
         };
@@ -118,12 +131,17 @@ impl PerspectiveStore {
                     approved_at, approved_by, created_at
              FROM perspectives WHERE id = ?1",
         )?;
-        let result = stmt.query_row(params![id], Self::map_perspective).optional()?;
+        let result = stmt
+            .query_row(params![id], Self::map_perspective)
+            .optional()?;
         Ok(result)
     }
 
     /// Get perspective with its full derivation chain (bullet + source).
-    pub fn get_with_chain(conn: &Connection, id: &str) -> Result<Option<PerspectiveWithChain>, ForgeError> {
+    pub fn get_with_chain(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<PerspectiveWithChain>, ForgeError> {
         let perspective = match Self::get(conn, id)? {
             Some(p) => p,
             None => return Ok(None),
@@ -142,7 +160,10 @@ impl PerspectiveStore {
                     technologies: Vec::new(),
                     metrics: row.get(3)?,
                     domain: row.get(4)?,
-                    status: row.get::<_, String>(5)?.parse().unwrap_or(BulletStatus::Draft),
+                    status: row
+                        .get::<_, String>(5)?
+                        .parse()
+                        .unwrap_or(BulletStatus::Draft),
                     rejection_reason: row.get(6)?,
                     prompt_log_id: row.get(7)?,
                     approved_at: row.get(8)?,
@@ -167,10 +188,16 @@ impl PerspectiveStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    source_type: row.get::<_, String>(3)?.parse().unwrap_or(SourceType::General),
+                    source_type: row
+                        .get::<_, String>(3)?
+                        .parse()
+                        .unwrap_or(SourceType::General),
                     start_date: row.get(4)?,
                     end_date: row.get(5)?,
-                    status: row.get::<_, String>(6)?.parse().unwrap_or(SourceStatus::Draft),
+                    status: row
+                        .get::<_, String>(6)?
+                        .parse()
+                        .unwrap_or(SourceStatus::Draft),
                     updated_by: row.get::<_, String>(7)?.parse().unwrap_or(UpdatedBy::Human),
                     last_derived_at: row.get(8)?,
                     created_at: row.get(9)?,
@@ -264,14 +291,27 @@ impl PerspectiveStore {
             )?
             .collect::<Result<_, _>>()?;
 
-        Ok((perspectives, Pagination { total, offset, limit }))
+        Ok((
+            perspectives,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
 
-    pub fn update(conn: &Connection, id: &str, input: &UpdatePerspectiveInput) -> Result<Perspective, ForgeError> {
-        Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "perspective".into(), id: id.into() })?;
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdatePerspectiveInput,
+    ) -> Result<Perspective, ForgeError> {
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "perspective".into(),
+            id: id.into(),
+        })?;
 
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -300,7 +340,10 @@ impl PerspectiveStore {
                 bind_values.len() + 1
             );
             bind_values.push(Box::new(id.to_string()));
-            conn.execute(&sql, rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())))?;
+            conn.execute(
+                &sql,
+                rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
+            )?;
         }
 
         Self::get(conn, id)?
@@ -314,8 +357,10 @@ impl PerspectiveStore {
         new_status: PerspectiveStatus,
         rejection_reason: Option<&str>,
     ) -> Result<Perspective, ForgeError> {
-        let p = Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "perspective".into(), id: id.into() })?;
+        let p = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "perspective".into(),
+            id: id.into(),
+        })?;
 
         if new_status == PerspectiveStatus::Rejected
             && rejection_reason.map_or(true, |r| r.trim().is_empty())
@@ -376,7 +421,10 @@ impl PerspectiveStore {
         }
         let deleted = conn.execute("DELETE FROM perspectives WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(ForgeError::NotFound { entity_type: "perspective".into(), id: id.into() });
+            return Err(ForgeError::NotFound {
+                entity_type: "perspective".into(),
+                id: id.into(),
+            });
         }
         Ok(())
     }
@@ -391,8 +439,14 @@ impl PerspectiveStore {
             bullet_content_snapshot: row.get(3)?,
             target_archetype: row.get(4)?,
             domain: row.get(5)?,
-            framing: row.get::<_, String>(6)?.parse().unwrap_or(Framing::Accomplishment),
-            status: row.get::<_, String>(7)?.parse().unwrap_or(PerspectiveStatus::Draft),
+            framing: row
+                .get::<_, String>(6)?
+                .parse()
+                .unwrap_or(Framing::Accomplishment),
+            status: row
+                .get::<_, String>(7)?
+                .parse()
+                .unwrap_or(PerspectiveStatus::Draft),
             rejection_reason: row.get(8)?,
             prompt_log_id: row.get(9)?,
             approved_at: row.get(10)?,
@@ -412,32 +466,46 @@ mod tests {
 
     fn setup() -> (Forge, String, String) {
         let forge = Forge::open_memory().unwrap();
-        let source = SourceStore::create(forge.conn(), &CreateSource {
-            title: "Test Source".into(),
-            description: "Test".into(),
-            source_type: Some(SourceType::General),
-            ..Default::default()
-        }).unwrap();
+        let source = SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Test Source".into(),
+                description: "Test".into(),
+                source_type: Some(SourceType::General),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let bullet = BulletStore::create(
-            forge.conn(), "Built APIs", None, None, Some("backend"),
-            &[(source.base.id.clone(), true)], &[],
-        ).unwrap();
+            forge.conn(),
+            "Built APIs",
+            None,
+            None,
+            Some("backend"),
+            &[(source.base.id.clone(), true)],
+            &[],
+        )
+        .unwrap();
         (forge, source.base.id, bullet.id)
     }
 
     #[test]
     fn create_perspective() {
         let (forge, _, bullet_id) = setup();
-        let p = PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id: bullet_id.clone(),
-            content: "Designed and built scalable REST APIs".into(),
-            bullet_content_snapshot: "Built APIs".into(),
-            target_archetype: "backend_engineer".into(),
-            domain: "backend".into(),
-            framing: Framing::Accomplishment,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
+        let p = PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id: bullet_id.clone(),
+                content: "Designed and built scalable REST APIs".into(),
+                bullet_content_snapshot: "Built APIs".into(),
+                target_archetype: "backend_engineer".into(),
+                domain: "backend".into(),
+                framing: Framing::Accomplishment,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
 
         assert_eq!(p.content, "Designed and built scalable REST APIs");
         assert_eq!(p.target_archetype, Some("backend_engineer".into()));
@@ -448,18 +516,24 @@ mod tests {
     #[test]
     fn get_with_chain() {
         let (forge, _, bullet_id) = setup();
-        let p = PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id: bullet_id.clone(),
-            content: "Reframed bullet".into(),
-            bullet_content_snapshot: "Built APIs".into(),
-            target_archetype: "sre".into(),
-            domain: "infra".into(),
-            framing: Framing::Responsibility,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
+        let p = PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id: bullet_id.clone(),
+                content: "Reframed bullet".into(),
+                bullet_content_snapshot: "Built APIs".into(),
+                target_archetype: "sre".into(),
+                domain: "infra".into(),
+                framing: Framing::Responsibility,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
 
-        let chain = PerspectiveStore::get_with_chain(forge.conn(), &p.id).unwrap().unwrap();
+        let chain = PerspectiveStore::get_with_chain(forge.conn(), &p.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(chain.base.id, p.id);
         assert_eq!(chain.bullet.id, bullet_id);
         assert_eq!(chain.source.title, "Test Source");
@@ -468,32 +542,44 @@ mod tests {
     #[test]
     fn list_with_archetype_filter() {
         let (forge, _, bullet_id) = setup();
-        PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id: bullet_id.clone(),
-            content: "P1".into(),
-            bullet_content_snapshot: "snap".into(),
-            target_archetype: "backend".into(),
-            domain: "d".into(),
-            framing: Framing::Accomplishment,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
-        PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id: bullet_id.clone(),
-            content: "P2".into(),
-            bullet_content_snapshot: "snap".into(),
-            target_archetype: "frontend".into(),
-            domain: "d".into(),
-            framing: Framing::Context,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
+        PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id: bullet_id.clone(),
+                content: "P1".into(),
+                bullet_content_snapshot: "snap".into(),
+                target_archetype: "backend".into(),
+                domain: "d".into(),
+                framing: Framing::Accomplishment,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
+        PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id: bullet_id.clone(),
+                content: "P2".into(),
+                bullet_content_snapshot: "snap".into(),
+                target_archetype: "frontend".into(),
+                domain: "d".into(),
+                framing: Framing::Context,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
 
         let (perspectives, _) = PerspectiveStore::list(
             forge.conn(),
-            &PerspectiveFilter { target_archetype: Some("backend".into()), ..Default::default() },
+            &PerspectiveFilter {
+                target_archetype: Some("backend".into()),
+                ..Default::default()
+            },
             &PaginationParams::default(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(perspectives.len(), 1);
         assert_eq!(perspectives[0].content, "P1");
     }
@@ -501,21 +587,37 @@ mod tests {
     #[test]
     fn status_transitions() {
         let (forge, _, bullet_id) = setup();
-        let p = PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id,
-            content: "Test".into(),
-            bullet_content_snapshot: "snap".into(),
-            target_archetype: "a".into(),
-            domain: "d".into(),
-            framing: Framing::Accomplishment,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
+        let p = PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id,
+                content: "Test".into(),
+                bullet_content_snapshot: "snap".into(),
+                target_archetype: "a".into(),
+                domain: "d".into(),
+                framing: Framing::Accomplishment,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
 
-        let p = PerspectiveStore::transition_status(forge.conn(), &p.id, PerspectiveStatus::InReview, None).unwrap();
+        let p = PerspectiveStore::transition_status(
+            forge.conn(),
+            &p.id,
+            PerspectiveStatus::InReview,
+            None,
+        )
+        .unwrap();
         assert_eq!(p.status, PerspectiveStatus::InReview);
 
-        let p = PerspectiveStore::transition_status(forge.conn(), &p.id, PerspectiveStatus::Approved, None).unwrap();
+        let p = PerspectiveStore::transition_status(
+            forge.conn(),
+            &p.id,
+            PerspectiveStatus::Approved,
+            None,
+        )
+        .unwrap();
         assert_eq!(p.status, PerspectiveStatus::Approved);
         assert!(p.approved_at.is_some());
     }
@@ -523,18 +625,24 @@ mod tests {
     #[test]
     fn delete_perspective() {
         let (forge, _, bullet_id) = setup();
-        let p = PerspectiveStore::create(forge.conn(), &CreatePerspectiveInput {
-            bullet_id,
-            content: "To delete".into(),
-            bullet_content_snapshot: "snap".into(),
-            target_archetype: "a".into(),
-            domain: "d".into(),
-            framing: Framing::Accomplishment,
-            status: None,
-            prompt_log_id: None,
-        }).unwrap();
+        let p = PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id,
+                content: "To delete".into(),
+                bullet_content_snapshot: "snap".into(),
+                target_archetype: "a".into(),
+                domain: "d".into(),
+                framing: Framing::Accomplishment,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
 
         PerspectiveStore::delete(forge.conn(), &p.id).unwrap();
-        assert!(PerspectiveStore::get(forge.conn(), &p.id).unwrap().is_none());
+        assert!(PerspectiveStore::get(forge.conn(), &p.id)
+            .unwrap()
+            .is_none());
     }
 }

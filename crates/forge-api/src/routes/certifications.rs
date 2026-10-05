@@ -35,8 +35,7 @@ async fn create_certification(
     State(state): State<SharedState>,
     Json(input): Json<CreateCertification>,
 ) -> Result<Created<Certification>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| CertificationStore::create(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| CertificationStore::create(conn, &input)).await?;
     Ok(Created(result))
 }
 
@@ -47,8 +46,10 @@ async fn list_certifications(
     let offset = q.offset.unwrap_or(0).max(0);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
 
-    let (data, pagination) =
-        with_conn(&state, move |conn| CertificationStore::list(conn, offset, limit)).await?;
+    let (data, pagination) = with_conn(&state, move |conn| {
+        CertificationStore::list(conn, offset, limit)
+    })
+    .await?;
 
     Ok(Json(ApiList { data, pagination }))
 }
@@ -72,8 +73,10 @@ async fn update_certification(
     Path(id): Path<String>,
     Json(input): Json<UpdateCertification>,
 ) -> Result<Json<ApiData<Certification>>, ApiError> {
-    let result =
-        with_conn(&state, move |conn| CertificationStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CertificationStore::update(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -91,8 +94,10 @@ async fn get_certification_skills(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Vec<Skill>>>, ApiError> {
-    let data =
-        with_conn(&state, move |conn| CertificationStore::get_skills(conn, &id)).await?;
+    let data = with_conn(&state, move |conn| {
+        CertificationStore::get_skills(conn, &id)
+    })
+    .await?;
     Ok(Json(ApiData { data }))
 }
 

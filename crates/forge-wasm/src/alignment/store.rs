@@ -147,9 +147,8 @@ mod tests {
     /// MIGRATIONS slice (which lives in forge-sdk on this branch and isn't
     /// pub). When forge-lu5s lands on main, this can switch to
     /// `forge_core::migrations::MIGRATIONS` lookup.
-    const MIGRATION_054: &str = include_str!(
-        "../../../../packages/core/src/db/migrations/054_alignment_results.sql"
-    );
+    const MIGRATION_054: &str =
+        include_str!("../../../../packages/core/src/db/migrations/054_alignment_results.sql");
 
     fn open_in_memory() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");

@@ -65,7 +65,11 @@ mod enum_roundtrip {
     fn resume_section() {
         roundtrip!(ResumeSection, ResumeSection::Experience, "experience");
         roundtrip!(ResumeSection, ResumeSection::WorkHistory, "work_history");
-        roundtrip!(ResumeSection, ResumeSection::Certifications, "certifications");
+        roundtrip!(
+            ResumeSection,
+            ResumeSection::Certifications,
+            "certifications"
+        );
     }
 
     #[test]
@@ -76,9 +80,21 @@ mod enum_roundtrip {
 
     #[test]
     fn job_description_status() {
-        roundtrip!(JobDescriptionStatus, JobDescriptionStatus::Discovered, "discovered");
-        roundtrip!(JobDescriptionStatus, JobDescriptionStatus::Interviewing, "interviewing");
-        roundtrip!(JobDescriptionStatus, JobDescriptionStatus::Withdrawn, "withdrawn");
+        roundtrip!(
+            JobDescriptionStatus,
+            JobDescriptionStatus::Discovered,
+            "discovered"
+        );
+        roundtrip!(
+            JobDescriptionStatus,
+            JobDescriptionStatus::Interviewing,
+            "interviewing"
+        );
+        roundtrip!(
+            JobDescriptionStatus,
+            JobDescriptionStatus::Withdrawn,
+            "withdrawn"
+        );
     }
 
     #[test]
@@ -95,8 +111,16 @@ mod enum_roundtrip {
 
     #[test]
     fn presentation_type() {
-        roundtrip!(PresentationType, PresentationType::ConferenceTalk, "conference_talk");
-        roundtrip!(PresentationType, PresentationType::LightningTalk, "lightning_talk");
+        roundtrip!(
+            PresentationType,
+            PresentationType::ConferenceTalk,
+            "conference_talk"
+        );
+        roundtrip!(
+            PresentationType,
+            PresentationType::LightningTalk,
+            "lightning_talk"
+        );
     }
 
     #[test]
@@ -115,7 +139,7 @@ mod enum_roundtrip {
 #[cfg(test)]
 mod tagged_unions {
     use super::super::common::Gap;
-    use super::super::ir::{IRSectionItem, SummaryItem, ClearanceItem};
+    use super::super::ir::{ClearanceItem, IRSectionItem, SummaryItem};
 
     #[test]
     fn gap_tagged_by_type() {
@@ -132,7 +156,11 @@ mod tagged_unions {
         // round-trip
         let back: Gap = serde_json::from_value(json).unwrap();
         match back {
-            Gap::ThinCoverage { domain, current_count, .. } => {
+            Gap::ThinCoverage {
+                domain,
+                current_count,
+                ..
+            } => {
                 assert_eq!(domain, "security");
                 assert_eq!(current_count, 1);
             }
@@ -206,7 +234,10 @@ mod error_serialization {
         };
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["code"], "VALIDATION_ERROR");
-        assert!(json["message"].as_str().unwrap().contains("title is required"));
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("title is required"));
     }
 
     #[test]
@@ -227,7 +258,10 @@ mod error_serialization {
         let err = ForgeError::WasmDatabase("connection lost".into());
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["code"], "DATABASE_ERROR");
-        assert!(json["message"].as_str().unwrap().contains("connection lost"));
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("connection lost"));
     }
 }
 

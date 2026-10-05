@@ -38,11 +38,7 @@ impl SkillGraphRuntimeJs {
 
     /// Substring autocomplete. Returns a JSON-encoded `SkillNode[]`.
     #[wasm_bindgen(js_name = searchSkills)]
-    pub fn search_skills(
-        &self,
-        query: &str,
-        top_k: usize,
-    ) -> Result<String, JsValue> {
+    pub fn search_skills(&self, query: &str, top_k: usize) -> Result<String, JsValue> {
         let hits = self.inner.search_skills(query, top_k);
         serde_json::to_string(&hits)
             .map_err(|e| JsValue::from_str(&format!("encode search_skills result: {e}")))
@@ -52,11 +48,7 @@ impl SkillGraphRuntimeJs {
     /// byte order, matching the snapshot's embedding model. Returns a
     /// JSON-encoded `{ skill, score }[]`.
     #[wasm_bindgen(js_name = searchByEmbedding)]
-    pub fn search_by_embedding(
-        &self,
-        query: Vec<f32>,
-        top_k: usize,
-    ) -> Result<String, JsValue> {
+    pub fn search_by_embedding(&self, query: Vec<f32>, top_k: usize) -> Result<String, JsValue> {
         #[derive(Serialize)]
         struct Hit<'a> {
             skill: &'a forge_core::types::skill_graph::SkillNode,
@@ -65,7 +57,10 @@ impl SkillGraphRuntimeJs {
         let raw = self.inner.search_by_embedding(&query, top_k);
         let hits: Vec<Hit> = raw
             .iter()
-            .map(|(skill, score)| Hit { skill, score: *score })
+            .map(|(skill, score)| Hit {
+                skill,
+                score: *score,
+            })
             .collect();
         serde_json::to_string(&hits)
             .map_err(|e| JsValue::from_str(&format!("encode search_by_embedding result: {e}")))
