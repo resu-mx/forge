@@ -29,9 +29,10 @@ through `rusqlite` on `sqlite-wasm-rs`, not wa-sqlite
   bullet, approve, perspective, approve, resume from a template and PDF in Chromium, with no server. It
   runs in CI (`core loop in the browser`).
 
-**Not part of the minimal version.** wa-sqlite, the CDN snapshot, the Cloudflare deployment, D1 and
-sync, HelixDB, and the extension sync service (phases 1 and 3 to 6 below). Only the dual-mode
-application (phase 2) was done, and as a build-time default rather than a runtime switch.
+**Not part of the minimal version.** wa-sqlite, the CDN snapshot, D1 and sync, HelixDB, and the
+extension sync service (phases 1 and 3 to 6 below). Only the dual-mode application (phase 2) was
+done, and as a build-time default rather than a runtime switch. The static app itself is deployed
+to Cloudflare Pages; see `.github/AGENTS.md` (`app-build.yml`).
 
 **Known gaps.** Chrome is the only browser verified. A resume's `latex_override` is not compiled in the
 browser (the PDF is generated from the resume content, with a notice). Several list pages other than
