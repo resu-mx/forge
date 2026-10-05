@@ -258,3 +258,123 @@ async fn override_shows_in_json_ir_and_markdown_export() {
         .unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("*Mine*"));
 }
+
+/// Seed the "Terraform" skill and one linked JD, by SQL (not through the link routes).
+fn seed_terraform_jd(forge: &Forge, resume_id: &str) {
+    forge_sdk::db::SkillStore::create(forge.conn(), "Terraform", None).unwrap();
+    let jd_id = forge_core::new_id();
+    forge
+        .conn()
+        .execute(
+            "INSERT INTO job_descriptions (id, title, raw_text, status) VALUES (?1, 'JD', 'Terraform Kubernetes Python Ansible', 'discovered')",
+            rusqlite::params![jd_id],
+        )
+        .unwrap();
+    forge
+        .conn()
+        .execute(
+            "INSERT INTO job_description_resumes (job_description_id, resume_id) VALUES (?1, ?2)",
+            rusqlite::params![jd_id, resume_id],
+        )
+        .unwrap();
+    forge
+        .conn()
+        .execute(
+            "UPDATE resumes SET target_role = 'Senior Platform Engineer' WHERE id = ?1",
+            rusqlite::params![resume_id],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn regenerate_returns_result_shape_with_matched_skill_key() {
+    let (forge, id) = forge_with_resume(None, None);
+    seed_terraform_jd(&forge, &id);
+    let r = app(AppState::new(forge));
+    let path = format!("/api/resumes/{id}/tagline/regenerate");
+    let resp = r
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&path)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+    // Wire key order is the TS order, which serde_json::Value would sort away.
+    let pos = |k: &str| {
+        text.find(k)
+            .unwrap_or_else(|| panic!("{k} missing in {text}"))
+    };
+    assert!(
+        pos("\"generated_tagline\"") < pos("\"has_override\"")
+            && pos("\"has_override\"") < pos("\"keywords\""),
+        "{text}"
+    );
+    let body: Value = serde_json::from_str(&text).unwrap();
+    let data = &body["data"];
+    assert_eq!(
+        data["generated_tagline"],
+        "Senior Platform Engineer -- terraform + ansible + kubernetes"
+    );
+    assert_eq!(data["has_override"], false);
+    assert_eq!(data["keywords"][0]["term"], "terraform");
+    assert_eq!(data["keywords"][0]["matchedSkill"], true);
+    assert_eq!(data["keywords"][0]["score"].as_f64(), Some(2.0));
+    assert_eq!(data["keywords"][1]["matchedSkill"], false);
+}
+
+#[tokio::test]
+async fn regenerate_without_links_clears_and_answers_empty() {
+    let (forge, id) = forge_with_resume(Some("stale"), None);
+    let r = app(AppState::new(forge));
+    let (status, body) = call(
+        &r,
+        "POST",
+        &format!("/api/resumes/{id}/tagline/regenerate"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["data"],
+        json!({"generated_tagline": "", "has_override": false, "keywords": []})
+    );
+    let (_, state) = call(&r, "GET", &format!("/api/resumes/{id}/tagline"), None).await;
+    assert_eq!(state["data"]["generated_tagline"], Value::Null);
+}
+
+#[tokio::test]
+async fn regenerate_unknown_resume_is_404_with_ts_message() {
+    let r = app(AppState::new(Forge::open_memory().unwrap()));
+    let (status, body) = call(&r, "POST", "/api/resumes/missing/tagline/regenerate", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
+    assert_eq!(body["error"]["message"], "Resume not found");
+}
+
+#[tokio::test]
+async fn regenerate_ignores_body() {
+    let (forge, id) = forge_with_resume(None, None);
+    let r = app(AppState::new(forge));
+    let resp = r
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/resumes/{id}/tagline/regenerate"))
+                .header("content-type", "application/json")
+                .body(Body::from("not json"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
