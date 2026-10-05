@@ -147,6 +147,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn extension_routes_are_served_not_501() {
+        let r = router();
+        let resp = dispatch(&r, req("GET", "/api/extension/config", ""), true)
+            .await
+            .unwrap();
+        assert_eq!(resp.status, 200);
+        assert_eq!(
+            json(&resp)["data"]["enabledPlugins"],
+            serde_json::json!(["linkedin"])
+        );
+        let resp = dispatch(&r, req("DELETE", "/api/extension/logs", ""), true)
+            .await
+            .unwrap();
+        assert_eq!(resp.status, 204);
+    }
+
+    #[tokio::test]
     async fn serves_health() {
         let resp = dispatch(&router(), req("GET", "/api/health", ""), false)
             .await
