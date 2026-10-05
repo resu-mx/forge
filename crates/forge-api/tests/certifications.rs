@@ -12,7 +12,12 @@ fn router() -> Router {
     app(AppState::new(Forge::open_memory().unwrap()))
 }
 
-async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+async fn call(
+    router: &Router,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let mut req = Request::builder().method(method).uri(path);
     let body = match body {
         Some(v) => {
@@ -21,11 +26,21 @@ async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) ->
         }
         None => Body::empty(),
     };
-    let resp = router.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+    let resp = router
+        .clone()
+        .oneshot(req.body(body).unwrap())
+        .await
+        .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let text = String::from_utf8_lossy(&bytes).into_owned();
-    let value = if text.is_empty() { Value::Null } else { serde_json::from_str(&text).unwrap_or(Value::Null) };
+    let value = if text.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text).unwrap_or(Value::Null)
+    };
     (status, value)
 }
 
@@ -53,7 +68,10 @@ async fn list_is_hydrated_unpaged_and_sorted_by_short_name() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.get("pagination").is_none());
     let rows = body["data"].as_array().unwrap();
-    let names: Vec<_> = rows.iter().map(|c| c["short_name"].as_str().unwrap().to_string()).collect();
+    let names: Vec<_> = rows
+        .iter()
+        .map(|c| c["short_name"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(names, ["AWS", "CISSP", "PMP"]);
     assert!(rows.iter().all(|c| c["skills"].is_array()));
 }

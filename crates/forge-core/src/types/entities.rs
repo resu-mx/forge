@@ -805,8 +805,12 @@ pub struct AnswerBankEntry {
 
 /// Config key names for the browser extension (TS `VALID_KEYS`,
 /// `packages/core/src/services/extension-config-service.ts:25`).
-pub const EXTENSION_CONFIG_KEYS: [&str; 4] =
-    ["baseUrl", "devMode", "enabledPlugins", "enableServerLogging"];
+pub const EXTENSION_CONFIG_KEYS: [&str; 4] = [
+    "baseUrl",
+    "devMode",
+    "enabledPlugins",
+    "enableServerLogging",
+];
 
 /// The browser extension's config, as `GET /extension/config` returns it.
 ///

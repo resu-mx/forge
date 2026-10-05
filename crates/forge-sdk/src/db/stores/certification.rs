@@ -4,8 +4,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    Certification, CertificationWithSkills, CreateCertification, ForgeError, Skill,
-    SkillCategory, UpdateCertification, new_id, now_iso,
+    new_id, now_iso, Certification, CertificationWithSkills, CreateCertification, ForgeError,
+    Skill, SkillCategory, UpdateCertification,
 };
 
 /// Data access for the `certifications` and `certification_skills` tables.
@@ -360,11 +360,17 @@ mod tests {
     #[test]
     fn get_with_skills_hydrates_and_none_for_missing() {
         let forge = setup();
-        assert!(CertificationStore::get_with_skills(forge.conn(), "nonexistent").unwrap().is_none());
+        assert!(
+            CertificationStore::get_with_skills(forge.conn(), "nonexistent")
+                .unwrap()
+                .is_none()
+        );
         let cert = CertificationStore::create(forge.conn(), &minimal("CKA")).unwrap();
         let s = create_skill(forge.conn(), "Kubernetes");
         CertificationStore::add_skill(forge.conn(), &cert.id, &s.id).unwrap();
-        let got = CertificationStore::get_with_skills(forge.conn(), &cert.id).unwrap().unwrap();
+        let got = CertificationStore::get_with_skills(forge.conn(), &cert.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(got.base.id, cert.id);
         assert_eq!(got.skills.len(), 1);
     }
@@ -375,7 +381,10 @@ mod tests {
         for i in 0..51 {
             CertificationStore::create(forge.conn(), &minimal(&format!("C{i:02}"))).unwrap();
         }
-        assert_eq!(CertificationStore::list_all(forge.conn()).unwrap().len(), 51);
+        assert_eq!(
+            CertificationStore::list_all(forge.conn()).unwrap().len(),
+            51
+        );
     }
 
     #[test]

@@ -323,7 +323,10 @@ mod extension_wire {
         let v = serde_json::to_value(ExtensionConfig::default()).unwrap();
         let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        let mut expected: Vec<_> = EXTENSION_CONFIG_KEYS.iter().map(|k| k.to_string()).collect();
+        let mut expected: Vec<_> = EXTENSION_CONFIG_KEYS
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
         expected.sort();
         assert_eq!(keys, expected);
     }
@@ -402,7 +405,9 @@ mod extension_wire {
     #[test]
     fn log_filter_default_is_all_none() {
         let f = ExtensionLogFilter::default();
-        assert!(f.limit.is_none() && f.offset.is_none() && f.error_code.is_none() && f.layer.is_none());
+        assert!(
+            f.limit.is_none() && f.offset.is_none() && f.error_code.is_none() && f.layer.is_none()
+        );
     }
 
     #[test]

@@ -39,7 +39,10 @@ async fn list_certifications(
     State(state): State<SharedState>,
 ) -> Result<Json<ApiData<Vec<CertificationWithSkills>>>, ApiError> {
     // TS returns every row as {data}; offset/limit are not part of the contract.
-    let data = with_conn(&state, move |conn| CertificationStore::list_with_skills(conn)).await?;
+    let data = with_conn(&state, move |conn| {
+        CertificationStore::list_with_skills(conn)
+    })
+    .await?;
     Ok(Json(ApiData { data }))
 }
 
