@@ -6,6 +6,8 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::Router;
 use forge_api::{app, AppState};
+use forge_core::{CreateSource, SkillCategory};
+use forge_sdk::db::{SkillStore, SourceStore};
 use forge_sdk::Forge;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -316,4 +318,237 @@ async fn source_extension_uses_the_typed_wire_key() {
         patched["data"]["education"]["degree_level"], "doctoral",
         "absent fields are untouched"
     );
+}
+
+// ── Source skills ───────────────────────────────────────────────────
+
+/// A router over a database with one source linked to `names`, seeded through
+/// the store before the app is built.
+fn source_with_skills(names: &[&str]) -> (Router, String, Vec<String>) {
+    let forge = Forge::open_memory().unwrap();
+    let source = SourceStore::create(
+        forge.conn(),
+        &CreateSource {
+            title: "T".into(),
+            description: "D".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .base
+    .id;
+    let ids = names
+        .iter()
+        .map(|n| {
+            let skill = SkillStore::create(forge.conn(), n, Some(SkillCategory::Tool)).unwrap();
+            SourceStore::add_skill(forge.conn(), &source, &skill.id).unwrap();
+            skill.id
+        })
+        .collect();
+    (app(AppState::new(forge)), source, ids)
+}
+
+#[tokio::test]
+async fn source_skills_list_returns_full_rows_by_name() {
+    let (r, source, _) = source_with_skills(&["Zig", "Ada"]);
+    let (status, body) = call(&r, "GET", &format!("/api/sources/{source}/skills"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Ada", "Zig"]);
+    let mut keys: Vec<String> = body["data"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    assert_eq!(keys, ["category", "created_at", "id", "name"]);
+}
+
+#[tokio::test]
+async fn source_skills_list_unknown_source_is_empty() {
+    let (status, body) = call(&router(), "GET", "/api/sources/nope/skills", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"], json!([]));
+}
+
+#[tokio::test]
+async fn source_skills_list_no_links_is_empty() {
+    let (r, source, _) = source_with_skills(&[]);
+    let (status, body) = call(&r, "GET", &format!("/api/sources/{source}/skills"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"], json!([]));
+}
+
+const UNKNOWN: &str = "00000000-0000-4000-8000-000000000000";
+
+#[tokio::test]
+async fn source_skills_add_by_id_and_by_name() {
+    let (r, source, _) = source_with_skills(&[]);
+    let path = format!("/api/sources/{source}/skills");
+    let (_, go) = call(
+        &r,
+        "POST",
+        "/api/skills",
+        Some(json!({"name": "Go", "category": "language"})),
+    )
+    .await;
+    let go = go["data"]["id"].as_str().unwrap().to_string();
+
+    for _ in 0..2 {
+        let (status, body) = call(&r, "POST", &path, Some(json!({"skill_id": go}))).await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(body["data"]["id"], go.as_str());
+        assert!(body["data"]["created_at"].is_string());
+    }
+    let (_, list) = call(&r, "GET", &path, None).await;
+    assert_eq!(list["data"].as_array().unwrap().len(), 1, "one link");
+
+    let (status, body) = call(&r, "POST", &path, Some(json!({"name": "kubernetes"}))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["data"]["name"], "Kubernetes");
+    assert_eq!(body["data"]["category"], "other");
+
+    let (_, body) = call(&r, "POST", &path, Some(json!({"name": "sAFe"}))).await;
+    assert_eq!(body["data"]["name"], "SAFe");
+
+    let (_, body) = call(
+        &r,
+        "POST",
+        &path,
+        Some(json!({"name": "GO", "category": "tool"})),
+    )
+    .await;
+    assert_eq!(body["data"]["id"], go.as_str(), "case-insensitive reuse");
+    assert_eq!(
+        body["data"]["category"], "language",
+        "category ignored on reuse"
+    );
+
+    let (_, body) = call(
+        &r,
+        "POST",
+        &path,
+        Some(json!({"name": "vector search", "category": "ai_ml"})),
+    )
+    .await;
+    assert_eq!(
+        body["data"]["category"], "other",
+        "only TS's 10 categories are kept"
+    );
+
+    let (status, body) = call(
+        &r,
+        "POST",
+        &path,
+        Some(json!({"skill_id": go, "name": "Ignored"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["data"]["id"], go.as_str(), "skill_id wins");
+    let (_, found) = call(&r, "GET", "/api/skills?search=Ignored", None).await;
+    assert_eq!(found["data"], json!([]), "no Ignored skill");
+}
+
+#[tokio::test]
+async fn source_skills_add_errors_match_ts() {
+    let (r, source, ids) = source_with_skills(&["Rust"]);
+    let path = format!("/api/sources/{source}/skills");
+    for body in [json!({}), json!({"name": "   "}), json!({"skill_id": ""})] {
+        let (status, err) = call(&r, "POST", &path, Some(body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+    }
+
+    let (status, _) = call(&r, "POST", &path, Some(json!({"skill_id": UNKNOWN}))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Validation is checked before the source, as in TS.
+    let unknown_path = format!("/api/sources/{UNKNOWN}/skills");
+    let (status, _) = call(&r, "POST", &unknown_path, Some(json!({}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = call(&r, "POST", &unknown_path, Some(json!({"skill_id": ids[0]}))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, err) = call(
+        &r,
+        "POST",
+        &unknown_path,
+        Some(json!({"name": "Orphan check"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["code"], "NOT_FOUND");
+    let (_, found) = call(&r, "GET", "/api/skills?search=Orphan", None).await;
+    assert_eq!(found["data"], json!([]), "no orphan skill");
+}
+
+#[tokio::test]
+async fn source_skills_remove_unlinks_only_and_404s_when_gone() {
+    let (r, source, ids) = source_with_skills(&["Rust"]);
+    let path = format!("/api/sources/{source}/skills/{}", ids[0]);
+
+    let (status, body) = call(&r, "DELETE", &path, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(body, Value::Null, "empty body");
+
+    let (status, _) = call(&r, "GET", &format!("/api/skills/{}", ids[0]), None).await;
+    assert_eq!(status, StatusCode::OK, "the skill itself stays");
+
+    let (status, err) = call(&r, "DELETE", &path, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["code"], "NOT_FOUND");
+}
+
+#[tokio::test]
+async fn source_skills_remove_unknown_pair_is_not_found() {
+    let r = router();
+    let (status, err) = call(&r, "DELETE", "/api/sources/nope/skills/nope", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["code"], "NOT_FOUND");
+    assert!(
+        !err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Route not found"),
+        "handler 404, not the fallback"
+    );
+}
+
+#[tokio::test]
+async fn source_skills_remove_keeps_other_sources_links() {
+    let (r, first, ids) = source_with_skills(&["Rust"]);
+    let (_, second) = call(
+        &r,
+        "POST",
+        "/api/sources",
+        Some(json!({"title": "T2", "description": "D"})),
+    )
+    .await;
+    let second = second["data"]["id"].as_str().unwrap().to_string();
+    let (status, _) = call(
+        &r,
+        "POST",
+        &format!("/api/sources/{second}/skills"),
+        Some(json!({"skill_id": ids[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = call(
+        &r,
+        "DELETE",
+        &format!("/api/sources/{first}/skills/{}", ids[0]),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, list) = call(&r, "GET", &format!("/api/sources/{second}/skills"), None).await;
+    assert_eq!(list["data"].as_array().unwrap().len(), 1);
 }
