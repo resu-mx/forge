@@ -5,7 +5,8 @@
   import KanbanColumn from './KanbanColumn.svelte'
   import OrgPickerModal from './OrgPickerModal.svelte'
   import OrgDetailModal from './OrgDetailModal.svelte'
-  import type { Organization, OrgCampus } from '@forge/sdk'
+  import { hqLocationLabel } from '$lib/org-locations'
+  import type { Organization } from '@forge/sdk'
 
   type OrgStatus = 'backlog' | 'researching' | 'exciting' | 'interested' | 'acceptable' | 'excluded'
 
@@ -71,9 +72,9 @@
 
     const promises = orgs.map(async (org) => {
       try {
-        const [aliasRes, campusRes] = await Promise.all([
-          fetch(`/api/organizations/${org.id}/aliases`),
-          fetch(`/api/organizations/${org.id}/campuses`),
+        const [aliasRes, hq] = await Promise.all([
+          fetch(`/api/organizations/${org.id}/aliases`), // raw until resu-mx/forge#127
+          hqLocationLabel(forge, org.id),
         ])
         if (aliasRes.ok) {
           const aliasBody = await aliasRes.json()
@@ -82,14 +83,7 @@
             aliasMap.set(org.id, aliases.length)
           }
         }
-        if (campusRes.ok) {
-          const campusBody = await campusRes.json()
-          const campuses = campusBody.data ?? []
-          const hq = campuses.find((c: OrgCampus) => c.is_headquarters)
-          if (hq && (hq.city || hq.state)) {
-            hqMap.set(org.id, [hq.city, hq.state].filter(Boolean).join(', '))
-          }
-        }
+        if (hq.ok && hq.data) hqMap.set(org.id, hq.data)
       } catch {
         // Silently skip enrichment failures
       }

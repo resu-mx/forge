@@ -5,8 +5,8 @@
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import { ConfirmDialog } from '$lib/components'
-  import ContactLinkSection from './ContactLinkSection.svelte'
-  import type { ContactWithOrg, Organization, ContactLink } from '@forge/sdk'
+  import ContactRelationSection from './ContactRelationSection.svelte'
+  import type { ContactWithOrg, Organization } from '@forge/sdk'
 
   const ORG_RELATIONSHIPS = [
     { value: 'recruiter', label: 'Recruiter' },
@@ -61,11 +61,6 @@
   let saving = $state(false)
   let confirmDeleteOpen = $state(false)
 
-  // Linked entities for relationship sections
-  let linkedOrgs = $state<ContactLink[]>([])
-  let linkedJds = $state<ContactLink[]>([])
-  let linkedResumes = $state<ContactLink[]>([])
-
   let isDirty = $derived.by(() => {
     if (createMode || !contact) return false
     return (
@@ -92,7 +87,6 @@
       team = contact.team ?? ''
       dept = contact.dept ?? ''
       notes = contact.notes ?? ''
-      loadRelationships(contact.id)
     } else if (createMode) {
       name = ''
       title = ''
@@ -103,46 +97,8 @@
       team = ''
       dept = ''
       notes = ''
-      linkedOrgs = []
-      linkedJds = []
-      linkedResumes = []
     }
   })
-
-  async function loadRelationships(contactId: string) {
-    const [orgList, jdList, resumeList] = await Promise.all([
-      forge.contacts.listOrganizations(contactId),
-      forge.contacts.listJobDescriptions(contactId),
-      forge.contacts.listResumes(contactId),
-    ])
-    if (orgList.ok) {
-      linkedOrgs = orgList.data.map(o => ({
-        contact_id: contactId,
-        contact_name: o.name,
-        contact_title: null,
-        contact_email: null,
-        relationship: o.relationship,
-      }))
-    }
-    if (jdList.ok) {
-      linkedJds = jdList.data.map(j => ({
-        contact_id: contactId,
-        contact_name: j.title,
-        contact_title: j.organization_name,
-        contact_email: null,
-        relationship: j.relationship,
-      }))
-    }
-    if (resumeList.ok) {
-      linkedResumes = resumeList.data.map(r => ({
-        contact_id: contactId,
-        contact_name: r.name,
-        contact_title: null,
-        contact_email: null,
-        relationship: r.relationship,
-      }))
-    }
-  }
 
   async function handleSave() {
     if (!name.trim()) {
@@ -257,28 +213,25 @@
   </div>
 
   {#if !createMode && contact}
-    <ContactLinkSection
+    <ContactRelationSection
+      kind="organization"
+      contactId={contact.id}
       sectionTitle="Linked Organizations"
-      entityType="organization"
-      entityId={contact.id}
       relationships={ORG_RELATIONSHIPS}
-      bind:linkedContacts={linkedOrgs}
     />
 
-    <ContactLinkSection
+    <ContactRelationSection
+      kind="job_description"
+      contactId={contact.id}
       sectionTitle="Linked Job Descriptions"
-      entityType="job_description"
-      entityId={contact.id}
       relationships={JD_RELATIONSHIPS}
-      bind:linkedContacts={linkedJds}
     />
 
-    <ContactLinkSection
+    <ContactRelationSection
+      kind="resume"
+      contactId={contact.id}
       sectionTitle="Linked Resumes"
-      entityType="resume"
-      entityId={contact.id}
       relationships={RESUME_RELATIONSHIPS}
-      bind:linkedContacts={linkedResumes}
     />
   {/if}
 
