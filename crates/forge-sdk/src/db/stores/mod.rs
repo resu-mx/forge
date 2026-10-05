@@ -13,6 +13,7 @@ pub mod domain;
 pub mod industry;
 pub mod jd;
 pub mod jd_resume;
+pub mod lookup;
 pub mod note;
 pub mod organization;
 pub mod perspective;
