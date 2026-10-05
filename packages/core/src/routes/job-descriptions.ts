@@ -112,6 +112,11 @@ export function jobDescriptionRoutes(services: Services, db: Database) {
 
     // If name is provided, create new skill and link it
     if (body.name?.trim()) {
+      // Check the JD before writing anything. Linking to an unknown JD fails the FK after the
+      // skill was inserted, which left an orphan skill and answered 500.
+      if (!db.query('SELECT 1 FROM job_descriptions WHERE id = ?').get(jdId)) {
+        return c.json({ error: { code: 'NOT_FOUND', message: 'Job description or skill not found' } }, 404)
+      }
       const raw = body.name.trim()
       const name = raw.charAt(0).toUpperCase() + raw.slice(1)
       let skill = db.query('SELECT * FROM skills WHERE name = ? COLLATE NOCASE').get(name) as any
