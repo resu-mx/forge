@@ -228,6 +228,28 @@ export class ForgeClient {
       let rawText: string | undefined
       try {
         rawText = await response.text()
+
+        // A 2xx with no body is a success with no data. The contact link routes answer
+        // `201` with an empty body (packages/core/src/routes/contacts.ts; the Rust API
+        // matches them, see resu-mx/forge#30). Decision recorded in resu-mx/forge#36: keep
+        // that contract and accept it here. Only 2xx: an empty error response still falls
+        // through to UNKNOWN_ERROR below.
+        if (response.ok && rawText.trim() === '') {
+          this.logResponse({
+            timestamp: new Date().toISOString(),
+            direction: 'response',
+            method,
+            path,
+            status: response.status,
+            duration_ms: Math.round(duration * 10) / 10,
+            ok: true,
+            request_id: requestId,
+            payload_size: 0,
+            request_body_size: bodySize,
+          })
+          return { ok: true, data: undefined as T }
+        }
+
         json = JSON.parse(rawText) as Record<string, unknown>
       } catch {
         const entry: SDKLogEntry = {
