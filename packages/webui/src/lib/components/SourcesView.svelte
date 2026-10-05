@@ -1,11 +1,18 @@
 <script lang="ts">
   import { forge, friendlyError } from '$lib/sdk'
+  import { responseError } from '$lib/api-error'
+  import {
+    createLocationWithAddress,
+    listLocationsWithAddress,
+    locationLabel,
+    type LocationWithAddress,
+  } from '$lib/org-locations'
   import { addToast } from '$lib/stores/toast.svelte'
   import { onForgeChanged } from '$lib/forge-changed'
   import { DERIVE_VIA_AGENT } from '$lib/derive-message'
   import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, SplitPanel, ListPanelHeader, EmptyPanel } from '$lib/components'
   import OrgCombobox from '$lib/components/OrgCombobox.svelte'
-  import type { Source, Organization, Skill, ClearanceLevel, ClearancePolygraph, ClearanceStatus, ClearanceType, ClearanceAccessProgram } from '@forge/sdk'
+  import type { Source, Organization, Skill, LocationModality, ClearanceLevel, ClearancePolygraph, ClearanceStatus, ClearanceType, ClearanceAccessProgram } from '@forge/sdk'
   import {
     CLEARANCE_LEVELS,
     CLEARANCE_POLYGRAPHS,
@@ -65,7 +72,7 @@
 
   // Campus
   let formCampusId = $state<string | null>(null)
-  let campuses = $state<{ id: string; name: string; modality: string; city: string | null; state: string | null }[]>([])
+  let campuses = $state<LocationWithAddress[]>([])
   let showCampusModal = $state(false)
   let newCampusName = $state('')
   let newCampusModality = $state('in_person')
@@ -75,6 +82,7 @@
 
   // Source skills
   let sourceSkills = $state<Skill[]>([])
+  let skillsError = $state<string | null>(null)
   let allSkills = $state<Skill[]>([])
   let skillSearchQuery = $state('')
   let showSkillDropdown = $state(false)
@@ -217,12 +225,13 @@
   })
 
   async function loadCampuses(orgId: string) {
-    const res = await fetch(`/api/organizations/${orgId}/campuses`)
-    if (res.ok) {
-      const body = await res.json()
-      campuses = body.data ?? []
+    const result = await listLocationsWithAddress(forge, orgId)
+    if (formEduOrgId !== orgId) return // another org was picked while this loaded
+    if (result.ok) {
+      campuses = result.data
     } else {
       campuses = []
+      addToast({ message: friendlyError(result.error, 'Failed to load campuses'), type: 'error' })
     }
   }
 
@@ -237,24 +246,19 @@
   async function createCampusAndSelect() {
     if (!newCampusName.trim() || !formEduOrgId) return
     creatingCampus = true
-    const res = await fetch(`/api/organizations/${formEduOrgId}/campuses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: newCampusName.trim(),
-        modality: newCampusModality,
-        city: newCampusCity.trim() || undefined,
-        state: newCampusState.trim() || undefined,
-      }),
-    })
-    if (res.ok) {
-      const body = await res.json()
-      campuses = [...campuses, body.data]
-      formCampusId = body.data.id
+    const result = await createLocationWithAddress(
+      forge,
+      formEduOrgId,
+      { name: newCampusName.trim(), modality: newCampusModality as LocationModality },
+      { city: newCampusCity, state: newCampusState },
+    )
+    if (result.ok) {
+      campuses = [...campuses, result.data]
+      formCampusId = result.data.id
       showCampusModal = false
-      addToast({ message: `Campus "${body.data.name}" created.`, type: 'success' })
+      addToast({ message: `Campus "${result.data.name}" created.`, type: 'success' })
     } else {
-      addToast({ message: 'Failed to create campus.', type: 'error' })
+      addToast({ message: friendlyError(result.error, 'Failed to create campus'), type: 'error' })
     }
     creatingCampus = false
   }
@@ -666,12 +670,18 @@
   }
 
   async function loadSourceSkills(sourceId: string) {
+    skillsError = null
     const res = await fetch(`/api/sources/${sourceId}/skills`)
+    if (selectedId !== sourceId) return // another source was selected while this loaded
     if (res.ok) {
       const body = await res.json()
       sourceSkills = body.data ?? []
     } else {
       sourceSkills = []
+      const message = friendlyError(await responseError(res), 'Failed to load skills')
+      if (selectedId !== sourceId) return
+      skillsError = message
+      addToast({ message, type: 'error' })
     }
   }
 
@@ -693,47 +703,67 @@
   async function addSkillToSource(skillId: string) {
     if (!selectedId) return
     addingSkill = true
-    const res = await fetch(`/api/sources/${selectedId}/skills`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skill_id: skillId }),
-    })
-    if (res.ok) {
-      const body = await res.json()
-      sourceSkills = [...sourceSkills, body.data]
-      skillSearchQuery = ''
-      showSkillDropdown = false
+    try {
+      const res = await fetch(`/api/sources/${selectedId}/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill_id: skillId }),
+      })
+      if (res.ok) {
+        const body = await res.json()
+        sourceSkills = [...sourceSkills, body.data]
+        skillSearchQuery = ''
+        showSkillDropdown = false
+      } else {
+        addToast({ message: friendlyError(await responseError(res), 'Failed to add skill'), type: 'error' })
+      }
+    } catch (e) {
+      addToast({ message: friendlyError({ code: 'NETWORK_ERROR', message: String(e) }, 'Failed to add skill'), type: 'error' })
+    } finally {
+      addingSkill = false
     }
-    addingSkill = false
   }
 
   async function createAndAddSkill() {
     if (!selectedId || !skillSearchQuery.trim()) return
     addingSkill = true
-    const res = await fetch(`/api/sources/${selectedId}/skills`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: skillSearchQuery.trim() }),
-    })
-    if (res.ok) {
-      const body = await res.json()
-      sourceSkills = [...sourceSkills, body.data]
-      // Also add to allSkills so it appears in future searches
-      if (!allSkills.some(s => s.id === body.data.id)) {
-        allSkills = [...allSkills, body.data]
+    try {
+      const res = await fetch(`/api/sources/${selectedId}/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: skillSearchQuery.trim() }),
+      })
+      if (res.ok) {
+        const body = await res.json()
+        sourceSkills = [...sourceSkills, body.data]
+        // Also add to allSkills so it appears in future searches
+        if (!allSkills.some(s => s.id === body.data.id)) {
+          allSkills = [...allSkills, body.data]
+        }
+        skillSearchQuery = ''
+        showSkillDropdown = false
+        addToast({ message: `Skill "${body.data.name}" created and linked.`, type: 'success' })
+      } else {
+        addToast({ message: friendlyError(await responseError(res), 'Failed to create skill'), type: 'error' })
       }
-      skillSearchQuery = ''
-      showSkillDropdown = false
-      addToast({ message: `Skill "${body.data.name}" created and linked.`, type: 'success' })
+    } catch (e) {
+      addToast({ message: friendlyError({ code: 'NETWORK_ERROR', message: String(e) }, 'Failed to create skill'), type: 'error' })
+    } finally {
+      addingSkill = false
     }
-    addingSkill = false
   }
 
   async function removeSkillFromSource(skillId: string) {
     if (!selectedId) return
-    const res = await fetch(`/api/sources/${selectedId}/skills/${skillId}`, { method: 'DELETE' })
-    if (res.ok) {
-      sourceSkills = sourceSkills.filter(s => s.id !== skillId)
+    try {
+      const res = await fetch(`/api/sources/${selectedId}/skills/${skillId}`, { method: 'DELETE' })
+      if (res.ok) {
+        sourceSkills = sourceSkills.filter(s => s.id !== skillId)
+      } else {
+        addToast({ message: friendlyError(await responseError(res), 'Failed to remove skill'), type: 'error' })
+      }
+    } catch (e) {
+      addToast({ message: friendlyError({ code: 'NETWORK_ERROR', message: String(e) }, 'Failed to remove skill'), type: 'error' })
     }
   }
 
@@ -991,11 +1021,11 @@
                 <div class="org-select-row">
                   <select id="edu-campus" bind:value={formCampusId} disabled={!formEduOrgId}>
                     <option value={null}>{formEduOrgId ? '-- Select --' : 'Select org first'}</option>
-                    {#each campuses as campus}
-                      <option value={campus.id}>{campus.name}{campus.city ? ` (${campus.city}${campus.state ? `, ${campus.state}` : ''})` : ''}</option>
+                    {#each campuses as campus (campus.id)}
+                      <option value={campus.id}>{locationLabel(campus)}</option>
                     {/each}
                   </select>
-                  <button class="btn-new-sm" onclick={openCampusModal} type="button" disabled={!formEduOrgId}>+</button>
+                  <button class="btn-new-sm" onclick={openCampusModal} type="button" disabled={!formEduOrgId} aria-label="New campus">+</button>
                 </div>
               </div>
             </div>
@@ -1051,11 +1081,11 @@
                 <div class="org-select-row">
                   <select id="edu-campus" bind:value={formCampusId} disabled={!formEduOrgId}>
                     <option value={null}>{formEduOrgId ? '-- Select --' : 'Select org first'}</option>
-                    {#each campuses as campus}
-                      <option value={campus.id}>{campus.name}{campus.city ? ` (${campus.city}${campus.state ? `, ${campus.state}` : ''})` : ''}</option>
+                    {#each campuses as campus (campus.id)}
+                      <option value={campus.id}>{locationLabel(campus)}</option>
                     {/each}
                   </select>
-                  <button class="btn-new-sm" onclick={openCampusModal} type="button" disabled={!formEduOrgId}>+</button>
+                  <button class="btn-new-sm" onclick={openCampusModal} type="button" disabled={!formEduOrgId} aria-label="New campus">+</button>
                 </div>
               </div>
             </div>
@@ -1254,12 +1284,13 @@
         {#if selectedId && !editing}
           <div class="skills-section">
             <label>Skills</label>
+            {#if skillsError}<p class="skills-error">{skillsError}</p>{/if}
             {#if sourceSkills.length > 0}
               <div class="skill-pills">
                 {#each sourceSkills as skill (skill.id)}
                   <span class="skill-pill">
                     {skill.name}
-                    <button class="skill-remove" onclick={() => removeSkillFromSource(skill.id)} title="Remove">×</button>
+                    <button class="skill-remove" onclick={() => removeSkillFromSource(skill.id)} title="Remove" aria-label="Remove {skill.name}">×</button>
                   </span>
                 {/each}
               </div>
@@ -1610,6 +1641,7 @@
   .skill-pill { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; background: var(--color-info-subtle); color: var(--color-info-text); border-radius: 12px; font-size: 0.75rem; font-weight: var(--font-medium); }
   .skill-remove { background: none; border: none; color: var(--color-info); cursor: pointer; font-size: 0.85rem; padding: 0; line-height: 1; }
   .skill-remove:hover { color: var(--color-danger); }
+  .skills-error { margin: 0 0 0.35rem; font-size: var(--text-sm); color: var(--color-danger-text); }
   .skill-add-row { position: relative; }
   .skill-add-row input { width: 100%; padding: 0.4rem 0.6rem; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--text-primary); background: var(--color-surface); }
   .skill-add-row input:focus { outline: none; border-color: var(--color-border-focus); }
