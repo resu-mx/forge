@@ -16,6 +16,22 @@ Runs on every PR and on pushes to `main`. Jobs:
   `packages/webui/e2e/wasm` against the production build.
 - **fmt + clippy (advisory):** reports problems but does not block.
 
+### `app-build.yml`
+
+Runs on every PR and on pushes to `main`. Builds the browser-first app (wasm bundles plus the
+static web UI) with cached Rust, wasm-bindgen and bun, runs `scripts/check-app-build.sh`, and
+uploads `packages/webui/build` as the `app-static` artifact.
+
+- **`build static app`** always runs.
+- **`deploy to Cloudflare Pages`** uploads the artifact to the direct-upload Pages project named
+  in `PAGES_PROJECT` with `wrangler pages deploy`: production on `main`, a `pr-<N>` preview for
+  same-repo PRs. It runs only when the repository variable `PAGES_DEPLOY_ENABLED` is `true`.
+  It reads the Cloudflare token and account id from 1Password through the `cf-pages-app`
+  environment, which needs the secrets `OP_SVC_ACCT_TOKEN` and `OP_ENVIRONMENT_ID_CF_PAGES`.
+- The Pages project, hostname and DNS are owned by Terraform in `resu-mx/infra`. Until the
+  domain moves to the direct-upload project, the Git-integrated `resumx-app` project still builds
+  itself with `scripts/pages-build.sh`.
+
 ### `extension-publish.yml`
 
 Runs on a `v*` tag push, or a manual dispatch with `tag`, `skip_chrome` and `skip_firefox`
