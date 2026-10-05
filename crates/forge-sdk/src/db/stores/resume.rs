@@ -1120,6 +1120,43 @@ impl ResumeStore {
             .ok_or_else(|| ForgeError::Internal("Resume updated but not found".into()))
     }
 
+    /// `raw_text` of each JD linked to the resume, in link order (junction rowid), skipping empty
+    /// text. TS lists the junction with no ORDER BY (tagline-service.ts:315-318). SQLite answers
+    /// that through `idx_jd_resumes_resume` in rowid order, which this pins.
+    pub fn linked_jd_texts(conn: &Connection, resume_id: &str) -> Result<Vec<String>, ForgeError> {
+        let mut stmt = conn.prepare(
+            "SELECT jd.raw_text
+             FROM job_description_resumes jdr
+             JOIN job_descriptions jd ON jd.id = jdr.job_description_id
+             WHERE jdr.resume_id = ?1 AND jd.raw_text <> ''
+             ORDER BY jdr.rowid",
+        )?;
+        let texts = stmt
+            .query_map(params![resume_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(texts)
+    }
+
+    /// Set or clear (`None`) `generated_tagline` and bump `updated_at`.
+    /// Never touches `tagline_override`.
+    pub fn set_generated_tagline(
+        conn: &Connection,
+        id: &str,
+        tagline: Option<&str>,
+    ) -> Result<(), ForgeError> {
+        let updated = conn.execute(
+            "UPDATE resumes SET generated_tagline = ?1, updated_at = ?2 WHERE id = ?3",
+            params![tagline, now_iso(), id],
+        )?;
+        if updated == 0 {
+            return Err(ForgeError::NotFound {
+                entity_type: "resume".into(),
+                id: id.into(),
+            });
+        }
+        Ok(())
+    }
+
     /// Set or clear the Markdown override for a resume.
     pub fn update_markdown_override(
         conn: &Connection,
@@ -2224,6 +2261,79 @@ mod tests {
         assert!(cleared.tagline_override.is_none());
 
         let missing = ResumeStore::update_tagline_override(forge.conn(), "nope", Some("x"));
+        assert!(matches!(missing, Err(ForgeError::NotFound { .. })));
+    }
+
+    #[test]
+    fn linked_jd_texts_follow_link_order_and_skip_empty() {
+        let forge = setup();
+        let resume = create_resume(forge.conn());
+        let other = create_resume(forge.conn());
+        // Insert JDs in one order, link them in another, to prove the junction order wins.
+        for (id, text) in [
+            ("00000000-0000-0000-0000-00000000000a", "alpha"),
+            ("00000000-0000-0000-0000-00000000000b", "beta"),
+            ("00000000-0000-0000-0000-00000000000c", ""),
+            ("00000000-0000-0000-0000-00000000000d", "delta"),
+        ] {
+            forge
+                .conn()
+                .execute(
+                    "INSERT INTO job_descriptions (id, title, raw_text, status) VALUES (?1, 'JD', ?2, 'discovered')",
+                    params![id, text],
+                )
+                .unwrap();
+        }
+        for (jd, r) in [
+            ("00000000-0000-0000-0000-00000000000d", &resume.id),
+            ("00000000-0000-0000-0000-00000000000c", &resume.id),
+            ("00000000-0000-0000-0000-00000000000a", &other.id),
+            ("00000000-0000-0000-0000-00000000000b", &resume.id),
+        ] {
+            forge
+                .conn()
+                .execute(
+                    "INSERT INTO job_description_resumes (job_description_id, resume_id) VALUES (?1, ?2)",
+                    params![jd, r],
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            ResumeStore::linked_jd_texts(forge.conn(), &resume.id).unwrap(),
+            ["delta", "beta"]
+        );
+        assert_eq!(
+            ResumeStore::linked_jd_texts(forge.conn(), &other.id).unwrap(),
+            ["alpha"]
+        );
+        assert!(ResumeStore::linked_jd_texts(forge.conn(), "nope")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn set_generated_tagline_null_and_unknown_id() {
+        let forge = setup();
+        let resume = create_resume(forge.conn());
+        forge
+            .conn()
+            .execute(
+                "UPDATE resumes SET tagline_override = 'mine', updated_at = '2000-01-01T00:00:00Z' WHERE id = ?1",
+                [&resume.id],
+            )
+            .unwrap();
+
+        ResumeStore::set_generated_tagline(forge.conn(), &resume.id, Some("gen")).unwrap();
+        let got = ResumeStore::get(forge.conn(), &resume.id).unwrap().unwrap();
+        assert_eq!(got.generated_tagline.as_deref(), Some("gen"));
+        assert_eq!(got.tagline_override.as_deref(), Some("mine"));
+        assert_ne!(got.updated_at, "2000-01-01T00:00:00Z");
+
+        ResumeStore::set_generated_tagline(forge.conn(), &resume.id, None).unwrap();
+        let got = ResumeStore::get(forge.conn(), &resume.id).unwrap().unwrap();
+        assert_eq!(got.generated_tagline, None);
+
+        let missing = ResumeStore::set_generated_tagline(forge.conn(), "nope", Some("x"));
         assert!(matches!(missing, Err(ForgeError::NotFound { .. })));
     }
 

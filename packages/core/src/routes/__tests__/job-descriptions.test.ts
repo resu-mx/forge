@@ -338,6 +338,47 @@ describe('Job Description Routes', () => {
     expect(body.error.code).toBe('VALIDATION_ERROR')
   })
 
+  test('POST skill with name for unknown JD returns 404 and creates no skill', async () => {
+    ctx.db.run("INSERT INTO skills (id, name, category) VALUES (?, ?, ?)", [crypto.randomUUID(), 'Python', 'language'])
+    const unknownJd = crypto.randomUUID()
+
+    for (const name of ['Zebra Mesh', 'python']) {
+      const res = await apiRequest(ctx.app, 'POST', `/job-descriptions/${unknownJd}/skills`, { name })
+      expect(res.status).toBe(404)
+      const body = await res.json()
+      expect(body.error.code).toBe('NOT_FOUND')
+    }
+    const row = ctx.db.query('SELECT COUNT(*) AS cnt FROM skills WHERE name = ? COLLATE NOCASE').get('Zebra Mesh') as any
+    expect(row.cnt).toBe(0)
+  })
+
+  test('POST skill with skill_id returns 404 for an unknown JD or skill', async () => {
+    const jdId = seedJobDescription(ctx.db)
+    const skillId = crypto.randomUUID()
+    ctx.db.run("INSERT INTO skills (id, name, category) VALUES (?, ?, ?)", [skillId, 'Go', 'language'])
+
+    const unknownJd = await apiRequest(ctx.app, 'POST', `/job-descriptions/${crypto.randomUUID()}/skills`, { skill_id: skillId })
+    expect(unknownJd.status).toBe(404)
+    const unknownSkill = await apiRequest(ctx.app, 'POST', `/job-descriptions/${jdId}/skills`, { skill_id: crypto.randomUUID() })
+    expect(unknownSkill.status).toBe(404)
+    expect((await unknownSkill.json()).error.code).toBe('NOT_FOUND')
+  })
+
+  test('POST skill with name keeps a listed category and maps others to other', async () => {
+    const jdId = seedJobDescription(ctx.db)
+    const cases: [name: string, category: string, expected: string][] = [
+      ['terraform', 'tool', 'tool'],
+      ['vector stores', 'ai_ml', 'other'], // a valid skill_categories slug, not in the TS list
+      ['cissp', 'certification', 'other'], // an extraction-prompt category, not a slug
+    ]
+    for (const [name, category, expected] of cases) {
+      const res = await apiRequest(ctx.app, 'POST', `/job-descriptions/${jdId}/skills`, { name, category })
+      expect(res.status).toBe(201)
+      const body = await res.json()
+      expect(body.data.category).toBe(expected)
+    }
+  })
+
   // ── DELETE /job-descriptions/:jdId/skills/:skillId ────────────────
 
   test('DELETE skill removes junction row and returns 204', async () => {
