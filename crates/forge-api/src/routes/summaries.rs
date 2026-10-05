@@ -97,7 +97,10 @@ async fn list_summaries(
 }
 
 fn summary_not_found(id: &str) -> ForgeError {
-    ForgeError::NotFound { entity_type: "Summary".into(), id: id.to_string() }
+    ForgeError::NotFound {
+        entity_type: "Summary".into(),
+        id: id.to_string(),
+    }
 }
 
 /// Mirrors `SummaryService.getWithRelations` (packages/core/src/services/summary-service.ts:78-99):
@@ -113,7 +116,12 @@ fn get_with_relations(conn: &Connection, id: &str) -> Result<SummaryWithRelation
         None => None,
     };
     let skills = SummaryStore::get_skills(conn, id)?;
-    Ok(SummaryWithRelations { base, industry, role_type, skills })
+    Ok(SummaryWithRelations {
+        base,
+        industry,
+        role_type,
+        skills,
+    })
 }
 
 async fn get_summary(
@@ -173,7 +181,10 @@ async fn clone_summary(
 fn require_summary(conn: &Connection, id: &str) -> Result<(), ForgeError> {
     match SummaryStore::get(conn, id)? {
         Some(_) => Ok(()),
-        None => Err(ForgeError::NotFound { entity_type: "Summary".into(), id: id.into() }),
+        None => Err(ForgeError::NotFound {
+            entity_type: "Summary".into(),
+            id: id.into(),
+        }),
     }
 }
 
@@ -213,13 +224,13 @@ async fn add_summary_skill(
     Json(body): Json<AddSummarySkillBody>,
 ) -> Result<NoContent, ApiError> {
     // Checked before the summary, as in TS.
-    let skill_id = body
-        .skill_id
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| ForgeError::Validation {
-            message: "skill_id is required".into(),
-            field: Some("skill_id".into()),
-        })?;
+    let skill_id =
+        body.skill_id
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| ForgeError::Validation {
+                message: "skill_id is required".into(),
+                field: Some("skill_id".into()),
+            })?;
     with_conn(&state, move |conn| {
         require_summary(conn, &id)?;
         // An unknown skill fails the FK; the store maps that to NotFound.
@@ -234,7 +245,10 @@ async fn remove_summary_skill(
     State(state): State<SharedState>,
     Path((id, skill_id)): Path<(String, String)>,
 ) -> Result<NoContent, ApiError> {
-    with_conn(&state, move |conn| SummaryStore::remove_skill(conn, &id, &skill_id)).await?;
+    with_conn(&state, move |conn| {
+        SummaryStore::remove_skill(conn, &id, &skill_id)
+    })
+    .await?;
     Ok(NoContent)
 }
 
@@ -246,8 +260,14 @@ pub fn router() -> Router<SharedState> {
         .route("/summaries/{id}/toggle-template", post(toggle_template))
         .route("/summaries/{id}/clone", post(clone_summary))
         .route("/summaries/{id}/linked-resumes", get(list_linked_resumes))
-        .route("/summaries/{id}/skills", get(list_summary_skills).post(add_summary_skill))
-        .route("/summaries/{id}/skills/{skill_id}", delete(remove_summary_skill))
+        .route(
+            "/summaries/{id}/skills",
+            get(list_summary_skills).post(add_summary_skill),
+        )
+        .route(
+            "/summaries/{id}/skills/{skill_id}",
+            delete(remove_summary_skill),
+        )
         .route(
             "/summaries/{id}",
             get(get_summary)
