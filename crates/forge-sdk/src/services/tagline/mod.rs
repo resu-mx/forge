@@ -9,6 +9,15 @@ use forge_core::{ForgeError, ResumeTaglineState};
 
 use crate::db::ResumeStore;
 
+mod generator;
+#[cfg(test)]
+mod golden;
+
+pub use generator::{
+    compute_tf_idf, generate_tagline, rank_keywords, tokenize, GeneratedTagline, DEFAULT_TOP_K,
+    SKILL_MATCH_BOOST,
+};
+
 /// ECMAScript WhiteSpace + LineTerminator: the set that JS `\s` and `String.prototype.trim`
 /// use. Rust's `char::is_whitespace` (Unicode White_Space) differs in two code points:
 /// it includes U+0085, which JS does not, and it excludes U+FEFF, which JS includes.
