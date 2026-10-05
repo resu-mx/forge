@@ -12,6 +12,9 @@ use crate::db::ResumeStore;
 mod generator;
 #[cfg(test)]
 mod golden;
+mod regenerate;
+
+pub use regenerate::regenerate;
 
 pub use generator::{
     compute_tf_idf, generate_tagline, rank_keywords, tokenize, GeneratedTagline, DEFAULT_TOP_K,
