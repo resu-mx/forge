@@ -308,6 +308,59 @@ impl JdStore {
         Ok(rows)
     }
 
+    /// Link an existing skill. Idempotent: linking twice is a no-op. The JD and the skill are
+    /// checked first, because a raw FK failure would surface as `Database` (500), not TS's 404.
+    pub fn add_skill(
+        conn: &Connection,
+        jd_id: &str,
+        skill_id: &str,
+    ) -> Result<SkillRow, ForgeError> {
+        Self::require_jd(conn, jd_id)?;
+        let skill = SkillStore::get_row(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "Skill".into(),
+            id: skill_id.into(),
+        })?;
+        conn.execute(
+            "INSERT OR IGNORE INTO job_description_skills (job_description_id, skill_id)
+             VALUES (?1, ?2)",
+            params![jd_id, skill_id],
+        )?;
+        Ok(skill)
+    }
+
+    /// Link a skill by name, creating it if needed ([`SkillStore::get_or_create_for_link`], the
+    /// TS name and category rules). The JD check, the resolve and the link run in one
+    /// transaction, so an unknown JD gives `NotFound` and creates no skill (TS creates one and
+    /// answers 500).
+    pub fn add_skill_by_name(
+        conn: &Connection,
+        jd_id: &str,
+        name: &str,
+        category: Option<&str>,
+    ) -> Result<SkillRow, ForgeError> {
+        let tx = conn.unchecked_transaction()?;
+        Self::require_jd(&tx, jd_id)?;
+        let skill = SkillStore::get_or_create_for_link(&tx, name, category)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO job_description_skills (job_description_id, skill_id)
+             VALUES (?1, ?2)",
+            params![jd_id, skill.base.id],
+        )?;
+        tx.commit()?;
+        Ok(skill)
+    }
+
+    // Entity type isn't "Route ...": the wasm dispatcher rewrites a "Route not found" 404 to 501.
+    fn require_jd(conn: &Connection, jd_id: &str) -> Result<(), ForgeError> {
+        match Self::get(conn, jd_id)? {
+            Some(_) => Ok(()),
+            None => Err(ForgeError::NotFound {
+                entity_type: "Job description".into(),
+                id: jd_id.into(),
+            }),
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     fn lookup_org_name(
@@ -420,6 +473,76 @@ mod tests {
         assert!(JdStore::list_skills(forge.conn(), "nope")
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn add_skill_is_idempotent_and_not_found_for_unknown_ids() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let py = SkillStore::create(forge.conn(), "Python", Some(SkillCategory::Language)).unwrap();
+        JdStore::add_skill(forge.conn(), &jd.id, &py.id).unwrap();
+        JdStore::add_skill(forge.conn(), &jd.id, &py.id).unwrap();
+        assert_eq!(JdStore::list_skills(forge.conn(), &jd.id).unwrap().len(), 1);
+        assert!(matches!(
+            JdStore::add_skill(forge.conn(), "nope", &py.id),
+            Err(ForgeError::NotFound { .. })
+        ));
+        assert!(matches!(
+            JdStore::add_skill(forge.conn(), &jd.id, "nope"),
+            Err(ForgeError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn add_skill_by_name_capitalises_reuses_and_applies_the_category_rule() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let py = SkillStore::create(forge.conn(), "Python", Some(SkillCategory::Language)).unwrap();
+
+        let reused =
+            JdStore::add_skill_by_name(forge.conn(), &jd.id, "  python ", Some("tool")).unwrap();
+        assert_eq!(reused.base.id, py.id);
+        assert_eq!(reused.base.category, SkillCategory::Language);
+
+        let tf =
+            JdStore::add_skill_by_name(forge.conn(), &jd.id, "terraform", Some("tool")).unwrap();
+        assert_eq!(
+            (tf.base.name.as_str(), tf.base.category),
+            ("Terraform", SkillCategory::Tool)
+        );
+        let safe = JdStore::add_skill_by_name(forge.conn(), &jd.id, "sAFe", Some("ai_ml")).unwrap();
+        assert_eq!(
+            (safe.base.name.as_str(), safe.base.category),
+            ("SAFe", SkillCategory::Other)
+        );
+
+        let names: Vec<_> = JdStore::list_skills(forge.conn(), &jd.id)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.base.name)
+            .collect();
+        assert_eq!(names, ["Python", "SAFe", "Terraform"]);
+    }
+
+    #[test]
+    fn add_skill_by_name_for_an_unknown_jd_creates_nothing() {
+        let forge = setup();
+        let err = JdStore::add_skill_by_name(forge.conn(), "nope", "Zebra Mesh", None).unwrap_err();
+        assert!(matches!(err, ForgeError::NotFound { .. }));
+        assert!(SkillStore::find_by_name(forge.conn(), "Zebra Mesh")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn add_skill_by_name_reuses_a_skill_with_a_non_ascii_first_letter() {
+        // Relies on get_or_create_for_link capitalising before the lookup: SQLite's LOWER folds
+        // ASCII only, so a raw "élan" lookup would miss "Élan" and `create` would 409.
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let elan = SkillStore::create(forge.conn(), "Élan", None).unwrap();
+        let row = JdStore::add_skill_by_name(forge.conn(), &jd.id, "élan", Some("tool")).unwrap();
+        assert_eq!(row.base.id, elan.id);
     }
 
     #[test]

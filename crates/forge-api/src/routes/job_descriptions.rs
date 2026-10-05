@@ -17,6 +17,7 @@ use forge_core::{
 };
 use forge_sdk::db::{ContactStore, JdStore, SkillStore};
 
+use super::bullets::LinkSkillBody;
 use crate::db::with_conn;
 use crate::error::ApiError;
 use crate::response::{ApiData, ApiList, Created, NoContent};
@@ -299,6 +300,30 @@ async fn list_job_description_skills(
     Ok(Json(ApiData { data }))
 }
 
+/// `POST /job-descriptions/:id/skills` (TS job-descriptions.ts:94-134). `{ skill_id }` links an
+/// existing skill; `{ name, category? }` finds or creates one. `skill_id` wins when both are
+/// present. Both paths answer 201 with the full skill row, also when the link already existed.
+async fn add_job_description_skill(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(body): Json<LinkSkillBody>,
+) -> Result<Created<SkillRow>, ApiError> {
+    let skill = with_conn(&state, move |conn| {
+        if let Some(skill_id) = body.skill_id.as_deref().filter(|s| !s.is_empty()) {
+            JdStore::add_skill(conn, &id, skill_id)
+        } else if let Some(name) = body.name.as_deref().filter(|n| !n.trim().is_empty()) {
+            JdStore::add_skill_by_name(conn, &id, name, body.category.as_deref())
+        } else {
+            Err(ForgeError::Validation {
+                message: "skill_id or name is required".into(),
+                field: None,
+            })
+        }
+    })
+    .await?;
+    Ok(Created(skill))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -320,7 +345,7 @@ pub fn router() -> Router<SharedState> {
         )
         .route(
             "/job-descriptions/{id}/skills",
-            get(list_job_description_skills),
+            get(list_job_description_skills).post(add_job_description_skill),
         )
         .route(
             "/job-descriptions/{id}/contacts",
