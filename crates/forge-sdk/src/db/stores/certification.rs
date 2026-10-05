@@ -8,6 +8,19 @@ use forge_core::{
     Skill, SkillCategory, UpdateCertification,
 };
 
+/// The trimmed value, or a `Validation` error carrying the TS message
+/// (certification-service.ts:35-41, :104-116).
+fn non_empty<'a>(value: &'a str, field: &str, message: &str) -> Result<&'a str, ForgeError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ForgeError::Validation {
+            message: message.into(),
+            field: Some(field.into()),
+        });
+    }
+    Ok(trimmed)
+}
+
 /// Data access for the `certifications` and `certification_skills` tables.
 pub struct CertificationStore;
 
@@ -19,6 +32,8 @@ impl CertificationStore {
         conn: &Connection,
         input: &CreateCertification,
     ) -> Result<Certification, ForgeError> {
+        let short_name = non_empty(&input.short_name, "short_name", "short_name is required")?;
+        let long_name = non_empty(&input.long_name, "long_name", "long_name is required")?;
         let id = new_id();
         let now = now_iso();
 
@@ -27,8 +42,8 @@ impl CertificationStore {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
             params![
                 id,
-                input.short_name,
-                input.long_name,
+                short_name,
+                long_name,
                 input.cert_id,
                 input.issuer_id,
                 input.date_earned,
@@ -109,6 +124,18 @@ impl CertificationStore {
         id: &str,
         input: &UpdateCertification,
     ) -> Result<Certification, ForgeError> {
+        // Validate first, as TS does; then 404.
+        let short_name = input
+            .short_name
+            .as_deref()
+            .map(|v| non_empty(v, "short_name", "short_name must not be empty"))
+            .transpose()?;
+        let long_name = input
+            .long_name
+            .as_deref()
+            .map(|v| non_empty(v, "long_name", "long_name must not be empty"))
+            .transpose()?;
+
         Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "certification".into(),
             id: id.into(),
@@ -117,13 +144,13 @@ impl CertificationStore {
         let mut sets = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-        if let Some(ref v) = input.short_name {
+        if let Some(v) = short_name {
             sets.push(format!("short_name = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(v.clone()));
+            bind_values.push(Box::new(v.to_string()));
         }
-        if let Some(ref v) = input.long_name {
+        if let Some(v) = long_name {
             sets.push(format!("long_name = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(v.clone()));
+            bind_values.push(Box::new(v.to_string()));
         }
         if let Some(ref v) = input.cert_id {
             sets.push(format!("cert_id = ?{}", bind_values.len() + 1));
@@ -285,6 +312,119 @@ mod tests {
             name: name.into(),
             category: SkillCategory::Tool,
         }
+    }
+
+    fn blank_input(short: &str, long: &str) -> CreateCertification {
+        CreateCertification {
+            short_name: short.into(),
+            long_name: long.into(),
+            cert_id: None,
+            issuer_id: None,
+            date_earned: None,
+            expiry_date: None,
+            credential_id: None,
+            credential_url: None,
+            credly_url: None,
+            in_progress: None,
+        }
+    }
+
+    #[test]
+    fn create_rejects_blank_names() {
+        let forge = setup();
+        for (short, long, needle) in [
+            ("", "X", "short_name"),
+            ("   ", "X", "short_name"),
+            ("X", "", "long_name"),
+        ] {
+            let err =
+                CertificationStore::create(forge.conn(), &blank_input(short, long)).unwrap_err();
+            assert!(
+                matches!(&err, ForgeError::Validation { message, .. } if message.contains(needle)),
+                "{err:?}"
+            );
+        }
+        assert!(CertificationStore::list_all(forge.conn())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn create_trims_names() {
+        let forge = setup();
+        let c =
+            CertificationStore::create(forge.conn(), &blank_input("  CKA  ", " Long ")).unwrap();
+        assert_eq!(c.short_name, "CKA");
+        assert_eq!(c.long_name, "Long");
+    }
+
+    #[test]
+    fn update_validates_and_trims_names() {
+        let forge = setup();
+        let c = CertificationStore::create(forge.conn(), &blank_input("CKA", "Long")).unwrap();
+
+        let err = CertificationStore::update(
+            forge.conn(),
+            &c.id,
+            &UpdateCertification {
+                short_name: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ForgeError::Validation { message, .. } if message.contains("short_name"))
+        );
+
+        let err = CertificationStore::update(
+            forge.conn(),
+            &c.id,
+            &UpdateCertification {
+                long_name: Some("".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ForgeError::Validation { message, .. } if message.contains("long_name"))
+        );
+
+        let u = CertificationStore::update(
+            forge.conn(),
+            &c.id,
+            &UpdateCertification {
+                short_name: Some("  CKAD ".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(u.short_name, "CKAD");
+    }
+
+    #[test]
+    fn update_validation_runs_before_not_found() {
+        let forge = setup();
+        let err = CertificationStore::update(
+            forge.conn(),
+            "missing",
+            &UpdateCertification {
+                short_name: Some("".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }));
+
+        let err = CertificationStore::update(
+            forge.conn(),
+            "missing",
+            &UpdateCertification {
+                short_name: Some("ok".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::NotFound { .. }));
     }
 
     #[test]
