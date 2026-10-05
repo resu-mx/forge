@@ -12,6 +12,7 @@ pub mod credentials;
 pub mod derivations;
 pub mod domains;
 pub mod export;
+pub mod extension;
 pub mod health;
 pub mod industries;
 pub mod integrity;
@@ -68,6 +69,7 @@ pub fn api_router() -> Router<SharedState> {
         .merge(review::router())
         .merge(integrity::router())
         .merge(export::router())
+        .merge(extension::router())
         .merge(templates::router());
 
     Router::new().nest("/api", api).fallback(fallback)
