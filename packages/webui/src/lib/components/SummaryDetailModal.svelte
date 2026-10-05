@@ -13,6 +13,7 @@
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import { Modal, LoadingSpinner, ConfirmDialog } from '$lib/components'
+  import { attachKeywords, keywordSaveToast } from '$lib/summary-keywords'
   import type { Summary, SummaryWithRelations, Industry, RoleType, Skill } from '@forge/sdk'
 
   let {
@@ -137,11 +138,11 @@
         return
       }
       summary = createRes.data
-      // Apply any pre-selected skill keywords (user added to the list before Save)
-      for (const skill of linkedSkills) {
-        await forge.summaries.addSkill(createRes.data.id, skill.id)
-      }
-      addToast({ message: 'Summary created', type: 'success' })
+      // Keywords picked before Save. Name any that didn't stick (resu-mx/forge#35).
+      const failed = await attachKeywords(createRes.data.id, linkedSkills, (id, skillId) =>
+        forge.summaries.addSkill(id, skillId),
+      )
+      addToast({ ...keywordSaveToast(failed), duration: failed.length > 0 ? 8000 : undefined })
       onupdate()
       onclose()
       saving = false
