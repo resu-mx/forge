@@ -4,13 +4,14 @@
 //! same JSON shapes, so the webui and MCP server continue working.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
 
 use forge_core::{
-    CreateSource, PaginationParams, SourceFilter, SourceType, SourceWithExtension, UpdateSource,
+    CreateSource, PaginationParams, SkillRow, SourceFilter, SourceType, SourceWithExtension,
+    UpdateSource,
 };
 use forge_sdk::db::SourceStore;
 
@@ -158,6 +159,60 @@ async fn derive_bullets_replaced() -> axum::response::Response {
     )
 }
 
+// ── Skills (source_skills) ──────────────────────────────────────────
+
+/// Skills linked to a source, by name. An unknown source answers `[]`, as in TS.
+async fn list_source_skills(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<SkillRow>>>, ApiError> {
+    let data = with_conn(&state, move |conn| SourceStore::list_skills(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
+/// `{ skill_id }` links an existing skill; `{ name, category? }` finds or creates one.
+/// A non-empty `skill_id` wins (`sources.ts:133`).
+#[derive(Debug, Deserialize)]
+pub struct AddSourceSkillBody {
+    pub skill_id: Option<String>,
+    pub name: Option<String>,
+    pub category: Option<String>,
+}
+
+async fn add_source_skill(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(body): Json<AddSourceSkillBody>,
+) -> Result<Created<SkillRow>, ApiError> {
+    let skill = with_conn(&state, move |conn| {
+        if let Some(skill_id) = body.skill_id.as_deref().filter(|s| !s.is_empty()) {
+            SourceStore::add_skill(conn, &id, skill_id)
+        } else if let Some(name) = body.name.as_deref().filter(|n| !n.trim().is_empty()) {
+            // Checks the source before creating anything (no orphan skill).
+            SourceStore::add_skill_by_name(conn, &id, name, body.category.as_deref())
+        } else {
+            Err(forge_core::ForgeError::Validation {
+                message: "skill_id or name is required".into(),
+                field: None,
+            })
+        }
+    })
+    .await?;
+    Ok(Created(skill))
+}
+
+/// Unlink a skill from a source. 404 when there is no such link (unlike JD skills).
+async fn remove_source_skill(
+    State(state): State<SharedState>,
+    Path((id, skill_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| {
+        SourceStore::remove_skill(conn, &id, &skill_id)
+    })
+    .await?;
+    Ok(NoContent)
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -170,5 +225,13 @@ pub fn router() -> Router<SharedState> {
         .route(
             "/sources/{id}/derive-bullets",
             post(derive_bullets_replaced),
+        )
+        .route(
+            "/sources/{id}/skills",
+            get(list_source_skills).post(add_source_skill),
+        )
+        .route(
+            "/sources/{id}/skills/{skill_id}",
+            delete(remove_source_skill),
         )
 }

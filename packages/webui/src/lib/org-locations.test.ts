@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   createLocationWithAddress,
+  hqLocationLabel,
   listLocationsWithAddress,
   locationLabel,
   updateLocationWithAddress,
@@ -140,5 +141,34 @@ describe('org-locations', () => {
   test('locationLabel without an address is the name', () => {
     const l = { name: 'Main Campus', address: null } as unknown as LocationWithAddress
     expect(locationLabel(l)).toBe('Main Campus')
+  })
+
+  test('hqLocationLabel finds the HQ whether it is 1 or true', async () => {
+    const { client } = fake()
+    await createLocationWithAddress(client, 'o1', { name: 'Branch' }, { city: 'Reston', state: 'VA' })
+    await createLocationWithAddress(client, 'o1', { name: 'HQ', is_headquarters: 1 as unknown as boolean }, { city: 'Arlington', state: 'VA' })
+    expect(await hqLocationLabel(client, 'o1')).toEqual({ ok: true, data: 'Arlington, VA' })
+
+    const ts = fake()
+    await createLocationWithAddress(ts.client, 'o1', { name: 'HQ', is_headquarters: true }, { city: 'Arlington', state: 'VA' })
+    expect(await hqLocationLabel(ts.client, 'o1')).toEqual({ ok: true, data: 'Arlington, VA' })
+  })
+
+  test('hqLocationLabel is empty with no HQ', async () => {
+    const { client } = fake()
+    await createLocationWithAddress(client, 'o1', { name: 'Branch' }, { city: 'Reston', state: 'VA' })
+    expect(await hqLocationLabel(client, 'o1')).toEqual({ ok: true, data: '' })
+  })
+
+  test('hqLocationLabel is empty for an HQ without an address', async () => {
+    const { client } = fake()
+    await createLocationWithAddress(client, 'o1', { name: 'HQ', is_headquarters: true }, null)
+    expect(await hqLocationLabel(client, 'o1')).toEqual({ ok: true, data: '' })
+  })
+
+  test('hqLocationLabel passes a failed listLocations through as { ok: false }', async () => {
+    const { client } = fake({ failList: true })
+    const r = await hqLocationLabel(client, 'o1')
+    expect(r.ok).toBe(false)
   })
 })
