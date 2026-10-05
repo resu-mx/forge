@@ -10,7 +10,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use forge_core::{
-    CreateSource, PaginationParams, SourceFilter, SourceType, SourceWithExtension, UpdateSource,
+    CreateSource, PaginationParams, SkillRow, SourceFilter, SourceType, SourceWithExtension,
+    UpdateSource,
 };
 use forge_sdk::db::SourceStore;
 
@@ -158,6 +159,17 @@ async fn derive_bullets_replaced() -> axum::response::Response {
     )
 }
 
+// ── Skills (source_skills) ──────────────────────────────────────────
+
+/// Skills linked to a source, by name. An unknown source answers `[]`, as in TS.
+async fn list_source_skills(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<SkillRow>>>, ApiError> {
+    let data = with_conn(&state, move |conn| SourceStore::list_skills(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -171,4 +183,5 @@ pub fn router() -> Router<SharedState> {
             "/sources/{id}/derive-bullets",
             post(derive_bullets_replaced),
         )
+        .route("/sources/{id}/skills", get(list_source_skills))
 }

@@ -6,6 +6,8 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::Router;
 use forge_api::{app, AppState};
+use forge_core::{CreateSource, SkillCategory};
+use forge_sdk::db::{SkillStore, SourceStore};
 use forge_sdk::Forge;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -316,4 +318,69 @@ async fn source_extension_uses_the_typed_wire_key() {
         patched["data"]["education"]["degree_level"], "doctoral",
         "absent fields are untouched"
     );
+}
+
+// ── Source skills ───────────────────────────────────────────────────
+
+/// A router over a database with one source linked to `names`, seeded through
+/// the store before the app is built.
+fn source_with_skills(names: &[&str]) -> (Router, String, Vec<String>) {
+    let forge = Forge::open_memory().unwrap();
+    let source = SourceStore::create(
+        forge.conn(),
+        &CreateSource {
+            title: "T".into(),
+            description: "D".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .base
+    .id;
+    let ids = names
+        .iter()
+        .map(|n| {
+            let skill = SkillStore::create(forge.conn(), n, Some(SkillCategory::Tool)).unwrap();
+            SourceStore::add_skill(forge.conn(), &source, &skill.id).unwrap();
+            skill.id
+        })
+        .collect();
+    (app(AppState::new(forge)), source, ids)
+}
+
+#[tokio::test]
+async fn source_skills_list_returns_full_rows_by_name() {
+    let (r, source, _) = source_with_skills(&["Zig", "Ada"]);
+    let (status, body) = call(&r, "GET", &format!("/api/sources/{source}/skills"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Ada", "Zig"]);
+    let mut keys: Vec<String> = body["data"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    assert_eq!(keys, ["category", "created_at", "id", "name"]);
+}
+
+#[tokio::test]
+async fn source_skills_list_unknown_source_is_empty() {
+    let (status, body) = call(&router(), "GET", "/api/sources/nope/skills", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"], json!([]));
+}
+
+#[tokio::test]
+async fn source_skills_list_no_links_is_empty() {
+    let (r, source, _) = source_with_skills(&[]);
+    let (status, body) = call(&r, "GET", &format!("/api/sources/{source}/skills"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"], json!([]));
 }
