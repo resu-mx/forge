@@ -7,7 +7,7 @@
  */
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTestApp, apiRequest, type TestContext } from './helpers'
-import { seedResume, seedResumeSection } from '../../db/__tests__/helpers'
+import { seedResume, seedResumeSection, seedJobDescription, seedSkill } from '../../db/__tests__/helpers'
 
 const MISSING = '00000000-0000-4000-8000-000000000000'
 const OLD = '2000-01-01T00:00:00Z'
@@ -146,5 +146,91 @@ describe('PATCH /resumes/:id/tagline-override', () => {
 
   test('unknown resume answers 404 NOT_FOUND', async () => {
     await expectResumeNotFound(await patch(MISSING, { content: OVERRIDE }))
+  })
+})
+
+describe('POST /resumes/:id/tagline/regenerate', () => {
+  const regenerate = (id: string, body?: unknown) =>
+    apiRequest(ctx.app, 'POST', `/resumes/${id}/tagline/regenerate`, body)
+
+  /** Link a JD by SQL, so this block doesn't depend on POST /job-descriptions/:id/resumes. */
+  function linkJd(resumeId: string, rawText: string): string {
+    const jdId = seedJobDescription(ctx.db, { rawText })
+    ctx.db.run('INSERT INTO job_description_resumes (job_description_id, resume_id) VALUES (?, ?)', [jdId, resumeId])
+    return jdId
+  }
+
+  test('regenerates from linked JDs with the target-role prefix and the skill boost', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Senior Platform Engineer' })
+    seedSkill(ctx.db, { name: 'Terraform', category: 'tool' })
+    linkJd(id, 'Terraform Kubernetes Python Ansible')
+
+    const res = await regenerate(id)
+    expect(res.status).toBe(200)
+    const { data } = await res.json()
+    expect(data).toEqual({
+      generated_tagline: 'Senior Platform Engineer -- terraform + ansible + kubernetes',
+      has_override: false,
+      keywords: [
+        { term: 'terraform', score: 2, matchedSkill: true },
+        { term: 'ansible', score: 1, matchedSkill: false },
+        { term: 'kubernetes', score: 1, matchedSkill: false },
+      ],
+    })
+    expect(row(id).generated_tagline).toBe(data.generated_tagline)
+  })
+
+  test('aggregates several linked JDs; ties break by localeCompare', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'SRE' })
+    linkJd(id, 'kubernetes terraform python')
+    linkJd(id, 'kubernetes prometheus grafana')
+    const { data } = await (await regenerate(id)).json()
+    expect(data.generated_tagline).toBe('SRE -- kubernetes + grafana + prometheus')
+    expect(data.keywords.map((k: { term: string }) => k.term)).toEqual(['kubernetes', 'grafana', 'prometheus'])
+    expect(data.keywords[0].score).toBeCloseTo(2, 9)
+    expect(data.keywords[1].score).toBeCloseTo(Math.log(1.5) + 1, 9)
+  })
+
+  test('with no linked JDs it clears generated_tagline and answers ""', async () => {
+    const id = seedResume(ctx.db)
+    setTaglines(id, 'stale', null)
+    const { data } = await (await regenerate(id)).json()
+    expect(data).toEqual({ generated_tagline: '', has_override: false, keywords: [] })
+    expect(row(id).generated_tagline).toBeNull()
+  })
+
+  test('skips linked JDs whose raw_text is empty', async () => {
+    const id = seedResume(ctx.db)
+    linkJd(id, '')
+    const { data } = await (await regenerate(id)).json()
+    expect(data.generated_tagline).toBe('')
+    expect(row(id).generated_tagline).toBeNull()
+  })
+
+  test('keeps an override, reports has_override and still updates generated_tagline', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'SRE' })
+    setTaglines(id, null, OVERRIDE)
+    linkJd(id, 'Kafka Kubernetes Python')
+    const { data } = await (await regenerate(id)).json()
+    expect(data.has_override).toBe(true)
+    expect(data.generated_tagline).toBeTruthy()
+    expect(row(id).tagline_override).toBe(OVERRIDE)
+    expect(row(id).generated_tagline).toBe(data.generated_tagline)
+  })
+
+  test('bumps updated_at', async () => {
+    const id = seedResume(ctx.db)
+    setTaglines(id, null, null)
+    await regenerate(id)
+    expect(row(id).updated_at).not.toBe(OLD)
+  })
+
+  test('ignores a request body', async () => {
+    const id = seedResume(ctx.db)
+    expect((await regenerate(id, { anything: true })).status).toBe(200)
+  })
+
+  test('unknown resume answers 404 NOT_FOUND', async () => {
+    await expectResumeNotFound(await regenerate(MISSING))
   })
 })

@@ -536,6 +536,19 @@ async fn update_tagline_override(
     })
 }
 
+/// `POST /resumes/:id/tagline/regenerate`. No body extractor: TS reads none, so any body is
+/// ignored. Answers `ResumeTaglineRegenerationResult`, not the tagline state.
+async fn regenerate_tagline(
+    State(state): State<SharedState>,
+    Path(resume_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let found = with_conn(&state, move |conn| tagline::regenerate(conn, &resume_id)).await?;
+    Ok(match found {
+        Some(data) => Json(ApiData { data }).into_response(),
+        None => resume_not_found(),
+    })
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 /// `GET /resumes/:id/job-descriptions` (TS resumes.ts:343-364). 404 for an unknown resume
@@ -613,6 +626,7 @@ pub fn router() -> Router<SharedState> {
             get(list_resume_job_descriptions),
         )
         .route("/resumes/{id}/tagline", get(get_tagline))
+        .route("/resumes/{id}/tagline/regenerate", post(regenerate_tagline))
         .route(
             "/resumes/{id}/tagline-override",
             patch(update_tagline_override),
