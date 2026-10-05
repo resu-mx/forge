@@ -476,6 +476,16 @@ pub struct SkillWithDomains {
     pub domains: Vec<Domain>,
 }
 
+/// A full `skills` row, as the TS junction routes return it (`SELECT s.*`).
+/// `Skill` leaves out `created_at`. Serialises to exactly
+/// `{id, name, category, created_at}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillRow {
+    #[serde(flatten)]
+    pub base: Skill,
+    pub created_at: String,
+}
+
 /// A skill extracted from a JD by AI, pending human review.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedSkill {

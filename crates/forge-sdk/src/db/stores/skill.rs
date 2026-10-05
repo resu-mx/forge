@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{new_id, Domain, ForgeError, Skill, SkillCategory, SkillWithDomains};
+use forge_core::{Domain, ForgeError, Skill, SkillCategory, SkillRow, SkillWithDomains, new_id};
 
 /// Capitalize first character only, preserving the rest (e.g. "SAFe" stays "SAFe").
 fn capitalize_first(s: &str) -> String {
@@ -232,6 +232,54 @@ impl SkillStore {
         Self::create(conn, name, category)
     }
 
+    // ── Full rows and link helpers (source_skills / JD skills) ──────
+
+    /// Categories the TS link routes accept (`sources.ts` valid list). Narrower
+    /// than the full [`SkillCategory`]; anything else falls back to `Other`.
+    pub const LINK_CATEGORIES: [SkillCategory; 10] = [
+        SkillCategory::Language,
+        SkillCategory::Framework,
+        SkillCategory::Platform,
+        SkillCategory::Tool,
+        SkillCategory::Library,
+        SkillCategory::Methodology,
+        SkillCategory::Protocol,
+        SkillCategory::Concept,
+        SkillCategory::SoftSkill,
+        SkillCategory::Other,
+    ];
+
+    /// Fetch a full `skills` row (including `created_at`) by id.
+    pub fn get_row(conn: &Connection, id: &str) -> Result<Option<SkillRow>, ForgeError> {
+        let row = conn
+            .query_row(
+                "SELECT id, name, category, created_at FROM skills WHERE id = ?1",
+                params![id],
+                Self::map_skill_row,
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Resolve a skill for a junction link using the TS name rules: trim and
+    /// capitalise the first character, reuse a case-insensitive match (its
+    /// stored category wins), otherwise create it. `category` must be in
+    /// [`Self::LINK_CATEGORIES`]; unknown, missing or out-of-list values become
+    /// `Other`. An empty name is a validation error.
+    pub fn get_or_create_for_link(conn: &Connection, name: &str, category: Option<&str>) -> Result<SkillRow, ForgeError> {
+        let name = capitalize_first(name.trim());
+        if name.is_empty() {
+            return Err(ForgeError::Validation { message: "skill_id or name is required".into(), field: None });
+        }
+        let category = category
+            .and_then(|c| c.parse::<SkillCategory>().ok())
+            .filter(|c| Self::LINK_CATEGORIES.contains(c))
+            .unwrap_or(SkillCategory::Other);
+        let skill = Self::get_or_create(conn, &name, Some(category))?;
+        Self::get_row(conn, &skill.id)?
+            .ok_or_else(|| ForgeError::Internal("Skill resolved but not found".into()))
+    }
+
     // ── Skill <-> Domain junction ───────────────────────────────────
 
     /// Link a skill to a domain. Idempotent — if the pair already exists,
@@ -377,6 +425,11 @@ impl SkillStore {
 
     // ── Row mapping ─────────────────────────────────────────────────
 
+    /// Map `(id, name, category, created_at)` to a [`SkillRow`].
+    pub(crate) fn map_skill_row(row: &rusqlite::Row) -> rusqlite::Result<SkillRow> {
+        Ok(SkillRow { base: Self::map_skill(row)?, created_at: row.get(3)? })
+    }
+
     fn map_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
         Ok(Skill {
             id: row.get(0)?,
@@ -396,6 +449,48 @@ mod tests {
 
     fn setup() -> Forge {
         Forge::open_memory().unwrap()
+    }
+
+    #[test]
+    fn get_or_create_for_link_applies_ts_rules() {
+        let forge = setup();
+        let conn = forge.conn();
+
+        let k = SkillStore::get_or_create_for_link(conn, "  kubernetes ", None).unwrap();
+        assert_eq!(k.base.name, "Kubernetes");
+        assert_eq!(k.base.category, SkillCategory::Other);
+        assert!(!k.created_at.is_empty());
+
+        assert_eq!(SkillStore::get_or_create_for_link(conn, "sAFe", None).unwrap().base.name, "SAFe");
+
+        let t = SkillStore::get_or_create_for_link(conn, "Terraform", Some("tool")).unwrap();
+        assert_eq!(t.base.category, SkillCategory::Tool);
+
+        let v = SkillStore::get_or_create_for_link(conn, "Vector search", Some("ai_ml")).unwrap();
+        assert_eq!(v.base.category, SkillCategory::Other);
+
+        let b = SkillStore::get_or_create_for_link(conn, "Bogus cat", Some("bogus")).unwrap();
+        assert_eq!(b.base.category, SkillCategory::Other);
+
+        assert!(matches!(
+            SkillStore::get_or_create_for_link(conn, "   ", None),
+            Err(ForgeError::Validation { .. })
+        ));
+
+        let py = SkillStore::create(conn, "Python", Some(SkillCategory::Language)).unwrap();
+        let reused = SkillStore::get_or_create_for_link(conn, "python", Some("tool")).unwrap();
+        assert_eq!(reused.base.id, py.id);
+        assert_eq!(reused.base.category, SkillCategory::Language);
+    }
+
+    #[test]
+    fn skill_row_serialises_to_four_keys() {
+        let forge = setup();
+        let s = SkillStore::get_or_create_for_link(forge.conn(), "Rust", Some("language")).unwrap();
+        let v = serde_json::to_value(&s).unwrap();
+        let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["category", "created_at", "id", "name"]);
     }
 
     #[test]

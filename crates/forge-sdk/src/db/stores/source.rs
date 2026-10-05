@@ -8,10 +8,12 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    new_id, now_iso, CreateSource, ForgeError, Pagination, PaginationParams, Source,
-    SourceEducation, SourceExtension, SourceFilter, SourcePresentation, SourceProject, SourceRole,
-    SourceStatus, SourceType, SourceWithExtension, UpdateSource, UpdatedBy,
+    CreateSource, ForgeError, Pagination, PaginationParams, Source, SourceEducation,
+    SourceExtension, SourceFilter, SourcePresentation, SourceProject, SourceRole, SourceStatus,
+    SkillRow, SourceType, SourceWithExtension, UpdateSource, UpdatedBy, new_id, now_iso,
 };
+
+use super::skill::SkillStore;
 
 pub struct SourceStore;
 
@@ -349,6 +351,79 @@ impl SourceStore {
         Ok(())
     }
 
+    // ── Skill links (source_skills) ──────────────────────────────────
+
+    /// List the skills linked to a source as full rows, ordered by name.
+    /// An unknown source yields an empty list (no existence check, like TS).
+    pub fn list_skills(conn: &Connection, source_id: &str) -> Result<Vec<SkillRow>, ForgeError> {
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.name, s.category, s.created_at FROM skills s \
+             JOIN source_skills ss ON ss.skill_id = s.id \
+             WHERE ss.source_id = ?1 ORDER BY s.name ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![source_id], SkillStore::map_skill_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Link an existing skill to a source. Idempotent. Returns `NotFound`
+    /// (entity "Source" or "Skill") when either side is missing; nothing is written.
+    pub fn add_skill(conn: &Connection, source_id: &str, skill_id: &str) -> Result<SkillRow, ForgeError> {
+        Self::require_source(conn, source_id)?;
+        let skill = SkillStore::get_row(conn, skill_id)?
+            .ok_or_else(|| ForgeError::NotFound { entity_type: "Skill".into(), id: skill_id.into() })?;
+        conn.execute(
+            "INSERT OR IGNORE INTO source_skills (source_id, skill_id) VALUES (?1, ?2)",
+            params![source_id, skill_id],
+        )?;
+        Ok(skill)
+    }
+
+    /// Find-or-create a skill by name (TS rules, see
+    /// [`SkillStore::get_or_create_for_link`]) and link it. The source is
+    /// checked first so an unknown source never leaves an orphan skill, and the
+    /// create + link run in one transaction. Idempotent.
+    pub fn add_skill_by_name(
+        conn: &Connection,
+        source_id: &str,
+        name: &str,
+        category: Option<&str>,
+    ) -> Result<SkillRow, ForgeError> {
+        Self::require_source(conn, source_id)?;
+        let tx = conn.unchecked_transaction()?;
+        let skill = SkillStore::get_or_create_for_link(&tx, name, category)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO source_skills (source_id, skill_id) VALUES (?1, ?2)",
+            params![source_id, skill.base.id],
+        )?;
+        tx.commit()?;
+        Ok(skill)
+    }
+
+    /// Remove one source-skill link. `NotFound` ("Skill link") when the pair
+    /// is not linked. Never deletes the skill or other sources' links.
+    pub fn remove_skill(conn: &Connection, source_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+        let n = conn.execute(
+            "DELETE FROM source_skills WHERE source_id = ?1 AND skill_id = ?2",
+            params![source_id, skill_id],
+        )?;
+        if n == 0 {
+            return Err(ForgeError::NotFound {
+                entity_type: "Skill link".into(),
+                id: format!("{source_id}/{skill_id}"),
+            });
+        }
+        Ok(())
+    }
+
+    fn require_source(conn: &Connection, source_id: &str) -> Result<(), ForgeError> {
+        match Self::get(conn, source_id)? {
+            Some(_) => Ok(()),
+            None => Err(ForgeError::NotFound { entity_type: "Source".into(), id: source_id.into() }),
+        }
+    }
+
     // ── Extension helpers ────────────────────────────────────────────
 
     fn get_extension(
@@ -617,6 +692,111 @@ mod tests {
 
     fn setup() -> Forge {
         Forge::open_memory().unwrap()
+    }
+
+    fn new_source(forge: &Forge) -> String {
+        SourceStore::create(forge.conn(), &CreateSource {
+            title: "T".into(),
+            description: "D".into(),
+            ..Default::default()
+        }).unwrap().base.id
+    }
+
+    fn skill_count(forge: &Forge) -> i64 {
+        forge.conn().query_row("SELECT COUNT(*) FROM skills", [], |r| r.get(0)).unwrap()
+    }
+
+    fn link_count(forge: &Forge) -> i64 {
+        forge.conn().query_row("SELECT COUNT(*) FROM source_skills", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn source_skills_list_is_ordered_by_name_with_created_at() {
+        let forge = setup();
+        let c = forge.conn();
+        let sid = new_source(&forge);
+        let zig = SkillStore::create(c, "Zig", None).unwrap();
+        let ada = SkillStore::create(c, "Ada", None).unwrap();
+        SourceStore::add_skill(c, &sid, &zig.id).unwrap();
+        SourceStore::add_skill(c, &sid, &ada.id).unwrap();
+        let rows = SourceStore::list_skills(c, &sid).unwrap();
+        let names: Vec<_> = rows.iter().map(|r| r.base.name.as_str()).collect();
+        assert_eq!(names, ["Ada", "Zig"]);
+        assert!(rows.iter().all(|r| !r.created_at.is_empty()));
+    }
+
+    #[test]
+    fn source_skills_list_unknown_source_is_empty() {
+        let forge = setup();
+        assert!(SourceStore::list_skills(forge.conn(), "missing").unwrap().is_empty());
+    }
+
+    #[test]
+    fn source_skills_add_is_idempotent() {
+        let forge = setup();
+        let c = forge.conn();
+        let sid = new_source(&forge);
+        let skill = SkillStore::create(c, "Zig", None).unwrap();
+        SourceStore::add_skill(c, &sid, &skill.id).unwrap();
+        let again = SourceStore::add_skill(c, &sid, &skill.id).unwrap();
+        assert_eq!(again.base.id, skill.id);
+        assert_eq!(link_count(&forge), 1);
+    }
+
+    #[test]
+    fn source_skills_add_unknown_source_or_skill_is_not_found() {
+        let forge = setup();
+        let c = forge.conn();
+        let sid = new_source(&forge);
+        let skill = SkillStore::create(c, "Zig", None).unwrap();
+        assert!(matches!(SourceStore::add_skill(c, "missing", &skill.id), Err(ForgeError::NotFound { .. })));
+        assert!(matches!(SourceStore::add_skill(c, &sid, "missing"), Err(ForgeError::NotFound { .. })));
+        assert_eq!(link_count(&forge), 0);
+    }
+
+    #[test]
+    fn source_skills_add_by_name_unknown_source_creates_nothing() {
+        let forge = setup();
+        let before = skill_count(&forge);
+        let r = SourceStore::add_skill_by_name(forge.conn(), "missing", "Orphan check", None);
+        assert!(matches!(r, Err(ForgeError::NotFound { .. })));
+        assert_eq!(skill_count(&forge), before);
+    }
+
+    #[test]
+    fn source_skills_add_by_name_reuses_case_insensitive_match() {
+        let forge = setup();
+        let c = forge.conn();
+        let sid = new_source(&forge);
+        let py = SkillStore::get_or_create(c, "Python", None).unwrap();
+        let before = skill_count(&forge);
+        let row = SourceStore::add_skill_by_name(c, &sid, "python", None).unwrap();
+        assert_eq!(row.base.id, py.id);
+        assert_eq!(skill_count(&forge), before);
+        assert_eq!(SourceStore::list_skills(c, &sid).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn source_skills_remove_unlinks_only() {
+        let forge = setup();
+        let c = forge.conn();
+        let a = new_source(&forge);
+        let b = new_source(&forge);
+        let skill = SkillStore::create(c, "Zig", None).unwrap();
+        SourceStore::add_skill(c, &a, &skill.id).unwrap();
+        SourceStore::add_skill(c, &b, &skill.id).unwrap();
+        SourceStore::remove_skill(c, &a, &skill.id).unwrap();
+        assert!(SourceStore::list_skills(c, &a).unwrap().is_empty());
+        assert_eq!(SourceStore::list_skills(c, &b).unwrap().len(), 1);
+        assert!(SkillStore::get_row(c, &skill.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn source_skills_remove_missing_link_is_not_found() {
+        let forge = setup();
+        let sid = new_source(&forge);
+        let r = SourceStore::remove_skill(forge.conn(), &sid, "missing");
+        assert!(matches!(r, Err(ForgeError::NotFound { .. })));
     }
 
     /// Reads on the creating connection see uncommitted rows, so this must check
