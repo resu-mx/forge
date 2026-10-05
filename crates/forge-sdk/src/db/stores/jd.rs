@@ -308,6 +308,16 @@ impl JdStore {
         Ok(rows)
     }
 
+    /// Unlink a skill. Silent when there is no such link, including for an unknown JD or skill,
+    /// as TS (`job-descriptions.ts:136-142`). Never deletes the `skills` row.
+    pub fn remove_skill(conn: &Connection, jd_id: &str, skill_id: &str) -> Result<(), ForgeError> {
+        conn.execute(
+            "DELETE FROM job_description_skills WHERE job_description_id = ?1 AND skill_id = ?2",
+            params![jd_id, skill_id],
+        )?;
+        Ok(())
+    }
+
     /// Link an existing skill. Idempotent: linking twice is a no-op. The JD and the skill are
     /// checked first, because a raw FK failure would surface as `Database` (500), not TS's 404.
     pub fn add_skill(
@@ -473,6 +483,38 @@ mod tests {
         assert!(JdStore::list_skills(forge.conn(), "nope")
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn remove_skill_unlinks_only_that_pair() {
+        let forge = setup();
+        let a = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let b = JdStore::create(
+            forge.conn(),
+            &CreateJobDescription {
+                title: "Other".into(),
+                ..sample_input()
+            },
+        )
+        .unwrap();
+        let tf = SkillStore::create(forge.conn(), "Terraform", None).unwrap();
+        link(&forge, &a.id, &tf.id);
+        link(&forge, &b.id, &tf.id);
+
+        JdStore::remove_skill(forge.conn(), &a.id, &tf.id).unwrap();
+        assert!(JdStore::list_skills(forge.conn(), &a.id)
+            .unwrap()
+            .is_empty());
+        assert_eq!(JdStore::list_skills(forge.conn(), &b.id).unwrap().len(), 1);
+        assert!(SkillStore::get(forge.conn(), &tf.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn remove_skill_without_a_link_is_ok() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        JdStore::remove_skill(forge.conn(), &jd.id, "nope").unwrap();
+        JdStore::remove_skill(forge.conn(), "nope", "nope").unwrap();
     }
 
     #[test]
