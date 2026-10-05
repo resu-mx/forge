@@ -152,3 +152,109 @@ async fn get_tagline_does_not_bump_updated_at() {
     let (_, resume) = call(&r, "GET", &format!("/api/resumes/{id}"), None).await;
     assert_eq!(resume["data"]["updated_at"], OLD);
 }
+
+#[tokio::test]
+async fn override_set_clear_and_404() {
+    let (forge, id) = forge_with_resume(Some("Gen"), None);
+    let r = app(AppState::new(forge));
+    let path = format!("/api/resumes/{id}/tagline-override");
+
+    let (status, body) = call(&r, "PATCH", &path, Some(json!({"content": "Mine"}))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["data"],
+        json!({"generated_tagline": "Gen", "tagline_override": "Mine",
+               "resolved": "Mine", "has_override": true})
+    );
+
+    // Non-blank content is stored verbatim, untrimmed.
+    let (_, body) = call(&r, "PATCH", &path, Some(json!({"content": "  Padded  "}))).await;
+    assert_eq!(body["data"]["tagline_override"], "  Padded  ");
+
+    for clear in [
+        json!({"content": null}),
+        json!({}),
+        json!({"content": ""}),
+        json!({"content": "   "}),
+    ] {
+        call(&r, "PATCH", &path, Some(json!({"content": "Mine"}))).await;
+        let (status, body) = call(&r, "PATCH", &path, Some(clear)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["data"],
+            json!({"generated_tagline": "Gen", "tagline_override": null,
+                   "resolved": "Gen", "has_override": false})
+        );
+    }
+
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        "/api/resumes/missing/tagline-override",
+        Some(json!({"content": "x"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        body,
+        json!({"error": {"code": "NOT_FOUND", "message": "Resume not found"}})
+    );
+}
+
+#[tokio::test]
+async fn override_bumps_updated_at_and_keeps_generated() {
+    let (forge, id) = forge_with_resume(Some("Gen"), None);
+    let r = app(AppState::new(forge));
+    call(
+        &r,
+        "PATCH",
+        &format!("/api/resumes/{id}/tagline-override"),
+        Some(json!({"content": "Mine"})),
+    )
+    .await;
+    let (_, resume) = call(&r, "GET", &format!("/api/resumes/{id}"), None).await;
+    assert_eq!(resume["data"]["generated_tagline"], "Gen");
+    let updated = resume["data"]["updated_at"].as_str().unwrap();
+    assert_ne!(updated, OLD);
+    assert_eq!(updated.len(), 20);
+    assert!(updated.ends_with('Z'));
+}
+
+#[tokio::test]
+async fn override_shows_in_json_ir_and_markdown_export() {
+    let (forge, id) = forge_with_resume(Some("Gen"), None);
+    let r = app(AppState::new(forge));
+    call(
+        &r,
+        "PATCH",
+        &format!("/api/resumes/{id}/tagline-override"),
+        Some(json!({"content": "Mine"})),
+    )
+    .await;
+
+    let (status, ir) = call(
+        &r,
+        "GET",
+        &format!("/api/export/resume/{id}?format=json"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ir["data"]["header"]["tagline"], "Mine");
+
+    let resp = r
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/export/resume/{id}?format=markdown"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&bytes).contains("*Mine*"));
+}
