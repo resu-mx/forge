@@ -2,7 +2,16 @@
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import { LoadingSpinner, EmptyState, EmptyPanel, ListSearchInput, ConfirmDialog, PageWrapper, SplitPanel, ListPanelHeader, EntityNotes } from '$lib/components'
-  import type { Organization, OrgTag, OrgCampus } from '@forge/sdk'
+  import {
+    createLocationWithAddress,
+    formatAddress,
+    hqLocationLabel,
+    listLocationsWithAddress,
+    updateLocationWithAddress,
+    type LocationAddressFields,
+    type LocationWithAddress,
+  } from '$lib/org-locations'
+  import type { Organization, OrgTag, LocationModality } from '@forge/sdk'
 
   const ORG_TYPES = ['company', 'nonprofit', 'government', 'military', 'education', 'volunteer', 'freelance', 'other']
   const ALL_TAGS: OrgTag[] = ['company', 'vendor', 'platform', 'university', 'school', 'nonprofit', 'government', 'military', 'conference', 'volunteer', 'freelance', 'other']
@@ -33,7 +42,7 @@
   let formStatus = $state<string | null>(null)
 
   // Campus management
-  let orgCampuses = $state<OrgCampus[]>([])
+  let orgCampuses = $state<LocationWithAddress[]>([])
   let showAddCampus = $state(false)
   let newCampusName = $state('')
   let newCampusModality = $state('in_person')
@@ -134,9 +143,9 @@
 
     const promises = orgs.map(async (org) => {
       try {
-        const [aliasRes, campusRes] = await Promise.all([
-          fetch(`/api/organizations/${org.id}/aliases`),
-          fetch(`/api/organizations/${org.id}/campuses`),
+        const [aliasRes, hq] = await Promise.all([
+          fetch(`/api/organizations/${org.id}/aliases`), // raw until resu-mx/forge#127
+          hqLocationLabel(forge, org.id),
         ])
         if (aliasRes.ok) {
           const aliasBody = await aliasRes.json()
@@ -145,16 +154,9 @@
             aliasMap.set(org.id, aliases.length)
           }
         }
-        if (campusRes.ok) {
-          const campusBody = await campusRes.json()
-          const campuses = campusBody.data ?? []
-          const hq = campuses.find((c: OrgCampus) => c.is_headquarters)
-          if (hq && (hq.city || hq.state)) {
-            hqMap.set(org.id, [hq.city, hq.state].filter(Boolean).join(', '))
-          }
-        }
+        if (hq.ok && hq.data) hqMap.set(org.id, hq.data)
       } catch {
-        // Silently skip enrichment failures
+        // One org's enrichment failing must not hide the other orgs' labels.
       }
     })
 
@@ -276,13 +278,23 @@
 
   // ── Campus functions ──────────────────────────────────────────────
 
+  async function refreshHq(orgId: string) {
+    const hq = await hqLocationLabel(forge, orgId)
+    if (!hq.ok) return
+    const next = new Map(hqLocationMap)
+    if (hq.data) next.set(orgId, hq.data)
+    else next.delete(orgId)
+    hqLocationMap = next
+  }
+
   async function loadCampuses(orgId: string) {
-    const res = await fetch(`/api/organizations/${orgId}/campuses`)
-    if (res.ok) {
-      const body = await res.json()
-      orgCampuses = body.data ?? []
+    const result = await listLocationsWithAddress(forge, orgId)
+    if (selectedId !== orgId) return // another org was picked while this loaded
+    if (result.ok) {
+      orgCampuses = result.data
     } else {
       orgCampuses = []
+      addToast({ message: friendlyError(result.error, 'Failed to load locations'), type: 'error' })
     }
   }
 
@@ -298,55 +310,61 @@
     showAddCampus = false
   }
 
+  function newAddressFields(): LocationAddressFields {
+    return {
+      street_1: newCampusAddress,
+      city: newCampusCity,
+      state: newCampusState,
+      zip: newCampusZipcode,
+      country_code: newCampusCountry,
+    }
+  }
+
   async function addCampus() {
     if (!newCampusName.trim() || !selectedId) return
+    const orgId = selectedId
     savingCampus = true
-    const res = await fetch(`/api/organizations/${selectedId}/campuses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: newCampusName.trim(),
-        modality: newCampusModality,
-        city: newCampusCity.trim() || undefined,
-        state: newCampusState.trim() || undefined,
-        zipcode: newCampusZipcode.trim() || undefined,
-        address: newCampusAddress.trim() || undefined,
-        country: newCampusCountry.trim() || undefined,
-        is_headquarters: newCampusIsHQ,
-      }),
-    })
-    if (res.ok) {
-      const body = await res.json()
-      orgCampuses = [...orgCampuses, body.data]
+    const result = await createLocationWithAddress(
+      forge,
+      orgId,
+      { name: newCampusName.trim(), modality: newCampusModality as LocationModality, is_headquarters: newCampusIsHQ },
+      newAddressFields(),
+    )
+    if (result.ok) {
+      if (selectedId === orgId) orgCampuses = [...orgCampuses, result.data]
       resetCampusForm()
-      addToast({ message: `Campus "${body.data.name}" added.`, type: 'success' })
+      addToast({ message: `Campus "${result.data.name}" added.`, type: 'success' })
+      if (result.data.is_headquarters) void refreshHq(orgId)
     } else {
-      addToast({ message: 'Failed to create campus.', type: 'error' })
+      addToast({ message: friendlyError(result.error, 'Failed to create location'), type: 'error' })
     }
     savingCampus = false
   }
 
   async function deleteCampus(campusId: string) {
     deletingCampusId = campusId
-    const res = await fetch(`/api/campuses/${campusId}`, { method: 'DELETE' })
-    if (res.ok) {
+    const wasHq = !!orgCampuses.find((c) => c.id === campusId)?.is_headquarters
+    const result = await forge.organizations.deleteLocation(campusId)
+    if (result.ok) {
       orgCampuses = orgCampuses.filter(c => c.id !== campusId)
       addToast({ message: 'Campus deleted.', type: 'success' })
+      if (wasHq && selectedId) void refreshHq(selectedId)
+      // TODO: best-effort delete of the location's address when nothing else references it.
     } else {
-      addToast({ message: 'Failed to delete campus.', type: 'error' })
+      addToast({ message: friendlyError(result.error, 'Failed to delete location'), type: 'error' })
     }
     deletingCampusId = null
   }
 
-  function startEditCampus(campus: OrgCampus) {
+  function startEditCampus(campus: LocationWithAddress) {
     editingCampusId = campus.id
     editCampusName = campus.name
     editCampusModality = campus.modality
-    editCampusAddress = campus.address ?? ''
-    editCampusCity = campus.city ?? ''
-    editCampusState = campus.state ?? ''
-    editCampusZipcode = campus.zipcode ?? ''
-    editCampusCountry = campus.country ?? ''
+    editCampusAddress = campus.address?.street_1 ?? ''
+    editCampusCity = campus.address?.city ?? ''
+    editCampusState = campus.address?.state ?? ''
+    editCampusZipcode = campus.address?.zip ?? ''
+    editCampusCountry = campus.address?.country_code ?? ''
     editCampusIsHQ = !!campus.is_headquarters
   }
 
@@ -355,29 +373,29 @@
   }
 
   async function saveEditCampus() {
-    if (!editingCampusId || !editCampusName.trim()) return
+    const current = orgCampuses.find((c) => c.id === editingCampusId)
+    if (!current || !editCampusName.trim()) return
+    const orgId = selectedId
     savingCampusEdit = true
-    const res = await fetch(`/api/campuses/${editingCampusId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: editCampusName.trim(),
-        modality: editCampusModality,
-        address: editCampusAddress.trim() || null,
-        city: editCampusCity.trim() || null,
-        state: editCampusState.trim() || null,
-        zipcode: editCampusZipcode.trim() || null,
-        country: editCampusCountry.trim() || null,
-        is_headquarters: editCampusIsHQ,
-      }),
-    })
-    if (res.ok) {
-      const body = await res.json()
-      orgCampuses = orgCampuses.map(c => c.id === editingCampusId ? body.data : c)
+    const result = await updateLocationWithAddress(
+      forge,
+      current,
+      { name: editCampusName.trim(), modality: editCampusModality as LocationModality, is_headquarters: editCampusIsHQ },
+      {
+        street_1: editCampusAddress,
+        city: editCampusCity,
+        state: editCampusState,
+        zip: editCampusZipcode,
+        country_code: editCampusCountry,
+      },
+    )
+    if (result.ok) {
+      orgCampuses = orgCampuses.map(c => c.id === current.id ? result.data : c)
       editingCampusId = null
       addToast({ message: 'Campus updated.', type: 'success' })
+      if ((current.is_headquarters || result.data.is_headquarters) && orgId) void refreshHq(orgId)
     } else {
-      addToast({ message: 'Failed to update campus.', type: 'error' })
+      addToast({ message: friendlyError(result.error, 'Failed to update location'), type: 'error' })
     }
     savingCampusEdit = false
   }
@@ -784,13 +802,13 @@
                           <span class="campus-hq-badge">HQ</span>
                         {/if}
                         <span class="campus-modality">{MODALITY_LABELS[campus.modality] ?? campus.modality}</span>
-                        {#if campus.city || campus.state || campus.zipcode}
+                        {#if campus.address && (campus.address.city || campus.address.state || campus.address.zip)}
                           <span class="campus-location">
-                            {[campus.city, campus.state, campus.zipcode].filter(Boolean).join(', ')}
+                            {[formatAddress(campus.address), campus.address.zip].filter(Boolean).join(', ')}
                           </span>
                         {/if}
-                        {#if campus.address}
-                          <span class="campus-address">{campus.address}</span>
+                        {#if campus.address?.street_1}
+                          <span class="campus-address">{campus.address.street_1}</span>
                         {/if}
                       </div>
                       <button
@@ -798,6 +816,7 @@
                         onclick={() => deleteCampus(campus.id)}
                         disabled={deletingCampusId === campus.id}
                         title="Delete campus"
+                        aria-label="Delete {campus.name}"
                       >
                         {deletingCampusId === campus.id ? '...' : '×'}
                       </button>

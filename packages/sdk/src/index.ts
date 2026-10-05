@@ -122,6 +122,7 @@ export type { BulletSource } from './types'
 // Domain/Archetype entity types
 export type {
   Domain,
+  DomainWithUsage,
   Industry,
   RoleType,
   Archetype,

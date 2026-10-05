@@ -130,3 +130,14 @@ export async function updateLocationWithAddress(
   if (!loc.ok) return loc
   return { ok: true, data: { ...loc.data, address } }
 }
+
+/** "City, ST" of the org's headquarters location; '' when it has none, or no address. */
+export async function hqLocationLabel(forge: LocationClient, orgId: string): Promise<Result<string>> {
+  const res = await forge.organizations.listLocations(orgId)
+  if (!res.ok) return res
+  // Rust sends is_headquarters as 0/1, TS as a boolean.
+  const hq = res.data.find((l) => !!l.is_headquarters)
+  if (!hq?.address_id) return { ok: true, data: '' }
+  const addr = await forge.addresses.get(hq.address_id)
+  return addr.ok ? { ok: true, data: formatAddress(addr.data) } : addr
+}
