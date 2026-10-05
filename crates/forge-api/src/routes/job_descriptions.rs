@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use forge_ai::prompts::jd_skill_extraction;
 use forge_core::{
     ContactLink, CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionStatus,
-    JobDescriptionWithOrg, Skill, UpdateJobDescription,
+    JobDescriptionWithOrg, Skill, SkillRow, UpdateJobDescription,
 };
 use forge_sdk::db::{ContactStore, JdStore, SkillStore};
 
@@ -290,6 +290,15 @@ async fn list_job_description_contacts(
     Ok(Json(ApiData { data }))
 }
 
+/// Skills linked to a JD (TS job-descriptions.ts:84-92). No JD check: an unknown id gives [].
+async fn list_job_description_skills(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Vec<SkillRow>>>, ApiError> {
+    let data = with_conn(&state, move |conn| JdStore::list_skills(conn, &id)).await?;
+    Ok(Json(ApiData { data }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -308,6 +317,10 @@ pub fn router() -> Router<SharedState> {
         .route(
             "/job-descriptions/{id}/extract-skills",
             post(extract_skills),
+        )
+        .route(
+            "/job-descriptions/{id}/skills",
+            get(list_job_description_skills),
         )
         .route(
             "/job-descriptions/{id}/contacts",

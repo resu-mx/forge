@@ -6,8 +6,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
     new_id, now_iso, CreateJobDescription, ForgeError, JobDescription, JobDescriptionFilter,
-    JobDescriptionStatus, JobDescriptionWithOrg, Pagination, UpdateJobDescription,
+    JobDescriptionStatus, JobDescriptionWithOrg, Pagination, SkillRow, UpdateJobDescription,
 };
+
+use super::skill::SkillStore;
 
 /// Data-access repository for job descriptions.
 pub struct JdStore;
@@ -288,6 +290,24 @@ impl JdStore {
         Ok(result)
     }
 
+    // ── Skill links ──────────────────────────────────────────────────
+
+    /// Skills linked to a job description, ordered by name (`BINARY`, as TS). Doesn't check
+    /// that the JD exists: an unknown id has no links, so `[]`.
+    pub fn list_skills(conn: &Connection, jd_id: &str) -> Result<Vec<SkillRow>, ForgeError> {
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.name, s.category, s.created_at
+             FROM skills s
+             JOIN job_description_skills jds ON jds.skill_id = s.id
+             WHERE jds.job_description_id = ?1
+             ORDER BY s.name ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![jd_id], SkillStore::map_skill_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     fn lookup_org_name(
@@ -338,6 +358,7 @@ impl JdStore {
 mod tests {
     use super::*;
     use crate::forge::Forge;
+    use forge_core::SkillCategory;
 
     fn setup() -> Forge {
         Forge::open_memory().unwrap()
@@ -359,6 +380,46 @@ mod tests {
             parsed_locations: None,
             salary_period: Some("annual".into()),
         }
+    }
+
+    /// Link through raw SQL so these tests don't depend on `add_skill`.
+    fn link(forge: &Forge, jd_id: &str, skill_id: &str) {
+        forge
+            .conn()
+            .execute(
+                "INSERT INTO job_description_skills (job_description_id, skill_id) VALUES (?1, ?2)",
+                params![jd_id, skill_id],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn list_skills_orders_by_name_and_carries_created_at() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let tf = SkillStore::create(forge.conn(), "Terraform", Some(SkillCategory::Tool)).unwrap();
+        let k8s =
+            SkillStore::create(forge.conn(), "Kubernetes", Some(SkillCategory::Platform)).unwrap();
+        link(&forge, &jd.id, &tf.id);
+        link(&forge, &jd.id, &k8s.id);
+
+        let rows = JdStore::list_skills(forge.conn(), &jd.id).unwrap();
+        let names: Vec<_> = rows.iter().map(|r| r.base.name.as_str()).collect();
+        assert_eq!(names, ["Kubernetes", "Terraform"]);
+        assert_eq!(rows[0].base.category, SkillCategory::Platform);
+        assert!(!rows[0].created_at.is_empty());
+    }
+
+    #[test]
+    fn list_skills_is_empty_for_an_unlinked_or_unknown_jd() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        assert!(JdStore::list_skills(forge.conn(), &jd.id)
+            .unwrap()
+            .is_empty());
+        assert!(JdStore::list_skills(forge.conn(), "nope")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
