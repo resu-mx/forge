@@ -314,13 +314,16 @@ mod tests {
         let forge = setup();
         let org_id = create_org(forge.conn(), "Order Co");
         for (name, hq) in [("Zeta HQ", true), ("Alpha", false)] {
-            CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-                organization_id: org_id.clone(),
-                name: name.into(),
-                modality: None,
-                address_id: None,
-                is_headquarters: Some(hq),
-            })
+            CampusStore::create_location(
+                forge.conn(),
+                &CreateOrgLocation {
+                    organization_id: org_id.clone(),
+                    name: name.into(),
+                    modality: None,
+                    address_id: None,
+                    is_headquarters: Some(hq),
+                },
+            )
             .unwrap();
         }
         let names: Vec<_> = CampusStore::list_by_org(forge.conn(), &org_id)
@@ -335,36 +338,49 @@ mod tests {
     fn dangling_references_are_validation_errors() {
         let forge = setup();
         let org_id = create_org(forge.conn(), "FK Co");
-        let missing_org = CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: "no-such-org".into(),
-            name: "X".into(),
-            modality: None,
-            address_id: None,
-            is_headquarters: None,
-        });
+        let missing_org = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: "no-such-org".into(),
+                name: "X".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        );
         assert!(matches!(missing_org, Err(ForgeError::Validation { .. })));
 
-        let missing_addr = CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id.clone(),
-            name: "X".into(),
-            modality: None,
-            address_id: Some("no-such-address".into()),
-            is_headquarters: None,
-        });
+        let missing_addr = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id.clone(),
+                name: "X".into(),
+                modality: None,
+                address_id: Some("no-such-address".into()),
+                is_headquarters: None,
+            },
+        );
         assert!(matches!(missing_addr, Err(ForgeError::Validation { .. })));
 
-        let loc = CampusStore::create_location(forge.conn(), &CreateOrgLocation {
-            organization_id: org_id,
-            name: "Y".into(),
-            modality: None,
-            address_id: None,
-            is_headquarters: None,
-        })
+        let loc = CampusStore::create_location(
+            forge.conn(),
+            &CreateOrgLocation {
+                organization_id: org_id,
+                name: "Y".into(),
+                modality: None,
+                address_id: None,
+                is_headquarters: None,
+            },
+        )
         .unwrap();
-        let patched = CampusStore::update_location(forge.conn(), &loc.id, &UpdateOrgLocation {
-            address_id: Some(Some("no-such-address".into())),
-            ..Default::default()
-        });
+        let patched = CampusStore::update_location(
+            forge.conn(),
+            &loc.id,
+            &UpdateOrgLocation {
+                address_id: Some(Some("no-such-address".into())),
+                ..Default::default()
+            },
+        );
         assert!(matches!(patched, Err(ForgeError::Validation { .. })));
     }
 

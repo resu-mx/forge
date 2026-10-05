@@ -24,12 +24,23 @@ async fn call(r: &Router, method: &str, path: &str, body: Option<Value>) -> (Sta
     };
     let resp = r.clone().oneshot(req.body(body).unwrap()).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn org(r: &Router, name: &str) -> String {
-    let (_, o) = call(r, "POST", "/api/organizations", Some(json!({ "name": name }))).await;
+    let (_, o) = call(
+        r,
+        "POST",
+        "/api/organizations",
+        Some(json!({ "name": name })),
+    )
+    .await;
     o["data"]["id"].as_str().unwrap().to_string()
 }
 
@@ -87,8 +98,12 @@ async fn list_orders_by_name_on_both_paths() {
     }
     for base in ["locations", "campuses"] {
         let (_, list) = call(&r, "GET", &format!("/api/organizations/{o}/{base}"), None).await;
-        let names: Vec<_> =
-            list["data"].as_array().unwrap().iter().map(|l| l["name"].clone()).collect();
+        let names: Vec<_> = list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["name"].clone())
+            .collect();
         assert_eq!(names, [json!("Alpha"), json!("Zeta HQ")], "{base}");
     }
 }
@@ -106,9 +121,13 @@ async fn campus_alias_patch_and_delete() {
     .await;
     let id = created["data"]["id"].as_str().unwrap().to_string();
 
-    let (status, body) =
-        call(&r, "PATCH", &format!("/api/campuses/{id}"), Some(json!({ "is_headquarters": false })))
-            .await;
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/campuses/{id}"),
+        Some(json!({ "is_headquarters": false })),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["data"]["is_headquarters"], json!(false));
 
@@ -145,9 +164,13 @@ async fn patch_address_id_null_clears_it() {
     assert_eq!(loc["data"]["address_id"], json!(addr_id));
     let id = loc["data"]["id"].as_str().unwrap().to_string();
 
-    let (status, body) =
-        call(&r, "PATCH", &format!("/api/locations/{id}"), Some(json!({ "address_id": null })))
-            .await;
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/locations/{id}"),
+        Some(json!({ "address_id": null })),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["data"]["address_id"], Value::Null);
 }
@@ -175,8 +198,13 @@ async fn blank_name_is_400() {
     .await;
     assert_eq!(loc["data"]["name"], "Padded");
     let id = loc["data"]["id"].as_str().unwrap().to_string();
-    let (status, body) =
-        call(&r, "PATCH", &format!("/api/locations/{id}"), Some(json!({ "name": " " }))).await;
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/locations/{id}"),
+        Some(json!({ "name": " " })),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }

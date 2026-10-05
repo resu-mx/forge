@@ -12,6 +12,7 @@
 
 use forge_core::{
     CreateOrganizationInput, ForgeError, Organization, OrganizationFilter, Pagination,
+    UpdateOrganizationInput,
 };
 
 /// Business logic for organization management.
@@ -75,7 +76,7 @@ impl OrganizationService {
     pub fn update(
         &self,
         id: &str,
-        input: CreateOrganizationInput,
+        input: UpdateOrganizationInput,
     ) -> Result<Organization, ForgeError> {
         todo!()
     }

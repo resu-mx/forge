@@ -46,8 +46,10 @@ async fn create_location(
 ) -> Result<Created<OrgLocation>, ApiError> {
     input.organization_id = org_id; // the path wins over any body value, as in TS
     input.name = location_name(&input.name)?;
-    let result =
-        with_conn(&state, move |conn| CampusStore::create_location(conn, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CampusStore::create_location(conn, &input)
+    })
+    .await?;
     Ok(Created(result))
 }
 
@@ -59,8 +61,10 @@ async fn update_location(
     if let Some(name) = input.name.as_deref() {
         input.name = Some(location_name(name)?);
     }
-    let result =
-        with_conn(&state, move |conn| CampusStore::update_location(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        CampusStore::update_location(conn, &id, &input)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 
@@ -111,13 +115,19 @@ pub fn router() -> Router<SharedState> {
             "/organizations/{org_id}/locations",
             get(list_locations).post(create_location),
         )
-        .route("/locations/{id}", patch(update_location).delete(delete_location))
+        .route(
+            "/locations/{id}",
+            patch(update_location).delete(delete_location),
+        )
         // Backward-compatible aliases (migration 047; TS campuses.ts): the same handlers.
         .route(
             "/organizations/{org_id}/campuses",
             get(list_locations).post(create_location),
         )
-        .route("/campuses/{id}", patch(update_location).delete(delete_location))
+        .route(
+            "/campuses/{id}",
+            patch(update_location).delete(delete_location),
+        )
         // Aliases
         .route(
             "/organizations/{org_id}/aliases",

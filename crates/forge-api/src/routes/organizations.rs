@@ -7,7 +7,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use forge_core::{ContactLink, CreateOrganizationInput, Organization, OrganizationFilter};
+use forge_core::{
+    ContactLink, CreateOrganizationInput, Organization, OrganizationFilter, UpdateOrganizationInput,
+};
 use forge_sdk::db::{ContactStore, OrganizationStore};
 
 use crate::db::with_conn;
@@ -77,7 +79,7 @@ async fn get_organization(
 async fn update_organization(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-    Json(input): Json<CreateOrganizationInput>,
+    Json(input): Json<UpdateOrganizationInput>,
 ) -> Result<Json<ApiData<Organization>>, ApiError> {
     let result = with_conn(&state, move |conn| {
         OrganizationStore::update(conn, &id, &input)

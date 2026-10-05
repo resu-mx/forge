@@ -11,8 +11,20 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
     new_id, now_iso, CreateOrganizationInput, ForgeError, OrgTag, Organization, OrganizationFilter,
-    OrganizationStatus, Pagination,
+    OrganizationStatus, Pagination, UpdateOrganizationInput,
 };
+
+/// `organizations.org_type` values (the column's CHECK; TS `VALID_ORG_TYPES`).
+const VALID_ORG_TYPES: [&str; 8] = [
+    "company",
+    "nonprofit",
+    "government",
+    "military",
+    "education",
+    "volunteer",
+    "freelance",
+    "other",
+];
 
 /// Data access for the `organizations`, `org_tags`, `org_aliases`, and
 /// `org_locations` tables.
@@ -192,84 +204,91 @@ impl OrganizationStore {
         ))
     }
 
-    /// Partially update an organization. If `tags` is provided, the tag
-    /// list is replaced (delete-all + re-insert semantics).
+    /// Partially update an organization (`PATCH /organizations/:id`).
+    ///
+    /// Absent fields are left alone; `Some(None)` sets a nullable column to NULL. If `tags` is
+    /// provided, the tag list is replaced (delete-all + re-insert semantics).
     pub fn update(
         conn: &Connection,
         id: &str,
-        input: &CreateOrganizationInput,
+        input: &UpdateOrganizationInput,
     ) -> Result<Organization, ForgeError> {
-        // Verify exists
+        // Validate the body first, then check the id exists: the order TS uses.
+        if input.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+            return Err(ForgeError::Validation {
+                message: "Name must not be empty".into(),
+                field: Some("name".into()),
+            });
+        }
+        if let Some(ot) = input.org_type.as_deref().filter(|ot| !ot.is_empty()) {
+            if !VALID_ORG_TYPES.contains(&ot) {
+                return Err(ForgeError::Validation {
+                    message: format!("Invalid org_type: {ot}"),
+                    field: Some("org_type".into()),
+                });
+            }
+        }
+
         Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "organization".into(),
             id: id.into(),
         })?;
 
-        let mut sets = Vec::new();
-        let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut sets: Vec<String> = Vec::new();
+        let mut binds: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut set = |col: &str, value: Box<dyn rusqlite::types::ToSql>| {
+            binds.push(value);
+            sets.push(format!("{col} = ?{}", binds.len()));
+        };
 
-        // Name is always present in CreateOrganizationInput but we treat it as a partial update
-        sets.push(format!("name = ?{}", bind_values.len() + 1));
-        bind_values.push(Box::new(input.name.clone()));
-
-        if let Some(ref ot) = input.org_type {
-            sets.push(format!("org_type = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(ot.clone()));
+        if let Some(v) = &input.name {
+            set("name", Box::new(v.clone()));
         }
-        if let Some(ref ind) = input.industry {
-            sets.push(format!("industry = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(ind.clone()));
+        // An empty org_type is treated as absent, as TS does.
+        if let Some(v) = input.org_type.as_ref().filter(|v| !v.is_empty()) {
+            set("org_type", Box::new(v.clone()));
         }
-        if let Some(ref sz) = input.size {
-            sets.push(format!("size = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(sz.clone()));
+        // Option<Option<_>>: the inner Option binds NULL when it is None.
+        if let Some(v) = &input.industry {
+            set("industry", Box::new(v.clone()));
         }
-        if let Some(w) = input.worked {
-            sets.push(format!("worked = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(w));
+        if let Some(v) = &input.size {
+            set("size", Box::new(v.clone()));
         }
-        if let Some(ref et) = input.employment_type {
-            sets.push(format!("employment_type = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(et.clone()));
+        if let Some(v) = input.worked {
+            set("worked", Box::new(v));
         }
-        if let Some(ref ws) = input.website {
-            sets.push(format!("website = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(ws.clone()));
+        if let Some(v) = &input.employment_type {
+            set("employment_type", Box::new(v.clone()));
         }
-        if let Some(ref li) = input.linkedin_url {
-            sets.push(format!("linkedin_url = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(li.clone()));
+        if let Some(v) = &input.website {
+            set("website", Box::new(v.clone()));
         }
-        if let Some(ref gd) = input.glassdoor_url {
-            sets.push(format!("glassdoor_url = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(gd.clone()));
+        if let Some(v) = &input.linkedin_url {
+            set("linkedin_url", Box::new(v.clone()));
         }
-        if let Some(gr) = input.glassdoor_rating {
-            sets.push(format!("glassdoor_rating = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(gr));
+        if let Some(v) = &input.glassdoor_url {
+            set("glassdoor_url", Box::new(v.clone()));
         }
-        if let Some(ref st) = input.status {
-            sets.push(format!("status = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(st.to_string()));
+        if let Some(v) = input.glassdoor_rating {
+            set("glassdoor_rating", Box::new(v));
         }
-
-        let now = now_iso();
-        sets.push(format!("updated_at = ?{}", bind_values.len() + 1));
-        bind_values.push(Box::new(now));
+        if let Some(v) = input.status {
+            set("status", Box::new(v.map(|s| s.to_string())));
+        }
+        set("updated_at", Box::new(now_iso()));
 
         let sql = format!(
             "UPDATE organizations SET {} WHERE id = ?{}",
             sets.join(", "),
-            bind_values.len() + 1
+            binds.len() + 1
         );
-        bind_values.push(Box::new(id.to_string()));
-
+        binds.push(Box::new(id.to_string()));
         conn.execute(
             &sql,
-            rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
+            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
         )?;
 
-        // Replace tags if provided
         if let Some(ref tags) = input.tags {
             Self::replace_tags(conn, id, tags)?;
         }
@@ -530,24 +549,152 @@ mod tests {
         };
         let org = OrganizationStore::create(forge.conn(), &input).unwrap();
 
-        let update_input = CreateOrganizationInput {
-            name: "New Name".into(),
+        let update_input = UpdateOrganizationInput {
+            name: Some("New Name".into()),
             org_type: Some("nonprofit".into()),
             tags: Some(vec!["nonprofit".into()]),
-            industry: Some("education".into()),
-            size: None,
+            industry: Some(Some("education".into())),
             worked: Some(0),
-            employment_type: None,
-            website: None,
-            linkedin_url: None,
-            glassdoor_url: None,
-            glassdoor_rating: None,
-            status: None,
+            ..Default::default()
         };
         let updated = OrganizationStore::update(forge.conn(), &org.id, &update_input).unwrap();
         assert_eq!(updated.name, "New Name");
         assert_eq!(updated.org_type, "nonprofit");
         assert!(updated.tags.contains(&OrgTag::Nonprofit));
+    }
+
+    fn seed(forge: &Forge) -> Organization {
+        OrganizationStore::create(
+            forge.conn(),
+            &CreateOrganizationInput {
+                name: "Acme".into(),
+                org_type: Some("company".into()),
+                tags: None,
+                industry: None,
+                size: None,
+                worked: None,
+                employment_type: None,
+                website: Some("https://acme.test".into()),
+                linkedin_url: None,
+                glassdoor_url: None,
+                glassdoor_rating: None,
+                status: Some(OrganizationStatus::Backlog),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn update_with_only_status_leaves_other_fields() {
+        let forge = setup();
+        let org = seed(&forge);
+        let input = UpdateOrganizationInput {
+            status: Some(Some(OrganizationStatus::Researching)),
+            ..Default::default()
+        };
+        let updated = OrganizationStore::update(forge.conn(), &org.id, &input).unwrap();
+        assert_eq!(updated.status, Some(OrganizationStatus::Researching));
+        assert_eq!(updated.name, "Acme");
+        assert_eq!(updated.website.as_deref(), Some("https://acme.test"));
+    }
+
+    #[test]
+    fn update_status_null_clears_it() {
+        let forge = setup();
+        let org = seed(&forge);
+        let input = UpdateOrganizationInput {
+            status: Some(None),
+            ..Default::default()
+        };
+        assert_eq!(
+            OrganizationStore::update(forge.conn(), &org.id, &input)
+                .unwrap()
+                .status,
+            None
+        );
+    }
+
+    #[test]
+    fn update_null_clears_a_nullable_field() {
+        let forge = setup();
+        let org = seed(&forge);
+        let input = UpdateOrganizationInput {
+            website: Some(None),
+            ..Default::default()
+        };
+        let updated = OrganizationStore::update(forge.conn(), &org.id, &input).unwrap();
+        assert_eq!(updated.website, None);
+        assert_eq!(updated.status, Some(OrganizationStatus::Backlog));
+    }
+
+    #[test]
+    fn update_tags_replace_the_list() {
+        let forge = setup();
+        let org = seed(&forge);
+        let set = |tags: Vec<String>| UpdateOrganizationInput {
+            tags: Some(tags),
+            ..Default::default()
+        };
+        let updated =
+            OrganizationStore::update(forge.conn(), &org.id, &set(vec!["nonprofit".into()]))
+                .unwrap();
+        assert_eq!(updated.tags, vec![OrgTag::Nonprofit]);
+        let updated =
+            OrganizationStore::update(forge.conn(), &org.id, &set(vec!["university".into()]))
+                .unwrap();
+        assert_eq!(updated.tags, vec![OrgTag::University]);
+        // Absent tags leave the list alone.
+        let updated = OrganizationStore::update(
+            forge.conn(),
+            &org.id,
+            &UpdateOrganizationInput {
+                name: Some("Acme 2".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.tags, vec![OrgTag::University]);
+    }
+
+    #[test]
+    fn update_rejects_a_blank_name() {
+        let forge = setup();
+        let org = seed(&forge);
+        let input = UpdateOrganizationInput {
+            name: Some("  ".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            OrganizationStore::update(forge.conn(), &org.id, &input),
+            Err(ForgeError::Validation { .. })
+        ));
+    }
+
+    #[test]
+    fn update_rejects_an_unknown_org_type() {
+        let forge = setup();
+        let org = seed(&forge);
+        let input = UpdateOrganizationInput {
+            org_type: Some("guild".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            OrganizationStore::update(forge.conn(), &org.id, &input),
+            Err(ForgeError::Validation { .. })
+        ));
+    }
+
+    #[test]
+    fn update_unknown_id_is_not_found() {
+        let forge = setup();
+        let input = UpdateOrganizationInput {
+            name: Some("X".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            OrganizationStore::update(forge.conn(), "nope", &input),
+            Err(ForgeError::NotFound { .. })
+        ));
     }
 
     #[test]
