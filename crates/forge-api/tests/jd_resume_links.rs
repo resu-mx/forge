@@ -8,8 +8,8 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use forge_api::{app, AppState};
-use forge_core::{CreateJobDescription, CreateResume};
-use forge_sdk::db::{JdResumeStore, JdStore, ResumeStore};
+use forge_core::{CreateJobDescription, CreateOrganizationInput, CreateResume};
+use forge_sdk::db::{JdResumeStore, JdStore, OrganizationStore, ResumeStore};
 use forge_sdk::Forge;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -64,6 +64,11 @@ fn resume(f: &Forge, name: &str) -> String {
 fn jd(f: &Forge, v: Value) -> String {
     let input: CreateJobDescription = serde_json::from_value(v).unwrap();
     JdStore::create(f.conn(), &input).unwrap().id
+}
+
+fn org(f: &Forge, name: &str) -> String {
+    let input: CreateOrganizationInput = serde_json::from_value(json!({ "name": name })).unwrap();
+    OrganizationStore::create(f.conn(), &input).unwrap().id
 }
 
 fn keys(v: &Value) -> BTreeSet<String> {
@@ -327,4 +332,104 @@ async fn jd_resumes_unknown_jd_is_404() {
         .as_str()
         .unwrap()
         .starts_with("Route not found"));
+}
+
+// ── GET /resumes/:id/job-descriptions (forge#29) ─────────────────────
+
+#[tokio::test]
+async fn resume_jds_list_jd_link_shape_with_org_newest_first() {
+    let f = Forge::open_memory().unwrap();
+    let o = org(&f, "Anthropic");
+    let with_org = jd(
+        &f,
+        json!({
+            "title": "Security Engineer", "raw_text": "", "organization_id": o,
+            "location": "Remote", "salary_range": "$150k-$200k",
+        }),
+    );
+    let no_org = jd(&f, json!({"title": "No Org JD", "raw_text": ""}));
+    let res = resume(&f, "A");
+    link_at(&f, &no_org, &res, "2026-01-01T00:00:00Z");
+    link_at(&f, &with_org, &res, "2026-01-02T00:00:00Z");
+    let r = app(AppState::new(f));
+
+    let (status, body) = call(
+        &r,
+        "GET",
+        &format!("/api/resumes/{res}/job-descriptions"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("pagination").is_none());
+    let items = body["data"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(
+        keys(&items[0]),
+        set(&[
+            "created_at",
+            "jd_created_at",
+            "job_description_id",
+            "location",
+            "organization_name",
+            "salary_range",
+            "status",
+            "title"
+        ])
+    );
+    assert_eq!(items[0]["job_description_id"], with_org.as_str());
+    assert_eq!(items[0]["organization_name"], "Anthropic");
+    assert_eq!(items[0]["status"], "discovered");
+    assert_eq!(items[0]["location"], "Remote");
+    assert_eq!(items[0]["salary_range"], "$150k-$200k");
+    assert_eq!(items[0]["created_at"], "2026-01-02T00:00:00Z");
+    assert!(items[0]["jd_created_at"].is_string());
+    assert_ne!(items[0]["jd_created_at"], items[0]["created_at"]);
+    assert!(items[1]["organization_name"].is_null());
+}
+
+#[tokio::test]
+async fn resume_jds_same_second_links_list_later_first() {
+    let f = Forge::open_memory().unwrap();
+    let (a, b) = (
+        jd(&f, json!({"title": "A", "raw_text": ""})),
+        jd(&f, json!({"title": "B", "raw_text": ""})),
+    );
+    let res = resume(&f, "R");
+    link_at(&f, &a, &res, "2026-01-01T00:00:00Z");
+    link_at(&f, &b, &res, "2026-01-01T00:00:00Z");
+    let r = app(AppState::new(f));
+    let (_, body) = call(
+        &r,
+        "GET",
+        &format!("/api/resumes/{res}/job-descriptions"),
+        None,
+    )
+    .await;
+    assert_eq!(body["data"][0]["title"], "B");
+    assert_eq!(body["data"][1]["title"], "A");
+}
+
+#[tokio::test]
+async fn resume_jds_empty_for_unlinked_resume() {
+    let f = Forge::open_memory().unwrap();
+    let res = resume(&f, "A");
+    let r = app(AppState::new(f));
+    let (status, body) = call(
+        &r,
+        "GET",
+        &format!("/api/resumes/{res}/job-descriptions"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"data": []}));
+}
+
+#[tokio::test]
+async fn resume_jds_unknown_resume_is_404() {
+    let r = app(AppState::new(Forge::open_memory().unwrap()));
+    let (status, body) = call(&r, "GET", "/api/resumes/nope/job-descriptions", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
 }
