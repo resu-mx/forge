@@ -16,6 +16,7 @@ pub mod review_service;
 pub mod skill_service;
 pub mod source_service;
 pub mod summary_service;
+pub mod tagline;
 pub mod typst_render;
 
 pub use audit_service::AuditService;
