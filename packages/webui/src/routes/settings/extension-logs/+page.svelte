@@ -196,6 +196,7 @@
 
 {#if showClearConfirm}
   <ConfirmDialog
+    open={showClearConfirm}
     title="Clear All Logs"
     message="This will permanently delete all extension error logs. This cannot be undone."
     confirmLabel="Clear All"

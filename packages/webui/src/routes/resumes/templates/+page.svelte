@@ -250,6 +250,7 @@
 
 {#if deleteTarget}
   <ConfirmDialog
+    open={deleteTarget !== null}
     title="Delete Template"
     message={`Are you sure you want to delete "${deleteTarget.name}"?`}
     confirmLabel="Delete"

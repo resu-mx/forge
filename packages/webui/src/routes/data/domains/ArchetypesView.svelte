@@ -46,7 +46,7 @@
     if (archResult.ok) {
       archetypes = archResult.data as ArchetypeWithCounts[]
     } else {
-      addToast(friendlyError(archResult.error, 'Failed to load archetypes'), 'error')
+      addToast({ message: friendlyError(archResult.error, 'Failed to load archetypes'), type: 'error' })
     }
     if (domResult.ok) {
       allDomains = domResult.data
@@ -65,13 +65,13 @@
       description: createDescription.trim() || undefined,
     })
     if (result.ok) {
-      addToast(`Archetype '${result.data.name}' created`, 'success')
+      addToast({ message: `Archetype '${result.data.name}' created`, type: 'success' })
       createName = ''
       createDescription = ''
       showCreateForm = false
       await loadArchetypes()
     } else {
-      addToast(friendlyError(result.error, 'Failed to create archetype'), 'error')
+      addToast({ message: friendlyError(result.error, 'Failed to create archetype'), type: 'error' })
     }
     creating = false
   }
@@ -95,11 +95,11 @@
       description: editDescription.trim() || null,
     })
     if (result.ok) {
-      addToast('Archetype updated', 'success')
+      addToast({ message: 'Archetype updated', type: 'success' })
       editingId = null
       await loadArchetypes()
     } else {
-      addToast(friendlyError(result.error, 'Failed to update archetype'), 'error')
+      addToast({ message: friendlyError(result.error, 'Failed to update archetype'), type: 'error' })
     }
     saving = false
   }
@@ -116,7 +116,7 @@
     if (result.ok) {
       expandedDomains = result.data
     } else {
-      addToast(friendlyError(result.error, 'Failed to load domains'), 'error')
+      addToast({ message: friendlyError(result.error, 'Failed to load domains'), type: 'error' })
     }
     domainLoading = false
   }
@@ -134,7 +134,7 @@
         expandedDomains = expandedDomains.filter((d) => d.id !== domainId)
         await loadArchetypes()
       } else {
-        addToast(friendlyError(result.error, 'Failed to remove domain'), 'error')
+        addToast({ message: friendlyError(result.error, 'Failed to remove domain'), type: 'error' })
       }
     } else {
       const result = await forge.archetypes.addDomain(expandedId, domainId)
@@ -143,7 +143,7 @@
         if (domain) expandedDomains = [...expandedDomains, domain]
         await loadArchetypes()
       } else {
-        addToast(friendlyError(result.error, 'Failed to add domain'), 'error')
+        addToast({ message: friendlyError(result.error, 'Failed to add domain'), type: 'error' })
       }
     }
   }
@@ -158,13 +158,13 @@
     if (!deleteTarget) return
     const result = await forge.archetypes.delete(deleteTarget.id)
     if (result.ok) {
-      addToast(`Archetype '${deleteTarget.name}' deleted`, 'success')
+      addToast({ message: `Archetype '${deleteTarget.name}' deleted`, type: 'success' })
       deleteConfirm = false
       deleteTarget = null
       if (expandedId === deleteTarget?.id) expandedId = null
       await loadArchetypes()
     } else {
-      addToast(friendlyError(result.error, 'Cannot delete archetype'), 'error')
+      addToast({ message: friendlyError(result.error, 'Cannot delete archetype'), type: 'error' })
       deleteConfirm = false
       deleteTarget = null
     }
@@ -314,6 +314,7 @@
 
 {#if deleteConfirm && deleteTarget}
   <ConfirmDialog
+    open={deleteConfirm}
     title="Delete Archetype"
     message={`Are you sure you want to delete '${deleteTarget.name}'? This will also remove all domain associations.`}
     onconfirm={handleDelete}
