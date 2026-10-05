@@ -8,10 +8,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use forge_core::ForgeError;
 use forge_core::{
     Certification, CertificationWithSkills, CreateCertification, Skill, UpdateCertification,
 };
-use forge_sdk::db::CertificationStore;
+use forge_sdk::db::{CertificationStore, SkillStore};
 
 use crate::db::with_conn;
 use crate::error::ApiError;
@@ -22,7 +23,8 @@ use crate::state::SharedState;
 
 #[derive(Debug, Deserialize)]
 pub struct AddSkillBody {
-    pub skill_id: String,
+    /// Optional so a missing value gets the TS message, not axum's rejection text.
+    pub skill_id: Option<String>,
 }
 
 // -- Handlers ────────────────────────────────────────────────────────
@@ -99,12 +101,36 @@ async fn add_certification_skill(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     Json(body): Json<AddSkillBody>,
-) -> Result<NoContent, ApiError> {
-    with_conn(&state, move |conn| {
-        CertificationStore::add_skill(conn, &id, &body.skill_id)
+) -> Result<Json<ApiData<CertificationWithSkills>>, ApiError> {
+    let skill_id =
+        body.skill_id
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| ForgeError::Validation {
+                message: "skill_id is required".into(),
+                field: Some("skill_id".into()),
+            })?;
+
+    let data = with_conn(&state, move |conn| {
+        // TS pre-checks: 404 for either side, certification first.
+        if CertificationStore::get(conn, &id)?.is_none() {
+            return Err(ForgeError::NotFound {
+                entity_type: "Certification".into(),
+                id: id.clone(),
+            });
+        }
+        if SkillStore::get(conn, &skill_id)?.is_none() {
+            return Err(ForgeError::NotFound {
+                entity_type: "Skill".into(),
+                id: skill_id.clone(),
+            });
+        }
+        CertificationStore::add_skill(conn, &id, &skill_id)?;
+        CertificationStore::get_with_skills(conn, &id)?.ok_or_else(|| {
+            ForgeError::Internal("Certification missing after linking a skill".into())
+        })
     })
     .await?;
-    Ok(NoContent)
+    Ok(Json(ApiData { data }))
 }
 
 async fn remove_certification_skill(
@@ -112,6 +138,12 @@ async fn remove_certification_skill(
     Path((cert_id, skill_id)): Path<(String, String)>,
 ) -> Result<NoContent, ApiError> {
     with_conn(&state, move |conn| {
+        if CertificationStore::get(conn, &cert_id)?.is_none() {
+            return Err(ForgeError::NotFound {
+                entity_type: "Certification".into(),
+                id: cert_id.clone(),
+            });
+        }
         CertificationStore::remove_skill(conn, &cert_id, &skill_id)
     })
     .await?;
