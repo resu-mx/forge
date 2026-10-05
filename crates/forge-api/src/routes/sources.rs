@@ -4,7 +4,7 @@
 //! same JSON shapes, so the webui and MCP server continue working.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
@@ -201,6 +201,18 @@ async fn add_source_skill(
     Ok(Created(skill))
 }
 
+/// Unlink a skill from a source. 404 when there is no such link (unlike JD skills).
+async fn remove_source_skill(
+    State(state): State<SharedState>,
+    Path((id, skill_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| {
+        SourceStore::remove_skill(conn, &id, &skill_id)
+    })
+    .await?;
+    Ok(NoContent)
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -217,5 +229,9 @@ pub fn router() -> Router<SharedState> {
         .route(
             "/sources/{id}/skills",
             get(list_source_skills).post(add_source_skill),
+        )
+        .route(
+            "/sources/{id}/skills/{skill_id}",
+            delete(remove_source_skill),
         )
 }
