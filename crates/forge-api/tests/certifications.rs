@@ -101,3 +101,114 @@ async fn get_returns_hydrated_certification_and_404_for_unknown() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"]["code"], "NOT_FOUND");
 }
+
+const UNKNOWN: &str = "00000000-0000-4000-8000-000000000000";
+
+async fn create_skill(r: &Router, name: &str) -> String {
+    let (status, body) = call(r, "POST", "/api/skills", Some(json!({ "name": name }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    body["data"]["id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn linking_a_skill_returns_the_hydrated_certification() {
+    let r = router();
+    let cert = create_cert(&r, "CISSP").await;
+    let skill = create_skill(&r, "Cert Test Security").await;
+
+    for _ in 0..2 {
+        let (status, body) = call(
+            &r,
+            "POST",
+            &format!("/api/certifications/{cert}/skills"),
+            Some(json!({ "skill_id": skill })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["data"]["id"], cert.as_str());
+        assert_eq!(body["data"]["skills"].as_array().unwrap().len(), 1);
+        assert_eq!(body["data"]["skills"][0]["id"], skill.as_str());
+    }
+
+    // Rust-only GET sub-resource keeps working.
+    let (status, body) = call(
+        &r,
+        "GET",
+        &format!("/api/certifications/{cert}/skills"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn link_errors_match_ts() {
+    let r = router();
+    let cert = create_cert(&r, "CISSP").await;
+    let skill = create_skill(&r, "Cert Test Security").await;
+    let url = format!("/api/certifications/{cert}/skills");
+
+    for body in [
+        json!({}),
+        json!({ "skill_id": null }),
+        json!({ "skill_id": "" }),
+    ] {
+        let (status, err) = call(&r, "POST", &url, Some(body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+        assert!(err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("skill_id is required"));
+    }
+
+    let (status, err) = call(
+        &r,
+        "POST",
+        &format!("/api/certifications/{UNKNOWN}/skills"),
+        Some(json!({ "skill_id": skill })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["code"], "NOT_FOUND");
+
+    let (status, _) = call(&r, "POST", &url, Some(json!({ "skill_id": UNKNOWN }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Neither failure wrote a row.
+    let (_, body) = call(&r, "GET", &format!("/api/certifications/{cert}"), None).await;
+    assert_eq!(body["data"]["skills"], json!([]));
+}
+
+#[tokio::test]
+async fn unlink_is_idempotent_and_404s_for_unknown_certification() {
+    let r = router();
+    let cert = create_cert(&r, "CISSP").await;
+    let skill = create_skill(&r, "Cert Test Security").await;
+    call(
+        &r,
+        "POST",
+        &format!("/api/certifications/{cert}/skills"),
+        Some(json!({ "skill_id": skill })),
+    )
+    .await;
+
+    let url = format!("/api/certifications/{cert}/skills/{skill}");
+    for _ in 0..2 {
+        let (status, _) = call(&r, "DELETE", &url, None).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+    let (_, body) = call(&r, "GET", &format!("/api/certifications/{cert}"), None).await;
+    assert_eq!(body["data"]["skills"], json!([]));
+
+    let (status, err) = call(
+        &r,
+        "DELETE",
+        &format!("/api/certifications/{UNKNOWN}/skills/{skill}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(err["error"]["code"], "NOT_FOUND");
+}
