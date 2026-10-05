@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
@@ -325,6 +325,19 @@ async fn add_job_description_skill(
     Ok(Created(skill))
 }
 
+/// `DELETE /job-descriptions/:jd_id/skills/:skill_id` (TS job-descriptions.ts:136-142). Always
+/// 204, also when nothing was linked or the JD or skill is unknown. Never deletes the skill.
+async fn remove_job_description_skill(
+    State(state): State<SharedState>,
+    Path((jd_id, skill_id)): Path<(String, String)>,
+) -> Result<NoContent, ApiError> {
+    with_conn(&state, move |conn| {
+        JdStore::remove_skill(conn, &jd_id, &skill_id)
+    })
+    .await?;
+    Ok(NoContent)
+}
+
 // ── JD <-> resume links ─────────────────────────────────────────────
 
 /// Body of `POST /job-descriptions/:id/resumes` (TS job-descriptions.ts:221).
@@ -443,6 +456,10 @@ pub fn router() -> Router<SharedState> {
         .route(
             "/job-descriptions/{id}/skills",
             get(list_job_description_skills).post(add_job_description_skill),
+        )
+        .route(
+            "/job-descriptions/{jd_id}/skills/{skill_id}",
+            delete(remove_job_description_skill),
         )
         .route(
             "/job-descriptions/{id}/resumes",

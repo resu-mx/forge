@@ -10,6 +10,7 @@
   import type { ResumeHeader, ResumeTaglineState } from '@forge/sdk'
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
+  import { taglineView } from '$lib/tagline-view'
 
   let {
     header,
@@ -26,6 +27,8 @@
   let saving = $state(false)
   let regenerating = $state(false)
   let taglineValue = $state('')
+  /** Set when GET /resumes/:id/tagline fails; cleared by the next successful load. */
+  let taglineError = $state<string | null>(null)
   /**
    * Whether the "Show Clearance" toggle should appear when clearance is
    * hidden. True when the user has active clearance credentials but the
@@ -40,10 +43,14 @@
   })
 
   async function loadTaglineState() {
+    taglineError = null
     const res = await forge.resumes.getTagline(resumeId)
     if (res.ok) {
       taglineState = res.data
-      taglineValue = res.data.tagline_override ?? res.data.generated_tagline ?? ''
+      taglineValue = taglineView(res.data, null).editSeed // the seed does not depend on header
+    } else {
+      taglineState = null
+      taglineError = friendlyError(res.error, 'Tagline status unavailable')
     }
   }
 
@@ -73,9 +80,7 @@
   }
 
   /** The tagline actually shown in the preview: override > generated > header.tagline (legacy fallback). */
-  let displayTagline = $derived(
-    taglineState?.resolved || header.tagline || '',
-  )
+  let view = $derived(taglineView(taglineState, header.tagline))
 
   async function handleSaveOverride() {
     saving = true
@@ -138,12 +143,12 @@
 
   function startEdit() {
     editingTagline = true
-    taglineValue = taglineState?.tagline_override ?? taglineState?.generated_tagline ?? ''
+    taglineValue = view.editSeed
   }
 
   function cancelEdit() {
     editingTagline = false
-    taglineValue = taglineState?.tagline_override ?? taglineState?.generated_tagline ?? ''
+    taglineValue = view.editSeed
   }
 </script>
 
@@ -169,25 +174,31 @@
       </form>
     {:else}
       <div class="tagline-row">
-        {#if displayTagline}
-          <p class="header-tagline">{displayTagline}</p>
+        {#if view.display}
+          <p class="header-tagline">{view.display}</p>
         {:else}
           <p class="header-tagline placeholder">No tagline — link a job description or set an override</p>
         {/if}
-        {#if taglineState?.has_override}
+        {#if view.badge === 'override'}
           <span class="tagline-badge override" title="Using manual override">OVERRIDE</span>
-        {:else if taglineState?.generated_tagline}
+        {:else if view.badge === 'auto'}
           <span class="tagline-badge generated" title="Auto-generated from linked JDs">AUTO</span>
         {/if}
       </div>
+      {#if taglineError}
+        <p class="tagline-error" role="alert">
+          {taglineError}
+          <button class="btn btn-sm btn-ghost" type="button" onclick={() => loadTaglineState()}>Retry</button>
+        </p>
+      {/if}
       <div class="tagline-controls">
         <button class="btn btn-sm btn-ghost" onclick={startEdit}>
-          {taglineState?.has_override ? 'Edit Override' : 'Set Override'}
+          {view.canReset ? 'Edit Override' : 'Set Override'}
         </button>
         <button class="btn btn-sm btn-ghost" onclick={handleRegenerate} disabled={regenerating}>
           {regenerating ? 'Regenerating...' : 'Regenerate'}
         </button>
-        {#if taglineState?.has_override}
+        {#if view.canReset}
           <button class="btn btn-sm btn-ghost" onclick={handleResetOverride} disabled={saving}>
             Reset to Generated
           </button>
@@ -284,6 +295,12 @@
   .tagline-badge.generated {
     background: var(--color-info-subtle);
     color: var(--color-info-text);
+  }
+
+  .tagline-error {
+    color: var(--color-danger);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
   }
 
   .tagline-controls {
