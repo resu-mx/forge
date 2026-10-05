@@ -4,8 +4,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
-    new_id, now_iso, Certification, CreateCertification, ForgeError, Pagination, Skill,
-    SkillCategory, UpdateCertification,
+    new_id, now_iso, Certification, CertificationWithSkills, CreateCertification, ForgeError,
+    Skill, SkillCategory, UpdateCertification,
 };
 
 /// Data access for the `certifications` and `certification_skills` tables.
@@ -61,35 +61,44 @@ impl CertificationStore {
         Ok(result)
     }
 
-    /// List certifications with pagination.
-    pub fn list(
-        conn: &Connection,
-        offset: i64,
-        limit: i64,
-    ) -> Result<(Vec<Certification>, Pagination), ForgeError> {
-        let total: i64 =
-            conn.query_row("SELECT COUNT(*) FROM certifications", [], |row| row.get(0))?;
-
+    /// Every certification, sorted by `short_name`. No pagination: the TS route
+    /// returns all rows (certification-service.ts:86-102).
+    pub fn list_all(conn: &Connection) -> Result<Vec<Certification>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT id, short_name, long_name, cert_id, issuer_id, date_earned,
                     expiry_date, credential_id, credential_url, credly_url,
                     in_progress, created_at, updated_at
              FROM certifications
-             ORDER BY created_at DESC
-             LIMIT ?1 OFFSET ?2",
+             ORDER BY short_name ASC",
         )?;
         let rows: Vec<Certification> = stmt
-            .query_map(params![limit, offset], Self::map_certification)?
+            .query_map([], Self::map_certification)?
             .collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
 
-        Ok((
-            rows,
-            Pagination {
-                total,
-                offset,
-                limit,
-            },
-        ))
+    /// A certification with its linked skills, or `None` for an unknown id.
+    pub fn get_with_skills(
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<CertificationWithSkills>, ForgeError> {
+        let Some(base) = Self::get(conn, id)? else {
+            return Ok(None);
+        };
+        let skills = Self::get_skills(conn, id)?;
+        Ok(Some(CertificationWithSkills { base, skills }))
+    }
+
+    /// Every certification with its linked skills, sorted by `short_name`.
+    /// One `get_skills` query per row; certification lists are small.
+    pub fn list_with_skills(conn: &Connection) -> Result<Vec<CertificationWithSkills>, ForgeError> {
+        Self::list_all(conn)?
+            .into_iter()
+            .map(|base| {
+                let skills = Self::get_skills(conn, &base.id)?;
+                Ok(CertificationWithSkills { base, skills })
+            })
+            .collect()
     }
 
     // ── Update ───────────────────────────────────────────────────────
@@ -313,45 +322,69 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn list_certifications() {
-        let forge = setup();
-        CertificationStore::create(
-            forge.conn(),
-            &CreateCertification {
-                short_name: "CKA".into(),
-                long_name: "Certified Kubernetes Administrator".into(),
-                cert_id: None,
-                issuer_id: None,
-                date_earned: None,
-                expiry_date: None,
-                credential_id: None,
-                credential_url: None,
-                credly_url: None,
-                in_progress: None,
-            },
-        )
-        .unwrap();
-        CertificationStore::create(
-            forge.conn(),
-            &CreateCertification {
-                short_name: "CKAD".into(),
-                long_name: "Certified Kubernetes Application Developer".into(),
-                cert_id: None,
-                issuer_id: None,
-                date_earned: None,
-                expiry_date: None,
-                credential_id: None,
-                credential_url: None,
-                credly_url: None,
-                in_progress: None,
-            },
-        )
-        .unwrap();
+    fn minimal(short: &str) -> CreateCertification {
+        CreateCertification {
+            short_name: short.into(),
+            long_name: format!("{short} long"),
+            cert_id: None,
+            issuer_id: None,
+            date_earned: None,
+            expiry_date: None,
+            credential_id: None,
+            credential_url: None,
+            credly_url: None,
+            in_progress: None,
+        }
+    }
 
-        let (certs, pagination) = CertificationStore::list(forge.conn(), 0, 50).unwrap();
-        assert_eq!(certs.len(), 2);
-        assert_eq!(pagination.total, 2);
+    #[test]
+    fn list_with_skills_sorts_by_short_name_and_hydrates() {
+        let forge = setup();
+        let mut ids = std::collections::HashMap::new();
+        for name in ["PMP", "CISSP", "AWS"] {
+            let c = CertificationStore::create(forge.conn(), &minimal(name)).unwrap();
+            ids.insert(name, c.id);
+        }
+        let sk = create_skill(forge.conn(), "Cloud");
+        CertificationStore::add_skill(forge.conn(), &ids["AWS"], &sk.id).unwrap();
+
+        let all = CertificationStore::list_with_skills(forge.conn()).unwrap();
+        let names: Vec<_> = all.iter().map(|c| c.base.short_name.as_str()).collect();
+        assert_eq!(names, ["AWS", "CISSP", "PMP"]);
+        assert_eq!(all[0].skills.len(), 1);
+        assert_eq!(all[0].skills[0].name, "Cloud");
+        assert!(all[1].skills.is_empty());
+        assert!(all[2].skills.is_empty());
+    }
+
+    #[test]
+    fn get_with_skills_hydrates_and_none_for_missing() {
+        let forge = setup();
+        assert!(
+            CertificationStore::get_with_skills(forge.conn(), "nonexistent")
+                .unwrap()
+                .is_none()
+        );
+        let cert = CertificationStore::create(forge.conn(), &minimal("CKA")).unwrap();
+        let s = create_skill(forge.conn(), "Kubernetes");
+        CertificationStore::add_skill(forge.conn(), &cert.id, &s.id).unwrap();
+        let got = CertificationStore::get_with_skills(forge.conn(), &cert.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(got.base.id, cert.id);
+        assert_eq!(got.skills.len(), 1);
+    }
+
+    #[test]
+    fn list_all_is_not_capped_at_50() {
+        let forge = setup();
+        for i in 0..51 {
+            CertificationStore::create(forge.conn(), &minimal(&format!("C{i:02}"))).unwrap();
+        }
+        assert_eq!(
+            CertificationStore::list_all(forge.conn()).unwrap().len(),
+            51
+        );
     }
 
     #[test]

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { PageHeader, ConfirmDialog } from '$lib/components'
+  import ExtensionUnavailable from '$lib/components/ExtensionUnavailable.svelte'
+  import { extensionPagesAvailable } from '$lib/extension-gate'
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import type { ExtensionLog } from '@forge/sdk'
@@ -90,12 +92,17 @@
     }
   }
 
-  onMount(loadLogs)
+  onMount(() => {
+    if (extensionPagesAvailable) loadLogs()
+  })
 </script>
 
 <div class="logs-page">
   <PageHeader title="Extension Logs" subtitle="Server-side error logs from the browser extension." />
 
+  {#if !extensionPagesAvailable}
+    <ExtensionUnavailable />
+  {:else}
   <div class="toolbar">
     <div class="filters">
       <input
@@ -183,6 +190,7 @@
       <span class="page-info">Showing {offset + 1}–{offset + logs.length}</span>
       <button class="btn btn-ghost" onclick={nextPage} disabled={!hasMore}>Next</button>
     </div>
+  {/if}
   {/if}
 </div>
 

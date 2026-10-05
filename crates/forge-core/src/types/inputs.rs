@@ -953,6 +953,23 @@ pub struct UpsertAnswerInput {
     pub value: String,
 }
 
+// ── Extension ───────────────────────────────────────────────────────
+
+/// Body of `POST /extension/log` (TS `CreateExtensionLog`, extension-log-service.ts:24-31).
+///
+/// The required fields are `Option`, so a missing one reaches the store's check and gets
+/// the TS message ("error_code is required") instead of axum's rejection text.
+/// Unknown fields (the extension sends none, but older builds might) are ignored.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CreateExtensionLog {
+    pub error_code: Option<String>,
+    pub message: Option<String>,
+    pub layer: Option<String>,
+    pub plugin: Option<String>,
+    pub url: Option<String>,
+    pub context: Option<serde_json::Value>,
+}
+
 // ── Derivation ───────────────────────────────────────────────────────
 
 /// Input for creating a PendingDerivation.

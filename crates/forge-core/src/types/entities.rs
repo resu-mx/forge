@@ -812,3 +812,53 @@ pub struct AnswerBankEntry {
     pub created_at: String,
     pub updated_at: String,
 }
+
+// ── Extension ───────────────────────────────────────────────────────
+
+/// Config key names for the browser extension (TS `VALID_KEYS`,
+/// `packages/core/src/services/extension-config-service.ts:25`).
+pub const EXTENSION_CONFIG_KEYS: [&str; 4] = [
+    "baseUrl",
+    "devMode",
+    "enabledPlugins",
+    "enableServerLogging",
+];
+
+/// The browser extension's config, as `GET /extension/config` returns it.
+///
+/// Values are raw JSON. TS stores whatever `PUT` sent and never type-checks it,
+/// so a typed field would fail on a value TS returns as-is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionConfig {
+    pub base_url: serde_json::Value,
+    pub dev_mode: serde_json::Value,
+    pub enabled_plugins: serde_json::Value,
+    pub enable_server_logging: serde_json::Value,
+}
+
+impl Default for ExtensionConfig {
+    /// TS `DEFAULTS` (extension-config-service.ts:18-23).
+    fn default() -> Self {
+        Self {
+            base_url: serde_json::json!("http://localhost:3000"),
+            dev_mode: serde_json::json!(false),
+            enabled_plugins: serde_json::json!(["linkedin"]),
+            enable_server_logging: serde_json::json!(true),
+        }
+    }
+}
+
+/// A stored browser-extension error report (`extension_logs`, migration 051).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionLog {
+    pub id: String,
+    pub error_code: String,
+    pub message: String,
+    pub layer: String,
+    pub plugin: Option<String>,
+    pub url: Option<String>,
+    /// Parsed from the JSON text in `extension_logs.context`.
+    pub context: Option<serde_json::Value>,
+    pub created_at: String,
+}

@@ -296,3 +296,125 @@ mod entity_serde {
         assert!(back.end_date.is_none());
     }
 }
+
+#[cfg(test)]
+mod extension_wire {
+    use serde_json::json;
+
+    use super::super::common::*;
+    use super::super::entities::*;
+    use super::super::inputs::*;
+
+    #[test]
+    fn config_defaults_match_ts() {
+        assert_eq!(
+            serde_json::to_value(ExtensionConfig::default()).unwrap(),
+            json!({
+                "baseUrl": "http://localhost:3000",
+                "devMode": false,
+                "enabledPlugins": ["linkedin"],
+                "enableServerLogging": true
+            })
+        );
+    }
+
+    #[test]
+    fn config_keys_match_wire_field_names() {
+        let v = serde_json::to_value(ExtensionConfig::default()).unwrap();
+        let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        let mut expected: Vec<_> = EXTENSION_CONFIG_KEYS
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(keys, expected);
+    }
+
+    #[test]
+    fn config_round_trips_any_json_value() {
+        let wire = json!({
+            "baseUrl": "yes",
+            "devMode": 1,
+            "enabledPlugins": null,
+            "enableServerLogging": {}
+        });
+        let cfg: ExtensionConfig = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&cfg).unwrap(), wire);
+
+        let wire = json!({
+            "baseUrl": ["a"],
+            "devMode": "yes",
+            "enabledPlugins": 3.5,
+            "enableServerLogging": false
+        });
+        let cfg: ExtensionConfig = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&cfg).unwrap(), wire);
+    }
+
+    #[test]
+    fn log_absent_fields_are_null_not_omitted() {
+        let log = ExtensionLog {
+            id: "00000000-0000-4000-8000-000000000000".into(),
+            error_code: "API_UNREACHABLE".into(),
+            message: "Failed to fetch".into(),
+            layer: "sdk".into(),
+            plugin: None,
+            url: None,
+            context: None,
+            created_at: "2026-10-02T12:00:00Z".into(),
+        };
+        let v = serde_json::to_value(&log).unwrap();
+        for key in ["plugin", "url", "context"] {
+            assert!(v.as_object().unwrap().contains_key(key), "{key} missing");
+            assert!(v[key].is_null());
+        }
+    }
+
+    #[test]
+    fn log_context_serialises_as_json_value_not_string() {
+        let log = ExtensionLog {
+            id: "i".into(),
+            error_code: "E".into(),
+            message: "m".into(),
+            layer: "plugin".into(),
+            plugin: Some("linkedin".into()),
+            url: Some("https://x".into()),
+            context: Some(json!({ "step": "extract_title" })),
+            created_at: "t".into(),
+        };
+        let v = serde_json::to_value(&log).unwrap();
+        assert_eq!(v["context"], json!({ "step": "extract_title" }));
+    }
+
+    #[test]
+    fn create_log_tolerates_missing_and_unknown_fields() {
+        let empty: CreateExtensionLog = serde_json::from_value(json!({})).unwrap();
+        assert!(empty.error_code.is_none() && empty.context.is_none());
+
+        let full: CreateExtensionLog = serde_json::from_value(json!({
+            "error_code": "PLUGIN_THREW", "message": "parse error", "layer": "plugin",
+            "plugin": "linkedin", "url": "https://linkedin.com/jobs/123",
+            "context": { "step": "extract_title" }, "timestamp": "ignored"
+        }))
+        .unwrap();
+        assert_eq!(full.context, Some(json!({ "step": "extract_title" })));
+        assert_eq!(full.error_code.as_deref(), Some("PLUGIN_THREW"));
+    }
+
+    #[test]
+    fn log_filter_default_is_all_none() {
+        let f = ExtensionLogFilter::default();
+        assert!(
+            f.limit.is_none() && f.offset.is_none() && f.error_code.is_none() && f.layer.is_none()
+        );
+    }
+
+    #[test]
+    fn types_reachable_from_crate_root() {
+        let _ = crate::ExtensionConfig::default();
+        let _ = crate::CreateExtensionLog::default();
+        let _ = crate::ExtensionLogFilter::default();
+        assert_eq!(crate::EXTENSION_CONFIG_KEYS.len(), 4);
+    }
+}
