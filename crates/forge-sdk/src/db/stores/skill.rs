@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{Domain, ForgeError, Skill, SkillCategory, SkillRow, SkillWithDomains, new_id};
+use forge_core::{new_id, Domain, ForgeError, Skill, SkillCategory, SkillRow, SkillWithDomains};
 
 /// Capitalize first character only, preserving the rest (e.g. "SAFe" stays "SAFe").
 fn capitalize_first(s: &str) -> String {
@@ -266,10 +266,17 @@ impl SkillStore {
     /// stored category wins), otherwise create it. `category` must be in
     /// [`Self::LINK_CATEGORIES`]; unknown, missing or out-of-list values become
     /// `Other`. An empty name is a validation error.
-    pub fn get_or_create_for_link(conn: &Connection, name: &str, category: Option<&str>) -> Result<SkillRow, ForgeError> {
+    pub fn get_or_create_for_link(
+        conn: &Connection,
+        name: &str,
+        category: Option<&str>,
+    ) -> Result<SkillRow, ForgeError> {
         let name = capitalize_first(name.trim());
         if name.is_empty() {
-            return Err(ForgeError::Validation { message: "skill_id or name is required".into(), field: None });
+            return Err(ForgeError::Validation {
+                message: "skill_id or name is required".into(),
+                field: None,
+            });
         }
         let category = category
             .and_then(|c| c.parse::<SkillCategory>().ok())
@@ -427,7 +434,10 @@ impl SkillStore {
 
     /// Map `(id, name, category, created_at)` to a [`SkillRow`].
     pub(crate) fn map_skill_row(row: &rusqlite::Row) -> rusqlite::Result<SkillRow> {
-        Ok(SkillRow { base: Self::map_skill(row)?, created_at: row.get(3)? })
+        Ok(SkillRow {
+            base: Self::map_skill(row)?,
+            created_at: row.get(3)?,
+        })
     }
 
     fn map_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
@@ -461,7 +471,13 @@ mod tests {
         assert_eq!(k.base.category, SkillCategory::Other);
         assert!(!k.created_at.is_empty());
 
-        assert_eq!(SkillStore::get_or_create_for_link(conn, "sAFe", None).unwrap().base.name, "SAFe");
+        assert_eq!(
+            SkillStore::get_or_create_for_link(conn, "sAFe", None)
+                .unwrap()
+                .base
+                .name,
+            "SAFe"
+        );
 
         let t = SkillStore::get_or_create_for_link(conn, "Terraform", Some("tool")).unwrap();
         assert_eq!(t.base.category, SkillCategory::Tool);
