@@ -34,10 +34,14 @@ pub const NAME_EMPTY: &str = "Name must not be empty";
 pub const DOMAIN_NAME_FORMAT_ON_CREATE: &str =
     "Domain name must be lowercase, start with a letter, and contain only letters, digits, and underscores";
 /// The update wording (domain-service.ts:97). TS really does use two different messages.
-pub const DOMAIN_NAME_FORMAT_ON_UPDATE: &str = "Domain name must be lowercase with underscores only";
+pub const DOMAIN_NAME_FORMAT_ON_UPDATE: &str =
+    "Domain name must be lowercase with underscores only";
 
 fn invalid_name(message: &str) -> ForgeError {
-    ForgeError::Validation { message: message.into(), field: Some("name".into()) }
+    ForgeError::Validation {
+        message: message.into(),
+        field: Some("name".into()),
+    }
 }
 
 /// The trimmed name, or `Validation(NAME_EMPTY)` when it is empty or whitespace-only.
@@ -86,7 +90,11 @@ pub fn ensure_name_free(
         .is_some();
     if taken {
         return Err(ForgeError::Conflict {
-            message: format!("{}.name must be unique: \"{}\" already exists", table.table(), name),
+            message: format!(
+                "{}.name must be unique: \"{}\" already exists",
+                table.table(),
+                name
+            ),
         });
     }
     Ok(())
@@ -126,7 +134,10 @@ pub fn update_name_description(
         values.len() + 1
     );
     values.push(Box::new(id.to_string()));
-    Ok(conn.execute(&sql, rusqlite::params_from_iter(values.iter().map(|b| b.as_ref())))?)
+    Ok(conn.execute(
+        &sql,
+        rusqlite::params_from_iter(values.iter().map(|b| b.as_ref())),
+    )?)
 }
 
 #[cfg(test)]
@@ -173,7 +184,16 @@ mod tests {
         for ok in ["a", "security", "ai_ml", "cloud2", "a_"] {
             assert!(is_domain_slug(ok), "{ok}");
         }
-        for bad in ["", "Security", "cloud security", "2fa", "_x", "a-b", "é", " security"] {
+        for bad in [
+            "",
+            "Security",
+            "cloud security",
+            "2fa",
+            "_x",
+            "a-b",
+            "é",
+            " security",
+        ] {
             assert!(!is_domain_slug(bad), "{bad}");
         }
     }
@@ -191,11 +211,18 @@ mod tests {
     #[test]
     fn ensure_name_free_conflicts_only_on_another_row() {
         let forge = Forge::open_memory().unwrap();
-        let err = ensure_name_free(forge.conn(), LookupTable::Domains, "security", None).unwrap_err();
+        let err =
+            ensure_name_free(forge.conn(), LookupTable::Domains, "security", None).unwrap_err();
         assert!(matches!(&err, ForgeError::Conflict { message }
             if message == "domains.name must be unique: \"security\" already exists"));
         // The row itself is excluded, so re-sending its own name is fine.
-        ensure_name_free(forge.conn(), LookupTable::Domains, "security", Some(SECURITY)).unwrap();
+        ensure_name_free(
+            forge.conn(),
+            LookupTable::Domains,
+            "security",
+            Some(SECURITY),
+        )
+        .unwrap();
         // BINARY collation, like the UNIQUE index.
         ensure_name_free(forge.conn(), LookupTable::Domains, "Security", None).unwrap();
 
@@ -206,7 +233,8 @@ mod tests {
         ));
 
         insert_lookup(&forge, "role_types", "Pilot", None);
-        let err = ensure_name_free(forge.conn(), LookupTable::RoleTypes, "Pilot", None).unwrap_err();
+        let err =
+            ensure_name_free(forge.conn(), LookupTable::RoleTypes, "Pilot", None).unwrap_err();
         assert!(matches!(&err, ForgeError::Conflict { message }
             if message == "role_types.name must be unique: \"Pilot\" already exists"));
     }
@@ -217,23 +245,60 @@ mod tests {
         let conn = forge.conn();
         let id = insert_lookup(&forge, "industries", "Aero", Some("Planes"));
 
-        assert_eq!(update_name_description(conn, LookupTable::Industries, &id, None, None).unwrap(), 0);
-        assert_eq!(row(conn, "industries", &id), ("Aero".into(), Some("Planes".into())));
+        assert_eq!(
+            update_name_description(conn, LookupTable::Industries, &id, None, None).unwrap(),
+            0
+        );
+        assert_eq!(
+            row(conn, "industries", &id),
+            ("Aero".into(), Some("Planes".into()))
+        );
 
         update_name_description(conn, LookupTable::Industries, &id, None, Some(None)).unwrap();
         assert_eq!(row(conn, "industries", &id), ("Aero".into(), None));
 
-        update_name_description(conn, LookupTable::Industries, &id, Some("Aerospace"), Some(Some("Air and space"))).unwrap();
-        assert_eq!(row(conn, "industries", &id), ("Aerospace".into(), Some("Air and space".into())));
+        update_name_description(
+            conn,
+            LookupTable::Industries,
+            &id,
+            Some("Aerospace"),
+            Some(Some("Air and space")),
+        )
+        .unwrap();
+        assert_eq!(
+            row(conn, "industries", &id),
+            ("Aerospace".into(), Some("Air and space".into()))
+        );
 
-        assert_eq!(update_name_description(conn, LookupTable::Industries, "missing", Some("X"), None).unwrap(), 0);
+        assert_eq!(
+            update_name_description(conn, LookupTable::Industries, "missing", Some("X"), None)
+                .unwrap(),
+            0
+        );
 
         let did = insert_lookup(&forge, "domains", "temp_dom", None);
-        assert_eq!(update_name_description(conn, LookupTable::Domains, &did, Some("renamed"), None).unwrap(), 1);
+        assert_eq!(
+            update_name_description(conn, LookupTable::Domains, &did, Some("renamed"), None)
+                .unwrap(),
+            1
+        );
         assert_eq!(row(conn, "domains", &did).0, "renamed");
 
         let rid = insert_lookup(&forge, "role_types", "Pilot", None);
-        assert_eq!(update_name_description(conn, LookupTable::RoleTypes, &rid, None, Some(Some("Flies"))).unwrap(), 1);
-        assert_eq!(row(conn, "role_types", &rid), ("Pilot".into(), Some("Flies".into())));
+        assert_eq!(
+            update_name_description(
+                conn,
+                LookupTable::RoleTypes,
+                &rid,
+                None,
+                Some(Some("Flies"))
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            row(conn, "role_types", &rid),
+            ("Pilot".into(), Some("Flies".into()))
+        );
     }
 }

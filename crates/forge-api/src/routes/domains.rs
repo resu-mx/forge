@@ -41,8 +41,10 @@ async fn list_domains(
     let offset = q.offset.unwrap_or(0).max(0);
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
 
-    let (data, pagination) =
-        with_conn(&state, move |conn| DomainStore::list_with_usage(conn, offset, limit)).await?;
+    let (data, pagination) = with_conn(&state, move |conn| {
+        DomainStore::list_with_usage(conn, offset, limit)
+    })
+    .await?;
     Ok(Json(ApiList { data, pagination }))
 }
 

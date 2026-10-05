@@ -16,7 +16,12 @@ fn router() -> Router {
     app(AppState::new(Forge::open_memory().unwrap()))
 }
 
-async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+async fn call(
+    router: &Router,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let mut req = Request::builder().method(method).uri(path);
     let body = match body {
         Some(v) => {
@@ -25,10 +30,20 @@ async fn call(router: &Router, method: &str, path: &str, body: Option<Value>) ->
         }
         None => Body::empty(),
     };
-    let resp = router.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+    let resp = router
+        .clone()
+        .oneshot(req.body(body).unwrap())
+        .await
+        .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
-    let value = if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap_or(Value::Null) };
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
     (status, value)
 }
 
@@ -45,15 +60,37 @@ async fn deleting_a_domain_linked_to_archetypes_is_a_409_and_changes_nothing() {
 
     let (status, _) = call(&r, "GET", &format!("/api/domains/{SECURITY}"), None).await;
     assert_eq!(status, StatusCode::OK);
-    let (_, links) = call(&r, "GET", &format!("/api/archetypes/{SECURITY_ENGINEER}/domains"), None).await;
-    assert!(links["data"].as_array().unwrap().iter().any(|d| d["name"] == "security"));
+    let (_, links) = call(
+        &r,
+        "GET",
+        &format!("/api/archetypes/{SECURITY_ENGINEER}/domains"),
+        None,
+    )
+    .await;
+    assert!(links["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["name"] == "security"));
 }
 
 #[tokio::test]
 async fn deleting_a_domain_named_by_a_perspective_is_a_409() {
     let r = router();
-    let (_, d) = call(&r, "POST", "/api/domains", Some(json!({ "name": "block_delete" }))).await;
-    let (_, b) = call(&r, "POST", "/api/bullets", Some(json!({ "content": "Built APIs" }))).await;
+    let (_, d) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "block_delete" })),
+    )
+    .await;
+    let (_, b) = call(
+        &r,
+        "POST",
+        "/api/bullets",
+        Some(json!({ "content": "Built APIs" })),
+    )
+    .await;
     let (status, _) = call(
         &r,
         "POST",
@@ -68,7 +105,10 @@ async fn deleting_a_domain_named_by_a_perspective_is_a_409() {
     let id = d["data"]["id"].as_str().unwrap();
     let (status, err) = call(&r, "DELETE", &format!("/api/domains/{id}"), None).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert!(err["error"]["message"].as_str().unwrap().contains("referenced by 1 perspective(s)"));
+    assert!(err["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("referenced by 1 perspective(s)"));
 }
 
 #[tokio::test]
@@ -79,10 +119,15 @@ async fn list_has_usage_counts_and_pagination() {
     assert_eq!(body["pagination"]["offset"], 0);
     assert_eq!(body["pagination"]["limit"], 50);
     let items = body["data"].as_array().unwrap();
-    assert_eq!(body["pagination"]["total"].as_u64().unwrap() as usize, items.len());
+    assert_eq!(
+        body["pagination"]["total"].as_u64().unwrap() as usize,
+        items.len()
+    );
     let security = items.iter().find(|d| d["name"] == "security").unwrap();
     assert_eq!(security["archetype_count"], 2);
-    assert!(items.iter().all(|d| d["perspective_count"].is_i64() && d["archetype_count"].is_i64()));
+    assert!(items
+        .iter()
+        .all(|d| d["perspective_count"].is_i64() && d["archetype_count"].is_i64()));
 
     let (_, page) = call(&r, "GET", "/api/domains?offset=1&limit=2", None).await;
     assert_eq!(page["data"].as_array().unwrap().len(), 2);
@@ -97,7 +142,13 @@ async fn list_has_usage_counts_and_pagination() {
 #[tokio::test]
 async fn deleting_an_unused_domain_is_204_and_unknown_is_404() {
     let r = router();
-    let (_, d) = call(&r, "POST", "/api/domains", Some(json!({ "name": "unused_dom" }))).await;
+    let (_, d) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "unused_dom" })),
+    )
+    .await;
     let id = d["data"]["id"].as_str().unwrap();
 
     let (status, _) = call(&r, "DELETE", &format!("/api/domains/{id}"), None).await;

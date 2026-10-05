@@ -5,7 +5,9 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use forge_core::{CreateDomainInput, Domain, DomainWithUsage, ForgeError, Pagination, new_id, now_iso};
+use forge_core::{
+    new_id, now_iso, CreateDomainInput, Domain, DomainWithUsage, ForgeError, Pagination,
+};
 
 /// Data-access store for the `domains` table.
 pub struct DomainStore;
@@ -85,7 +87,14 @@ impl DomainStore {
             })?
             .collect::<Result<_, _>>()?;
 
-        Ok((rows, Pagination { total, offset, limit }))
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Usage ────────────────────────────────────────────────────────
@@ -118,8 +127,10 @@ impl DomainStore {
     /// `archetype_domains` (an `ON DELETE CASCADE` child that would otherwise be
     /// torn down silently). `skill_domains` is not checked, as in TS.
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
-        let domain = Self::get(conn, id)?
-            .ok_or_else(|| ForgeError::NotFound { entity_type: "domain".into(), id: id.into() })?;
+        let domain = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "domain".into(),
+            id: id.into(),
+        })?;
 
         let perspectives = Self::count_perspectives(conn, &domain.name)?;
         if perspectives > 0 {
@@ -172,15 +183,29 @@ mod tests {
     }
 
     fn perspective_naming(forge: &Forge, domain: &str) {
-        let bullet = BulletStore::create(forge.conn(), "Built APIs", None, None, None, &[], &[]).unwrap();
+        let bullet =
+            BulletStore::create(forge.conn(), "Built APIs", None, None, None, &[], &[]).unwrap();
         PerspectiveStore::create_direct(
-            forge.conn(), &bullet.id, "Designed APIs", None, Some(domain), None, false,
+            forge.conn(),
+            &bullet.id,
+            "Designed APIs",
+            None,
+            Some(domain),
+            None,
+            false,
         )
         .unwrap();
     }
 
     fn make(forge: &Forge, name: &str) -> Domain {
-        DomainStore::create(forge.conn(), &CreateDomainInput { name: name.into(), description: None }).unwrap()
+        DomainStore::create(
+            forge.conn(),
+            &CreateDomainInput {
+                name: name.into(),
+                description: None,
+            },
+        )
+        .unwrap()
     }
 
     #[test]
@@ -238,7 +263,10 @@ mod tests {
         let err = DomainStore::delete(forge.conn(), SECURITY).unwrap_err();
         assert!(matches!(&err, ForgeError::Conflict { message }
             if message == "Cannot delete domain 'security': associated with 2 archetype(s)"));
-        assert_eq!(DomainStore::count_archetypes(forge.conn(), SECURITY).unwrap(), before);
+        assert_eq!(
+            DomainStore::count_archetypes(forge.conn(), SECURITY).unwrap(),
+            before
+        );
         assert!(DomainStore::get(forge.conn(), SECURITY).unwrap().is_some());
     }
 
