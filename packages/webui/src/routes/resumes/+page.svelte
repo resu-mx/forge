@@ -3,7 +3,7 @@
   import { forge, friendlyError } from '$lib/sdk'
   import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, PageWrapper, PageHeader, TabBar } from '$lib/components'
   import { addToast } from '$lib/stores/toast.svelte'
-  import type { Resume, ResumeWithEntries, ResumeEntry, Perspective, GapAnalysis, ResumeDocument, Archetype, ResumeTemplate } from '@forge/sdk'
+  import type { Resume, ResumeWithEntries, ResumeEntry, Perspective, GapAnalysis, ResumeDocument, Archetype, ResumeTemplate, CreateResume } from '@forge/sdk'
   import { debugState } from '$lib/debug.svelte'
   import { FormatToggle, ResumePreview, ResumeEditor, ResumeViewPanel } from '$lib/components/resume'
   import SkillsPicker from '$lib/components/resume/SkillsPicker.svelte'
@@ -386,11 +386,11 @@
     }
     creating = true
     try {
-      const body: Record<string, string> = { ...createForm }
+      const body: CreateResume = { ...createForm }
       if (selectedTemplateId) {
         body.template_id = selectedTemplateId
       }
-      const result = await forge.resumes.create(body as any)
+      const result = await forge.resumes.create(body)
       if (result.ok) {
         pendingResumeId = result.data.id
         showSummaryPicker = true
