@@ -59,6 +59,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("052_skill_graph_schema", include_str!("../../../../packages/core/src/db/migrations/052_skill_graph_schema.sql")),
     ("053_skill_graph_initial_population", include_str!("../../../../packages/core/src/db/migrations/053_skill_graph_initial_population.sql")),
     ("054_alignment_results", include_str!("../../../../packages/core/src/db/migrations/054_alignment_results.sql")),
+    ("055_dataset_meta", include_str!("../../../../packages/core/src/db/migrations/055_dataset_meta.sql")),
 ];
 
 /// Run all pending migrations against the given connection.
@@ -767,12 +768,94 @@ mod tests {
         );
     }
 
+    // ------------------------------------------------------------------
+    // 055_dataset_meta
+    // ------------------------------------------------------------------
+
     #[test]
-    fn migration_count_is_52() {
+    fn migration_055_is_registered_with_dataset_meta_ddl() {
+        let entry = MIGRATIONS
+            .iter()
+            .find(|(name, _)| name.starts_with("055_"))
+            .expect("expected migration 055 to be registered");
+        assert_eq!(entry.0, "055_dataset_meta");
+
+        let conn = fresh_db();
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='dataset_meta')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(exists, "dataset_meta table must exist after migrations");
+
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM dataset_meta", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "dataset_meta must be empty for real databases");
+
+        // Valid insert works.
+        conn.execute(
+            "INSERT INTO dataset_meta (key, value) VALUES ('kind', 'generated')",
+            [],
+        )
+        .unwrap();
+
+        // Key length CHECK: empty and 65 chars are rejected, 64 accepted.
+        assert!(conn
+            .execute("INSERT INTO dataset_meta (key, value) VALUES ('', 'x')", [])
+            .is_err());
+        let long = "k".repeat(65);
+        assert!(conn
+            .execute(
+                "INSERT INTO dataset_meta (key, value) VALUES (?1, 'x')",
+                rusqlite::params![long],
+            )
+            .is_err());
+        let ok = "k".repeat(64);
+        conn.execute(
+            "INSERT INTO dataset_meta (key, value) VALUES (?1, 'x')",
+            rusqlite::params![ok],
+        )
+        .unwrap();
+
+        // STRICT: a BLOB value is rejected (integers would be coerced to text).
+        assert!(conn
+            .execute("INSERT INTO dataset_meta (key, value) VALUES ('n', X'00')", [])
+            .is_err());
+    }
+
+    #[test]
+    fn migration_count_is_53() {
         assert_eq!(
             MIGRATIONS.len(),
-            52,
-            "expected 52 migrations after adding 054_alignment_results"
+            53,
+            "expected 53 migrations after adding 055_dataset_meta"
+        );
+    }
+
+    #[test]
+    fn migrations_list_matches_sql_files() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/core/src/db/migrations");
+        let mut on_disk: Vec<String> = std::fs::read_dir(dir)
+            .expect("migrations directory must be readable")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "sql"))
+            .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .collect();
+        on_disk.sort();
+
+        let mut registered: Vec<String> =
+            MIGRATIONS.iter().map(|(n, _)| n.to_string()).collect();
+        registered.sort();
+
+        assert_eq!(
+            registered, on_disk,
+            "MIGRATIONS in crates/forge-sdk/src/db/migrate.rs is out of sync with \
+             packages/core/src/db/migrations/*.sql. Add the new file to MIGRATIONS \
+             (left = registered, right = on disk)."
         );
     }
 }
