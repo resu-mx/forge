@@ -1475,6 +1475,8 @@ export interface CreateResume {
   target_employer: string
   archetype: string
   summary_id?: string
+  /** Pre-populate sections from this resume template. */
+  template_id?: string
 }
 
 export interface UpdateResume {

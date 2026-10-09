@@ -332,6 +332,24 @@ describe('Bullet Routes', () => {
     expect(body.data[0].is_primary).toBe(1)
   })
 
+  test('POST /bullets with source_ids [{ id, is_primary }] links the source', async () => {
+    const sourceId = seedSource(ctx.db, { title: 'Linked Source' })
+
+    const res = await apiRequest(ctx.app, 'POST', '/bullets', {
+      content: 'Bullet linked via source_ids',
+      source_ids: [{ id: sourceId, is_primary: true }],
+    })
+    expect(res.status).toBe(201)
+    const created = await res.json()
+
+    const srcRes = await apiRequest(ctx.app, 'GET', `/bullets/${created.data.id}/sources`)
+    expect(srcRes.status).toBe(200)
+    const body = await srcRes.json()
+    expect(body.data.length).toBe(1)
+    expect(body.data[0].id).toBe(sourceId)
+    expect(body.data[0].is_primary).toBeTruthy()
+  })
+
   test('GET /bullets/:id/sources for bullet with no sources returns empty', async () => {
     const sourceId = seedSource(ctx.db)
     const bulletId = seedBullet(ctx.db, [])

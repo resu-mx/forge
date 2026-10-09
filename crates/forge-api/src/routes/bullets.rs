@@ -40,6 +40,8 @@ pub struct CreateBulletBody {
 
 #[derive(Debug, Deserialize)]
 pub struct SourceLink {
+    /// SDK / TS core / web UI send `id`; accept both spellings.
+    #[serde(alias = "id")]
     pub source_id: String,
     pub is_primary: Option<bool>,
 }
@@ -276,4 +278,19 @@ pub fn router() -> Router<SharedState> {
             delete(unlink_bullet_skill),
         )
         .route("/bullets/{id}/sources", get(list_bullet_sources))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_link_accepts_id_and_source_id() {
+        let a: SourceLink = serde_json::from_str(r#"{"id":"s1","is_primary":true}"#).unwrap();
+        assert_eq!(a.source_id, "s1");
+        assert_eq!(a.is_primary, Some(true));
+        let b: SourceLink = serde_json::from_str(r#"{"source_id":"s2"}"#).unwrap();
+        assert_eq!(b.source_id, "s2");
+        assert_eq!(b.is_primary, None);
+    }
 }
