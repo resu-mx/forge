@@ -27,6 +27,17 @@
         "bun-types": "latest",
       },
     },
+    "packages/demo-data": {
+      "name": "@forge/demo-data",
+      "version": "0.1.0",
+      "dependencies": {
+        "@forge/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.0",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/extension": {
       "name": "@forge/extension",
       "version": "0.0.1",
@@ -232,6 +243,8 @@
     "@forge/cli": ["@forge/cli@workspace:packages/cli"],
 
     "@forge/core": ["@forge/core@workspace:packages/core"],
+
+    "@forge/demo-data": ["@forge/demo-data@workspace:packages/demo-data"],
 
     "@forge/extension": ["@forge/extension@workspace:packages/extension"],
 

@@ -6,6 +6,9 @@ data/*.db-*
 data/*.backup*
 data/*.bak
 
+# Generated demo datasets (`just demo-data generate`)
+data/demo/
+
 # Isolated Docker dev database (docker-compose mounts ./data-docker:/data)
 data-docker/
 
