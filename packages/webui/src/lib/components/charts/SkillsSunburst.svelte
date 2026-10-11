@@ -10,6 +10,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { forge } from '$lib/sdk'
+  import { listAll } from '$lib/list-all'
   import EChart from './EChart.svelte'
   import { LoadingSpinner, EmptyState } from '$lib/components'
   import type { Skill, Bullet, Perspective } from '@forge/sdk'
@@ -57,8 +58,8 @@
     loading = true
     const [s, b, p] = await Promise.all([
       forge.skills.list({ limit: 500 }),
-      forge.bullets.list({ limit: 2000 }),
-      forge.perspectives.list({ limit: 5000 }),
+      listAll((params) => forge.bullets.list(params)),
+      listAll((params) => forge.perspectives.list(params)),
     ])
     if (s.ok) skills = s.data
     if (b.ok) bullets = b.data

@@ -30,6 +30,27 @@ describe('Perspective Routes', () => {
     expect(body.pagination).toBeDefined()
   })
 
+  // The UI pages through this cap to chart every row (webui `listAll`).
+  test('GET /perspectives clamps limit to 200, reports the full total, and pages to it', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    // One transaction, so every row shares a created_at second: paging must not depend on it.
+    ctx.db.transaction(() => {
+      for (let i = 0; i < 250; i++) seedPerspective(ctx.db, bulletId, { content: `Perspective ${i}` })
+    })()
+
+    const first = await (await apiRequest(ctx.app, 'GET', '/perspectives?limit=5000')).json()
+    expect(first.data.length).toBe(200)
+    expect(first.pagination).toEqual({ total: 250, offset: 0, limit: 200 })
+
+    const second = await (await apiRequest(ctx.app, 'GET', '/perspectives?limit=200&offset=200')).json()
+    expect(second.data.length).toBe(50)
+    expect(second.pagination).toEqual({ total: 250, offset: 200, limit: 200 })
+
+    const ids = new Set([...first.data, ...second.data].map((p: { id: string }) => p.id))
+    expect(ids.size).toBe(250)
+  })
+
   // ── GET /perspectives/:id ─────────────────────────────────────────
 
   test('GET /perspectives/:id returns 200 with chain (bullet + source)', async () => {

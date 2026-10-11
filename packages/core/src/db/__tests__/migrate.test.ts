@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { getDatabase } from "../connection";
@@ -8,6 +8,16 @@ import { runMigrations } from "../migrate";
 
 /** Path to the real migrations directory in the source tree. */
 const REAL_MIGRATIONS_DIR = resolve(import.meta.dir, "../migrations");
+
+/**
+ * Every migration the runner should apply: the `.sql` files in the migrations
+ * directory, sorted, without the extension (the name `_migrations` records).
+ * Read from disk so a new migration never needs this file edited.
+ */
+const EXPECTED_MIGRATIONS = readdirSync(REAL_MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => f.replace(/\.sql$/, ""));
 
 /**
  * Expected tables after all migrations (001 + 002 + 003).
@@ -136,56 +146,8 @@ describe("runMigrations", () => {
     const rows = db
       .query("SELECT name FROM _migrations ORDER BY name")
       .all() as { name: string }[];
-    expect(rows).toHaveLength(49);
-    expect(rows[0].name).toBe("001_initial");
-    expect(rows[1].name).toBe("002_schema_evolution");
-    expect(rows[2].name).toBe("003_renderer_and_entities");
-    expect(rows[3].name).toBe("004_resume_sections");
-    expect(rows[4].name).toBe("005_user_profile");
-    expect(rows[5].name).toBe("006_summaries");
-    expect(rows[6].name).toBe("007_job_descriptions");
-    expect(rows[7].name).toBe("008_resume_templates");
-    expect(rows[8].name).toBe("009_education_subtype_fields");
-    expect(rows[9].name).toBe("010_education_org_fk");
-    expect(rows[10].name).toBe("011_org_tags");
-    expect(rows[11].name).toBe("012_org_kanban_statuses");
-    expect(rows[12].name).toBe("013_org_campuses");
-    expect(rows[13].name).toBe("014_campus_zipcode_hq");
-    expect(rows[14].name).toBe("015_org_aliases");
-    expect(rows[15].name).toBe("016_source_skills");
-    expect(rows[16].name).toBe("018_job_description_skills");
-    expect(rows[17].name).toBe("019_clearance_structured_data");
-    expect(rows[18].name).toBe("020_stale_education_text_cleanup");
-    expect(rows[19].name).toBe("021_drop_legacy_education_columns");
-    expect(rows[20].name).toBe("022_drop_legacy_org_location_columns");
-    expect(rows[21].name).toBe("023_contacts");
-    expect(rows[22].name).toBe("024_unified_kanban_statuses");
-    expect(rows[23].name).toBe("025_embeddings");
-    expect(rows[24].name).toBe("026_job_description_resumes");
-    expect(rows[25].name).toBe("027_salary_structured_fields");
-    expect(rows[26].name).toBe("028_jd_pipeline_statuses");
-    expect(rows[27].name).toBe("029_prompt_logs_jd_entity_type");
-    expect(rows[28].name).toBe("031_skills_expansion");
-    expect(rows[29].name).toBe("032_industries_role_types");
-    expect(rows[30].name).toBe("033_summary_structured_fields");
-    expect(rows[31].name).toBe("034_resume_entry_source_id");
-    expect(rows[32].name).toBe("035_resume_tagline_engine");
-    expect(rows[33].name).toBe("036_null_auto_content_on_direct_source_entries");
-    expect(rows[34].name).toBe("037_qualifications");
-    expect(rows[35].name).toBe("038_resume_summary_override");
-    expect(rows[36].name).toBe("039_presentations");
-    expect(rows[37].name).toBe("040_resume_show_clearance_header");
-    expect(rows[38].name).toBe("041_skill_categories_and_seeds");
-    expect(rows[39].name).toBe("042_project_open_source");
-    expect(rows[40].name).toBe("043_cert_schema_rework");
-    expect(rows[41].name).toBe("044_skill_categories");
-    expect(rows[42].name).toBe("045_pending_derivations");
-    expect(rows[43].name).toBe("046_profile_addresses_urls");
-    expect(rows[44].name).toBe("047_org_locations");
-    expect(rows[45].name).toBe("048_notes_normalization");
-    expect(rows[46].name).toBe("049_jd_parsed_fields");
-    expect(rows[47].name).toBe("050_answer_bank");
-    expect(rows[48].name).toBe("051_extension_infra");
+    expect(EXPECTED_MIGRATIONS[0]).toBe("001_initial");
+    expect(rows.map((r) => r.name)).toEqual(EXPECTED_MIGRATIONS);
   });
 
   test("already up-to-date: running again is a no-op with no errors", () => {
@@ -197,9 +159,7 @@ describe("runMigrations", () => {
     const rows = db.query("SELECT name FROM _migrations ORDER BY name").all() as {
       name: string;
     }[];
-    expect(rows).toHaveLength(49);
-    expect(rows[0].name).toBe("001_initial");
-    expect(rows[48].name).toBe("051_extension_infra");
+    expect(rows.map((r) => r.name)).toEqual(EXPECTED_MIGRATIONS);
   });
 
   test("failed migration: broken 002 file rolls back; 001 is intact", () => {

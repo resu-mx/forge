@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { forge } from '$lib/sdk'
+  import { listAll } from '$lib/list-all'
   import { goto } from '$app/navigation'
   import EChart from './EChart.svelte'
   import { buildGanttItems, buildGanttOption, STATUS_COLORS } from './gantt-utils'
@@ -27,7 +28,7 @@
     loading = true
     error = null
     try {
-      const result = await forge.jobDescriptions.list({ limit: 500 })
+      const result = await listAll((params) => forge.jobDescriptions.list(params))
       if (result.ok) {
         items = buildGanttItems(result.data)
       } else {

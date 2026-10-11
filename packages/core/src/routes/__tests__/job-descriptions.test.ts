@@ -77,6 +77,25 @@ describe('Job Description Routes', () => {
     expect(body.pagination.limit).toBe(50)
   })
 
+  // The UI pages through this cap to chart every row (webui `listAll`).
+  test('GET list clamps limit to 200, reports the full total, and pages to it', async () => {
+    // One transaction, so every row shares a timestamp second: paging must not depend on it.
+    ctx.db.transaction(() => {
+      for (let i = 0; i < 250; i++) seedJobDescription(ctx.db, { title: `JD ${i}` })
+    })()
+
+    const first = await (await apiRequest(ctx.app, 'GET', '/job-descriptions?limit=500')).json()
+    expect(first.data).toHaveLength(200)
+    expect(first.pagination).toEqual({ total: 250, offset: 0, limit: 200 })
+
+    const second = await (await apiRequest(ctx.app, 'GET', '/job-descriptions?limit=200&offset=200')).json()
+    expect(second.data).toHaveLength(50)
+    expect(second.pagination).toEqual({ total: 250, offset: 200, limit: 200 })
+
+    const ids = new Set([...first.data, ...second.data].map((jd: { id: string }) => jd.id))
+    expect(ids.size).toBe(250)
+  })
+
   test('GET list filters by status', async () => {
     seedJobDescription(ctx.db, { title: 'A', status: 'applied' })
     seedJobDescription(ctx.db, { title: 'B', status: 'discovered' })

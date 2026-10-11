@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { forge } from '$lib/sdk'
+  import { listAll } from '$lib/list-all'
   import EChart from './EChart.svelte'
   import {
     computeJDSkillAlignment,
@@ -36,7 +37,7 @@
       const [jdSkillsRes, allSkillsRes, bulletsRes] = await Promise.all([
         forge.jobDescriptions.listSkills(id),
         forge.skills.list({ limit: 500 }),
-        forge.bullets.list({ limit: 2000 }),
+        listAll((params) => forge.bullets.list(params)),
       ])
 
       if (!jdSkillsRes.ok || !allSkillsRes.ok || !bulletsRes.ok) {
