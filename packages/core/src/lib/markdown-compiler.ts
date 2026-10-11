@@ -120,7 +120,8 @@ function renderSection(section: IRSection): string[] {
       for (const item of section.items) {
         if (item.kind === 'certification_group') {
           for (const cat of item.categories) {
-            lines.push(`**${escapeMarkdown(cat.label)}**: ${cat.certs.map(c => escapeMarkdown(c.name)).join(', ')}`)
+            const names = cat.certs.map(c => escapeMarkdown(c.name) + (c.in_progress ? ' (in progress)' : ''))
+            lines.push(`**${escapeMarkdown(cat.label)}**: ${names.join(', ')}`)
           }
         }
       }

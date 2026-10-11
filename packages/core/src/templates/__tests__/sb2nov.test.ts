@@ -190,8 +190,8 @@ describe('sb2nov template', () => {
           categories: [{
             label: 'GIAC',
             certs: [
-              { name: 'GCFR', entry_id: null, source_id: null },
-              { name: 'GPCS', entry_id: null, source_id: null },
+              { name: 'GCFR', entry_id: null, source_id: null, in_progress: false },
+              { name: 'GPCS', entry_id: null, source_id: null, in_progress: false },
             ],
           }],
         }],
@@ -199,6 +199,25 @@ describe('sb2nov template', () => {
 
       const result = sb2nov.renderSection(section)
       expect(result).toContain('\\textbf{GIAC}{: GCFR, GPCS}')
+    })
+
+    test('marks a certification that is still in progress', () => {
+      const section: IRSection = {
+        id: 's1', type: 'certifications', title: 'Certifications', display_order: 0,
+        items: [{
+          kind: 'certification_group',
+          categories: [{
+            label: 'GIAC',
+            certs: [
+              { name: 'GCFR', entry_id: null, source_id: null, in_progress: false },
+              { name: 'GPCS', entry_id: null, source_id: null, in_progress: true },
+            ],
+          }],
+        }],
+      }
+
+      const result = sb2nov.renderSection(section)
+      expect(result).toContain('\\textbf{GIAC}{: GCFR, GPCS (in progress)}')
     })
   })
 

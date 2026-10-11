@@ -969,7 +969,7 @@ function buildCertificationItems(db: Database, sectionId: string): Certification
   const rows = db
     .query(
       `SELECT rc.id AS entry_id, c.short_name, c.cert_id,
-              o.name AS issuer_name, c.date_earned
+              o.name AS issuer_name, c.date_earned, c.in_progress
        FROM resume_certifications rc
        JOIN certifications c ON c.id = rc.certification_id
        LEFT JOIN organizations o ON o.id = c.issuer_id
@@ -982,12 +982,16 @@ function buildCertificationItems(db: Database, sectionId: string): Certification
       cert_id: string | null
       issuer_name: string | null
       date_earned: string | null
+      in_progress: number
     }>
 
   if (rows.length === 0) return []
 
   // Group by issuer
-  const catMap = new Map<string, Array<{ name: string; entry_id: string | null; source_id: string | null }>>()
+  const catMap = new Map<
+    string,
+    Array<{ name: string; entry_id: string | null; source_id: string | null; in_progress: boolean }>
+  >()
 
   for (const row of rows) {
     const label = row.issuer_name ?? 'Other'
@@ -997,6 +1001,7 @@ function buildCertificationItems(db: Database, sectionId: string): Certification
       name: row.short_name,
       entry_id: row.entry_id,
       source_id: null,
+      in_progress: row.in_progress === 1,
     })
   }
 

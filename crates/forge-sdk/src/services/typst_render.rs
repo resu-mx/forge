@@ -209,7 +209,7 @@ fn render_section(section: &IRSection, out: &mut String) {
                     .categories
                     .iter()
                     .map(|c| {
-                        let names: Vec<&str> = c.certs.iter().map(|e| e.name.as_str()).collect();
+                        let names: Vec<String> = c.certs.iter().map(|e| e.display_name()).collect();
                         format!("({}, {})", lit(&c.label), lit(&names.join(", ")))
                     })
                     .collect();
@@ -633,11 +633,20 @@ mod tests {
                 vec![IRSectionItem::CertificationGroup(CertificationGroup {
                     categories: vec![CertificationCategoryGroup {
                         label: "Cloud".into(),
-                        certs: vec![CertificationEntry {
-                            name: "CKA".into(),
-                            entry_id: None,
-                            source_id: None,
-                        }],
+                        certs: vec![
+                            CertificationEntry {
+                                name: "CKA".into(),
+                                entry_id: None,
+                                source_id: None,
+                                in_progress: false,
+                            },
+                            CertificationEntry {
+                                name: "CKS".into(),
+                                entry_id: None,
+                                source_id: None,
+                                in_progress: true,
+                            },
+                        ],
                     }],
                 })],
             ),
@@ -645,7 +654,8 @@ mod tests {
         let out = render_typst(&with_summary(d, None, "Builds things."));
         assert!(out.contains("#sec(\"Summary\")\n#\"Builds things.\""));
         assert!(out.contains("#labelled((\"Languages\", \"Rust, Go\"))"));
-        assert!(out.contains("#labelled((\"Cloud\", \"CKA\"))"));
+        // An earned certification prints as its name; one still in progress is marked.
+        assert!(out.contains("#labelled((\"Cloud\", \"CKA, CKS (in progress)\"))"));
     }
 
     #[test]

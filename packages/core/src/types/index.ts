@@ -1353,6 +1353,8 @@ export interface CertificationGroup {
       name: string
       entry_id: string | null
       source_id: string | null
+      /** Being worked toward, not earned yet. Every output marks it "(in progress)". */
+      in_progress: boolean
     }>
   }>
 }

@@ -343,7 +343,7 @@ function renderCertificationsSection(section: IRSection): string {
   for (const item of section.items) {
     if (item.kind !== 'certification_group') continue
     for (const cat of item.categories) {
-      const certNames = cat.certs.map(c => c.name).join(', ')
+      const certNames = cat.certs.map(c => (c.in_progress ? `${c.name} (in progress)` : c.name)).join(', ')
       lines.push(`     \\textbf{${cat.label}}{: ${certNames}} \\\\`)
     }
   }

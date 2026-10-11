@@ -136,6 +136,7 @@ fn full_document(hostile: &str) -> ResumeDocument {
                             name: "CKA".into(),
                             entry_id: None,
                             source_id: None,
+                            in_progress: false,
                         }],
                     }],
                 })],
@@ -211,6 +212,33 @@ fn a_full_resume_compiles_to_a_pdf_that_draws_its_content() {
 
     let pdf = compile_pdf(&source).unwrap();
     assert!(pdf.starts_with(b"%PDF-"));
+}
+
+#[test]
+fn an_in_progress_certification_is_marked_in_the_pdf_and_an_earned_one_is_not() {
+    let mut document = full_document("plain bullet");
+    for section in &mut document.sections {
+        for item in &mut section.items {
+            if let IRSectionItem::CertificationGroup(group) = item {
+                group.categories[0].certs.push(CertificationEntry {
+                    name: "CKS".into(),
+                    entry_id: None,
+                    source_id: None,
+                    in_progress: true,
+                });
+            }
+        }
+    }
+    let text = all_text(&render_typst(&document));
+
+    assert!(
+        text.contains("CKS (in progress)"),
+        "not marked in progress: {text}"
+    );
+    assert!(
+        !text.contains("CKA (in progress)"),
+        "an earned certification was marked: {text}"
+    );
 }
 
 #[test]

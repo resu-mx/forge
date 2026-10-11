@@ -430,6 +430,40 @@ describe('compileResumeIR', () => {
       expect(group.categories[0].certs[0].name).toBe('CISSP')
       expect(group.categories[0].certs[0].entry_id).toBe(rcId)
       expect(group.categories[0].certs[0].source_id).toBeNull()
+      expect(group.categories[0].certs[0].in_progress).toBe(false)
+    }
+  })
+
+  test('an in-progress certification is flagged and keeps its plain name', () => {
+    const resumeId = seedResume(db)
+    const orgId = crypto.randomUUID()
+    db.run(`INSERT INTO organizations (id, name, org_type) VALUES (?, 'ISC2', 'company')`, [orgId])
+    const secId = seedResumeSection(db, resumeId, 'Certifications', 'certifications', 0)
+    const pin = (short: string, inProgress: number, position: number) => {
+      const certId = crypto.randomUUID()
+      db.run(
+        `INSERT INTO certifications (id, short_name, long_name, issuer_id, in_progress)
+         VALUES (?, ?, ?, ?, ?)`,
+        [certId, short, short, orgId, inProgress],
+      )
+      db.run(
+        `INSERT INTO resume_certifications (id, resume_id, certification_id, section_id, position)
+         VALUES (?, ?, ?, ?, ?)`,
+        [crypto.randomUUID(), resumeId, certId, secId, position],
+      )
+    }
+    pin('CISSP', 0, 0)
+    pin('CCSP', 1, 1)
+
+    const result = compileResumeIR(db, resumeId)!
+    const group = result.sections.find(s => s.type === 'certifications')!.items[0]
+    expect(group.kind).toBe('certification_group')
+    if (group.kind === 'certification_group') {
+      const certs = group.categories[0].certs
+      expect(certs.map(c => [c.name, c.in_progress])).toEqual([
+        ['CISSP', false],
+        ['CCSP', true],
+      ])
     }
   })
 

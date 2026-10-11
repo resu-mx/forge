@@ -220,8 +220,8 @@ impl CompilerService {
                     IRSectionItem::CertificationGroup(group) => {
                         for cat in &group.categories {
                             md.push_str(&format!("**{}**: ", cat.label));
-                            let names: Vec<&str> =
-                                cat.certs.iter().map(|c| c.name.as_str()).collect();
+                            let names: Vec<String> =
+                                cat.certs.iter().map(|c| c.display_name()).collect();
                             md.push_str(&names.join(", "));
                             md.push_str("\n\n");
                         }
@@ -395,8 +395,11 @@ impl CompilerService {
                     IRSectionItem::CertificationGroup(group) => {
                         tex.push_str("\\begin{itemize}[leftmargin=0.15in, label={}]\n");
                         for cat in &group.categories {
-                            let names: Vec<String> =
-                                cat.certs.iter().map(|c| latex_escape(&c.name)).collect();
+                            let names: Vec<String> = cat
+                                .certs
+                                .iter()
+                                .map(|c| latex_escape(&c.display_name()))
+                                .collect();
                             tex.push_str(&format!(
                                 "  \\item \\textbf{{{}}}: {}\n",
                                 latex_escape(&cat.label),
@@ -1133,7 +1136,7 @@ impl CompilerService {
     ) -> Result<Vec<IRSectionItem>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT rc.id AS entry_id, c.short_name,
-                    o.name AS issuer_name
+                    o.name AS issuer_name, c.in_progress
              FROM resume_certifications rc
              JOIN certifications c ON c.id = rc.certification_id
              LEFT JOIN organizations o ON o.id = c.issuer_id
@@ -1141,20 +1144,21 @@ impl CompilerService {
              ORDER BY rc.position ASC",
         )?;
 
-        let rows: Vec<(String, String, Option<String>)> = stmt
+        let rows: Vec<(String, String, Option<String>, bool)> = stmt
             .query_map(params![section_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?
             .collect::<Result<_, _>>()?;
 
         // Group by issuer
         let mut cat_map: Vec<(String, Vec<CertificationEntry>)> = Vec::new();
-        for (entry_id, short_name, issuer) in &rows {
+        for (entry_id, short_name, issuer, in_progress) in &rows {
             let issuer_key = issuer.clone().unwrap_or_else(|| "Other".into());
             let entry = CertificationEntry {
                 name: short_name.clone(),
                 entry_id: Some(entry_id.clone()),
                 source_id: None,
+                in_progress: *in_progress,
             };
             if let Some(cat) = cat_map.iter_mut().find(|(k, _)| k == &issuer_key) {
                 cat.1.push(entry);
@@ -1797,6 +1801,23 @@ mod tests {
         )
         .unwrap();
 
+        // A certification still being worked toward, from the same issuer.
+        let in_progress_id = forge_core::new_id();
+        forge.conn().execute(
+            "INSERT INTO certifications (id, short_name, long_name, issuer_id, in_progress, created_at, updated_at) VALUES (?1, 'SAP', 'Solutions Architect Professional', ?2, 1, ?3, ?3)",
+            params![in_progress_id, org_id, now],
+        ).unwrap();
+        ResumeStore::add_certification(
+            forge.conn(),
+            &resume_id,
+            &forge_core::AddResumeCertification {
+                certification_id: in_progress_id,
+                section_id: section.id.clone(),
+                position: None,
+            },
+        )
+        .unwrap();
+
         let doc = CompilerService::compile(forge.conn(), &resume_id)
             .unwrap()
             .unwrap();
@@ -1809,7 +1830,14 @@ mod tests {
         if let IRSectionItem::CertificationGroup(group) = &cert_section.items[0] {
             assert_eq!(group.categories.len(), 1);
             assert_eq!(group.categories[0].label, "AWS");
-            assert_eq!(group.categories[0].certs[0].name, "SAA");
+            let certs = &group.categories[0].certs;
+            assert_eq!(certs[0].name, "SAA");
+            assert!(!certs[0].in_progress);
+            assert_eq!(certs[0].display_name(), "SAA");
+            // The name stays plain; the flag carries "in progress" and every output marks it.
+            assert_eq!(certs[1].name, "SAP");
+            assert!(certs[1].in_progress);
+            assert_eq!(certs[1].display_name(), "SAP (in progress)");
         } else {
             panic!("Expected CertificationGroup");
         }
