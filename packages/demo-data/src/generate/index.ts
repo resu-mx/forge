@@ -68,7 +68,6 @@ export async function generatePersona(opts: GenerateOptions): Promise<GenerateRe
       clock,
       seed: opts.seed,
       overlay: [],
-      noteReferences: [],
       seeded: { archetypes: new Map(), domains: new Map(), templates: new Map() },
       log,
     }
@@ -106,7 +105,6 @@ export async function generatePersona(opts: GenerateOptions): Promise<GenerateRe
       epoch: clock.epoch(corpus.accountAgeDays),
       entries: ledger.entries(),
       overlay: ctx.overlay,
-      noteReferences: ctx.noteReferences,
       meta: {
         kind: 'generated',
         generator: GENERATOR,

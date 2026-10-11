@@ -807,6 +807,8 @@ export type NoteReferenceEntityType =
   | 'organization'
   | 'job_description'
   | 'contact'
+  | 'credential'
+  | 'certification'
 
 export interface NoteReference {
   entity_type: NoteReferenceEntityType

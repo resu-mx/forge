@@ -927,7 +927,9 @@ pub struct CreateCredential {
     pub label: String,
     pub status: Option<CredentialStatus>,
     pub organization_id: Option<String>,
-    pub details: Option<String>,
+    /// The type-specific details object, as TS takes it. Required: the store
+    /// rejects a missing one, and validates the fields its `credential_type` needs.
+    pub details: Option<serde_json::Value>,
     pub issued_date: Option<String>,
     pub expiry_date: Option<String>,
 }
@@ -943,7 +945,8 @@ pub struct UpdateCredential {
         skip_serializing_if = "Option::is_none"
     )]
     pub organization_id: Option<Option<String>>,
-    pub details: Option<String>,
+    /// Partial details, merged over the stored object (TS `{ ...existing, ...input }`).
+    pub details: Option<serde_json::Value>,
     #[serde(
         default,
         deserialize_with = "crate::serde_util::double_option",

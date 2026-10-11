@@ -63,8 +63,7 @@ pass `--out`. Both test every `user/*/data.sqlite` there, whatever the persona a
 Each is transition-checked and logged in the manifest's `overlay`:
 
 - source statuses other than `draft` (no route updates a source's status);
-- `approved → archived` for bullets and perspectives (no archive route);
-- note references to credentials and certifications (the Rust API refuses those entity types).
+- `approved → archived` for bullets and perspectives (no archive route).
 
 Backdating covers every `*_at` column from the ledger or a rule (`TIMESTAMP_RULES`); a column
 with neither fails the run, as does a table with ids but no natural-key rule in

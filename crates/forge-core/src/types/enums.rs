@@ -634,7 +634,8 @@ pub enum SkillCategory {
     Other,
 }
 
-/// Valid entity types for note_references.
+/// Valid entity types for note_references: the schema CHECK (migration 037) and
+/// the TS note service's `VALID_ENTITY_TYPES`, in the same order.
 #[derive(
     Debug,
     Clone,
@@ -647,6 +648,7 @@ pub enum SkillCategory {
     strum::Display,
     strum::EnumString,
     strum::AsRefStr,
+    strum::VariantNames,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -660,6 +662,15 @@ pub enum NoteReferenceEntityType {
     Organization,
     JobDescription,
     Contact,
+    Credential,
+    Certification,
+}
+
+impl NoteReferenceEntityType {
+    /// Every value as the API spells it, in declaration order.
+    pub fn names() -> &'static [&'static str] {
+        <Self as strum::VariantNames>::VARIANTS
+    }
 }
 
 /// Education type discriminator.
