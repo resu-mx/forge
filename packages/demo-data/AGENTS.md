@@ -22,6 +22,11 @@ The R2 recipes load `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KE
 (private `_r2` recipe). Never print their values, and never point the round trip or a test at
 the production bucket. `src/r2/__tests__/sign.test.ts` covers signing and every push guard offline.
 
+CI: `.github/workflows/demo-data.yml` is opt-in (dispatch, or the `demo-data` PR label). It runs
+generate and verify, the round trip and a preview push, the e2e spec, and, on request from
+`main`, `publish`. It calls `bun test` and `bun run src/cli.ts` directly with the `R2_*`
+variables already exported, so `op` is never involved. See `.github/AGENTS.md`.
+
 Defaults are fixed (`--as-of 2026-09-30T17:00:00Z`, `--seed forge-demo-v1`), never the wall clock.
 `verify`'s Rust check and `e2e` read `FORGE_DEMO_DATA_DIR` (default `data/demo`): set it when you
 pass `--out`. Both test every `user/*/data.sqlite` there, whatever the persona argument.

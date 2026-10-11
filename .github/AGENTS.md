@@ -33,6 +33,35 @@ uploads `packages/webui/build` as the `app-static` artifact.
   longer builds the app: the Git-integrated `resumx-app` project and its `scripts/pages-build.sh`
   build command are gone.
 
+### `demo-data.yml`
+
+**Opt-in, never a required check:** it runs only when someone asks. It generates the demo
+datasets (`packages/demo-data`, see `docs/src/dev/demo-datasets.md`), and can test them against
+R2 and the browser app and publish them.
+
+- **To run it:** `gh workflow run demo-data.yml -f publish=false` (add `-f e2e=true` for the
+  browser spec, `--ref <branch>` for a branch other than `main`), or add the `demo-data` label to
+  a PR. A label run uses the PR as it was when labeled; remove and re-add the label to test newer
+  commits. Any other label starts a run whose jobs all skip.
+- **`generate + verify`** needs no secrets. It runs `just demo-data generate` and
+  `just demo-data verify` (including the ignored Rust SDK test), then uploads `data/demo` as the
+  `demo-datasets` artifact (kept 3 days).
+- **`R2 round trip + preview push`** runs in the `r2-preview` environment, for dispatches and
+  same-repo PRs only (fork PRs get no secrets). It runs the live round-trip test, which refuses
+  any bucket not ending in `-preview`, then pushes the artifact to the preview bucket with every
+  push guard.
+- **`demo datasets in the browser (Playwright)`** runs for `e2e=true` or a label run. It builds
+  the wasm bundles like `rust.yml`'s browser job and runs `e2e/wasm/demo-datasets.spec.ts` against
+  the artifact. The Playwright report is uploaded on failure.
+- **`publish to the production bucket`** runs only for a dispatch from `main` with
+  `publish=true`, never for a PR. It waits for the `r2-prod` reviewers (that environment allows
+  only `main`), runs after the round trip passes and after e2e passes when it was requested, then
+  runs `publish --yes`.
+- Both environments hold the secret `OP_SERVICE_ACCOUNT_TOKEN` and the variable
+  `OP_ENVIRONMENT_ID`. `aRustyDev/load-secrets-action` (the pin from `app-build.yml`) exports the
+  `R2_*` credentials from 1Password, masked. The workflow checks only that they are set and
+  prints their lengths.
+
 ### `extension-publish.yml`
 
 Runs on a `v*` tag push, or a manual dispatch with `tag`, `skip_chrome` and `skip_firefox`
@@ -60,3 +89,5 @@ inputs. It runs in this order:
 - Store credentials come from 1Password environments through `aRustyDev/load-secrets-action`
   (`OP_SVC_ACCT_TOKEN`, `OP_ENVIRONMENT_ID_*` secrets). Never put store credentials in the
   repo or in workflow `env:` literals.
+- `demo-data.yml` is opt-in on purpose. Never add it to the required checks, and never let its
+  `publish` job run for a `pull_request` event.

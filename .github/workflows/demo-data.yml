@@ -1,0 +1,257 @@
+name: Demo data
+
+# Opt-in: generates and verifies the demo datasets (packages/demo-data), then optionally runs the
+# live R2 round trip, the browser spec and a production publish. It is not a required check and
+# never runs on its own. Start it with either:
+#
+#   gh workflow run demo-data.yml [-f e2e=true] [-f publish=true]   # publish: main only
+#   the `demo-data` label on a PR                                   # everything except publish
+#
+# Jobs: generate → roundtrip (r2-preview) → publish (r2-prod, reviewers), and generate → e2e.
+# The dataset contract, buckets and push guards are in docs/src/dev/demo-datasets.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the datasets to the PRODUCTION bucket (main only; waits for r2-prod approval)
+        type: boolean
+        default: false
+      e2e:
+        description: Run the demo-datasets browser spec (Playwright, wasm)
+        type: boolean
+        default: false
+  # Every label added to a PR starts a run; jobs skip unless the label is `demo-data`.
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  # The label is part of the key so adding an unrelated label cannot cancel a demo-data run.
+  group: demo-data-${{ github.ref }}-${{ github.event.label.name || 'dispatch' }}
+  # Never cancel a dispatch: it may be publishing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  generate:
+    name: generate + verify
+    if: github.event_name != 'pull_request' || github.event.label.name == 'demo-data'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: extractions/setup-just@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Generate every persona (builds forge-server)
+        run: just demo-data generate
+      # Manifests, compaction, dataset_meta, invariants, fingerprints; then the ignored Rust test
+      # crates/forge-sdk/tests/demo_datasets.rs opens every dataset with the SDK.
+      - name: Verify the datasets
+        run: just demo-data verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-datasets
+          path: data/demo
+          if-no-files-found: error
+          retention-days: 3
+
+  roundtrip:
+    name: R2 round trip + preview push
+    needs: generate
+    # Fork PRs get no secrets, so only dispatches and same-repo PRs reach R2.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'demo-data' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: r2-preview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      # Install before the credentials are exported, so no install script can see them.
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: demo-datasets
+          path: data/demo
+
+      # Same action and pin as app-build.yml. The r2-preview Environment holds the secret
+      # OP_SERVICE_ACCOUNT_TOKEN and the variable OP_ENVIRONMENT_ID (an id, not a secret); the
+      # 1Password Environment exports R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY.
+      # The action masks every value it loads.
+      - name: Load R2 credentials from 1Password
+        uses: aRustyDev/load-secrets-action@52cfbba5e153fe5e335e94c31ec0e176a7f2d7fd
+        with:
+          environment-id: ${{ vars.OP_ENVIRONMENT_ID }}
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      - name: Check credentials were loaded (lengths only)
+        run: |
+          [ -n "$R2_ACCOUNT_ID" ] || { echo "R2_ACCOUNT_ID not set"; exit 1; }
+          [ -n "$R2_ACCESS_KEY_ID" ] || { echo "R2_ACCESS_KEY_ID not set"; exit 1; }
+          [ -n "$R2_SECRET_ACCESS_KEY" ] || { echo "R2_SECRET_ACCESS_KEY not set"; exit 1; }
+          echo "lengths: account id ${#R2_ACCOUNT_ID}, key id ${#R2_ACCESS_KEY_ID}, secret ${#R2_SECRET_ACCESS_KEY}"
+
+      # The test refuses any bucket whose name does not end in -preview, so it also guards the
+      # push below: a misconfigured R2_BUCKET_PREVIEW fails here, before anything is uploaded.
+      - name: Round trip against the preview bucket (put, head, list, get, delete)
+        run: bun test ./src/r2/__tests__/roundtrip.test.ts
+        working-directory: packages/demo-data
+        env:
+          FORGE_R2_ROUNDTRIP: "1"
+      # Every push guard runs on the generated files; an unchanged remote copy is skipped.
+      - name: Push the generated datasets to the preview bucket
+        run: bun run src/cli.ts push --target preview
+        working-directory: packages/demo-data
+
+  e2e:
+    name: demo datasets in the browser (Playwright)
+    needs: generate
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.e2e) ||
+      github.event.label.name == 'demo-data'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: extractions/setup-just@v2
+
+      # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock exactly. Read the version
+      # from the lock (as app-build.yml does) instead of pinning it: nobody runs this opt-in
+      # workflow on the PR that bumps the crate, so a pinned copy would rot unnoticed.
+      - name: Read the wasm-bindgen version from Cargo.lock
+        id: wbg
+        run: |
+          v=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "could not read wasm-bindgen version from Cargo.lock"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "wasm-bindgen $v"
+      - uses: actions/cache@v4
+        id: wbg-cache
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ steps.wbg.outputs.version }}
+      - name: Install wasm-bindgen-cli (prebuilt binary, source build as fallback)
+        if: steps.wbg-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          v="${{ steps.wbg.outputs.version }}"
+          tarball="wasm-bindgen-$v-x86_64-unknown-linux-musl"
+          if curl -fsSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$v/$tarball.tar.gz" | tar -xz -C /tmp; then
+            install -m 0755 "/tmp/$tarball/wasm-bindgen" "$HOME/.cargo/bin/wasm-bindgen"
+          else
+            echo "prebuilt binary unavailable; building from source (slow)"
+            cargo install wasm-bindgen-cli --version "$v" --locked
+          fi
+      - run: wasm-bindgen --version
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Build the wasm bundles
+        run: just wasm-bundle typst-bundle
+      - uses: actions/download-artifact@v4
+        with:
+          name: demo-datasets
+          path: data/demo
+      - name: Install Chromium
+        run: bun --bun x playwright install --with-deps chromium
+        working-directory: packages/webui
+      # Fails, rather than skips, when FORGE_DEMO_DATA_DIR holds no dataset.
+      - name: Run the demo-datasets spec against the production build
+        run: bun run test:e2e:wasm e2e/wasm/demo-datasets.spec.ts
+        working-directory: packages/webui
+        env:
+          FORGE_E2E_PREVIEW: "1"
+          FORGE_DEMO_DATA_DIR: ${{ github.workspace }}/data/demo
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: demo-data-playwright-report
+          path: |
+            packages/webui/playwright-report
+            packages/webui/test-results
+          retention-days: 7
+
+  publish:
+    name: publish to the production bucket
+    needs: [generate, roundtrip, e2e]
+    # A dispatch from main with publish=true only, never a pull_request (r2-prod also allows only
+    # main and waits for a reviewer). The round trip and preview push must pass first, and so
+    # must e2e when it was requested; `!cancelled()` lets a skipped e2e through.
+    if: >-
+      !cancelled() &&
+      github.event_name == 'workflow_dispatch' && inputs.publish &&
+      github.ref == 'refs/heads/main' &&
+      needs.generate.result == 'success' &&
+      needs.roundtrip.result == 'success' &&
+      (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: r2-prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: demo-datasets
+          path: data/demo
+
+      # The r2-prod Environment holds its own OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID.
+      - name: Load R2 credentials from 1Password
+        uses: aRustyDev/load-secrets-action@52cfbba5e153fe5e335e94c31ec0e176a7f2d7fd
+        with:
+          environment-id: ${{ vars.OP_ENVIRONMENT_ID }}
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      - name: Check credentials were loaded (lengths only)
+        run: |
+          [ -n "$R2_ACCOUNT_ID" ] || { echo "R2_ACCOUNT_ID not set"; exit 1; }
+          [ -n "$R2_ACCESS_KEY_ID" ] || { echo "R2_ACCESS_KEY_ID not set"; exit 1; }
+          [ -n "$R2_SECRET_ACCESS_KEY" ] || { echo "R2_SECRET_ACCESS_KEY not set"; exit 1; }
+          echo "lengths: account id ${#R2_ACCOUNT_ID}, key id ${#R2_ACCESS_KEY_ID}, secret ${#R2_SECRET_ACCESS_KEY}"
+
+      # The same guards as the preview push; --yes stands in for the `just demo-data publish`
+      # confirmation prompt (the r2-prod reviewer is the confirmation here).
+      - name: Publish every persona to the production bucket
+        run: bun run src/cli.ts publish --yes
+        working-directory: packages/demo-data

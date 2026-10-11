@@ -95,7 +95,11 @@ The R2 recipes run the CLI through a private `_r2` recipe. It loads `R2_ACCOUNT_
   otherwise read from the `OP_ENVIRONMENT_ID` variable of the GitHub Environment `r2-preview` or
   `r2-prod`. The id is not a secret.
 - **CI:** when all three `R2_*` variables are already set (for example by a secrets action), `op`
-  is skipped.
+  is skipped. The opt-in workflow `.github/workflows/demo-data.yml` (a manual dispatch, or the
+  `demo-data` label on a PR) loads them with `aRustyDev/load-secrets-action` from the `r2-preview`
+  and `r2-prod` GitHub Environments. It runs the round trip and a preview push, and runs
+  `publish --yes` only for a dispatch from `main` with `publish=true`, after an `r2-prod`
+  reviewer approves. `.github/AGENTS.md` describes its jobs.
 - **Never printed:** credential values never reach argv and are never printed. Error messages
   name variables, not values, and the in-process credentials object redacts itself from logs,
   `JSON.stringify` and `Bun.inspect`.
