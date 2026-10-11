@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/state'
   import { forge, friendlyError } from '$lib/sdk'
   import { addToast } from '$lib/stores/toast.svelte'
   import { onForgeChanged } from '$lib/forge-changed'
@@ -15,7 +16,8 @@
 
   type ContentType = 'bullet' | 'perspective'
 
-  let contentType = $state<ContentType>('bullet')
+  // `?tab=perspectives` opens on the Perspectives tab (the dashboard's pending cards link here).
+  let contentType = $state<ContentType>(page.url.searchParams.get('tab') === 'perspectives' ? 'perspective' : 'bullet')
   let items = $state<any[]>([])
   let loading = $state(true)
   let searchQuery = $state('')

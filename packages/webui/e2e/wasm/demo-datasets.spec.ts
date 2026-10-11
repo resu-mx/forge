@@ -153,10 +153,9 @@ if (!DIR) {
       await page.goto('/opportunities/organizations')
       await expectEveryColumnHasACard(page, ['Backlog', 'Researching', 'Targeting', 'Excluded'])
 
-      // Sources have a board component (routes/data/sources/SourcesView.svelte), but no page
-      // shows it: /data/sources redirects to /experience/roles, whose SourcesView is a list.
-      // So, weaker than a board: every source page lists something, and between them every
-      // board column's status appears on some source card.
+      // Each /experience page can show its sources as a board (view mode `sources:<type>`), but
+      // this check stays on the list, which is the default: every source page lists something,
+      // and between them every board column's status appears on some source card.
       const sourceStatuses = new Set<string>()
       for (const type of ['roles', 'projects', 'presentations', 'education', 'general']) {
         await page.goto(`/experience/${type}`)
