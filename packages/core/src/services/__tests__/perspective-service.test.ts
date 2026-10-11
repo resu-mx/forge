@@ -261,6 +261,46 @@ describe('PerspectiveService', () => {
     expect(result.error.code).toBe('NOT_FOUND')
   })
 
+  // ── archivePerspective / unarchivePerspective ─────────────────────
+
+  test('archivePerspective then unarchivePerspective returns an approved perspective to draft', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }])
+    const perspId = seedPerspective(db, bulletId, { status: 'approved' })
+
+    const archived = await service.archivePerspective(perspId)
+    expect(archived.ok).toBe(true)
+    if (!archived.ok) return
+    expect(archived.data.status).toBe('archived')
+
+    const unarchived = await service.unarchivePerspective(perspId)
+    expect(unarchived.ok).toBe(true)
+    if (!unarchived.ok) return
+    expect(unarchived.data.status).toBe('draft')
+  })
+
+  test('archivePerspective rejects a non-approved perspective', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }])
+    const perspId = seedPerspective(db, bulletId, { status: 'draft' })
+
+    const result = await service.archivePerspective(perspId)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('VALIDATION_ERROR')
+  })
+
+  test('unarchivePerspective rejects a non-archived perspective', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }])
+    const perspId = seedPerspective(db, bulletId, { status: 'approved' })
+
+    const result = await service.unarchivePerspective(perspId)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('VALIDATION_ERROR')
+  })
+
   test('approvePerspective returns NOT_FOUND for missing ID', async () => {
     const result = await service.approvePerspective('nonexistent')
     expect(result.ok).toBe(false)

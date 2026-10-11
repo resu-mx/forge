@@ -180,6 +180,30 @@ async fn submit_perspective(
     Ok(Json(ApiData { data: result }))
 }
 
+/// Archive an approved perspective (`approved -> archived`).
+async fn archive_perspective(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Perspective>>, ApiError> {
+    let result = with_conn(&state, move |conn| {
+        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::Archived, None)
+    })
+    .await?;
+    Ok(Json(ApiData { data: result }))
+}
+
+/// Return an archived perspective to draft (`archived -> draft`).
+async fn unarchive_perspective(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Perspective>>, ApiError> {
+    let result = with_conn(&state, move |conn| {
+        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::Draft, None)
+    })
+    .await?;
+    Ok(Json(ApiData { data: result }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -198,4 +222,6 @@ pub fn router() -> Router<SharedState> {
         .route("/perspectives/{id}/reject", patch(reject_perspective))
         .route("/perspectives/{id}/reopen", patch(reopen_perspective))
         .route("/perspectives/{id}/submit", patch(submit_perspective))
+        .route("/perspectives/{id}/archive", patch(archive_perspective))
+        .route("/perspectives/{id}/unarchive", patch(unarchive_perspective))
 }

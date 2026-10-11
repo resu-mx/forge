@@ -175,6 +175,30 @@ async fn submit_bullet(
     Ok(Json(ApiData { data: result }))
 }
 
+/// Archive an approved bullet (`approved -> archived`).
+async fn archive_bullet(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Bullet>>, ApiError> {
+    let result = with_conn(&state, move |conn| {
+        BulletStore::transition_status(conn, &id, BulletStatus::Archived, None)
+    })
+    .await?;
+    Ok(Json(ApiData { data: result }))
+}
+
+/// Return an archived bullet to draft (`archived -> draft`).
+async fn unarchive_bullet(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Bullet>>, ApiError> {
+    let result = with_conn(&state, move |conn| {
+        BulletStore::transition_status(conn, &id, BulletStatus::Draft, None)
+    })
+    .await?;
+    Ok(Json(ApiData { data: result }))
+}
+
 // ── Skills ──────────────────────────────────────────────────────────
 
 async fn list_bullet_skills(
@@ -265,6 +289,8 @@ pub fn router() -> Router<SharedState> {
         .route("/bullets/{id}/reject", patch(reject_bullet))
         .route("/bullets/{id}/reopen", patch(reopen_bullet))
         .route("/bullets/{id}/submit", patch(submit_bullet))
+        .route("/bullets/{id}/archive", patch(archive_bullet))
+        .route("/bullets/{id}/unarchive", patch(unarchive_bullet))
         .route(
             "/bullets/{id}/derive-perspectives",
             post(derive_perspectives_replaced),

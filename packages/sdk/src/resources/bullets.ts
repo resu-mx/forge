@@ -77,6 +77,16 @@ export class BulletsResource {
     return this.request<Bullet>('PATCH', `/api/bullets/${id}/submit`)
   }
 
+  /** Archive an approved bullet (approved -> archived). */
+  archive(id: string): Promise<Result<Bullet>> {
+    return this.request<Bullet>('PATCH', `/api/bullets/${id}/archive`)
+  }
+
+  /** Return an archived bullet to draft (archived -> draft). */
+  unarchive(id: string): Promise<Result<Bullet>> {
+    return this.request<Bullet>('PATCH', `/api/bullets/${id}/unarchive`)
+  }
+
   // ── Bullet Skills ───────────────────────────────────────────────────
 
   /** List all skills linked to this bullet. */

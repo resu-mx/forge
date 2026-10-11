@@ -312,6 +312,16 @@ export class BulletService {
     return this.transition(id, 'in_review')
   }
 
+  /** Archive an approved bullet (approved -> archived). */
+  async archiveBullet(id: string): Promise<Result<Bullet>> {
+    return this.transition(id, 'archived')
+  }
+
+  /** Return an archived bullet to draft (archived -> draft). */
+  async unarchiveBullet(id: string): Promise<Result<Bullet>> {
+    return this.transition(id, 'draft')
+  }
+
   // ── private helpers ─────────────────────────────────────────────────
 
   private async transition(
