@@ -10,8 +10,8 @@ Runs on every PR and on pushes to `main`. Jobs:
 - **forge-wasm (wasm32):** `just wasm-build`, a forge-typst wasm build, `just wasm-deps-check`,
   and the check's must-fail control.
 - **TS route tests vs Rust server:** `just parity-tier0`.
-- **runtime + SDK tests (bun):** `packages/runtime` typecheck and tests, plus `packages/sdk`
-  tests.
+- **runtime + SDK tests (bun):** `packages/runtime` typecheck and tests, `packages/sdk` tests,
+  and `packages/core`'s migration and schema tests (`bun test src/db`).
 - **core loop in the browser (Playwright):** builds the wasm bundles, installs Chromium and runs
   `packages/webui/e2e/wasm` against the production build.
 - **fmt + clippy (advisory):** reports problems but does not block.
@@ -81,8 +81,9 @@ inputs. It runs in this order:
 - CI pins Bun `1.4.2` and installs with `bun install --frozen-lockfile`. Commit `bun.lock`
   together with any `package.json` change. Cargo runs with `--locked`, so commit `Cargo.lock`
   changes too.
-- Only `runtime` and `sdk` among the TS packages run in CI (the parity job also exercises
-  core's route tests). Run the rest locally with `just test`.
+- Only `runtime`, `sdk` and core's `src/db` tests among the TS packages run in CI (the parity
+  job also exercises core's route tests, against the Rust server). Run the rest locally with
+  `just test`.
 - An extension release tag `v<version>` must equal `version` in
   `packages/extension/manifest.json`, so bump both manifests before tagging (see
   `packages/extension/AGENTS.md`).

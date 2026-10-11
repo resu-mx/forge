@@ -69,6 +69,7 @@ jobs:
 
   # The browser runtime's JavaScript half (@forge/runtime) and the SDK's `fetch` option.
   # No browser needed: the client takes its Worker and Web Locks as dependencies.
+  # Also core's migration and schema tests: both runtimes run the same migrations.
   runtime-js:
     name: runtime + SDK tests (bun)
     runs-on: ubuntu-latest
@@ -84,6 +85,8 @@ jobs:
         working-directory: packages/runtime
       - run: bun test
         working-directory: packages/sdk
+      - run: bun test src/db
+        working-directory: packages/core
 
   # The browser-first acceptance spec (roadmap M7): the real UI in Chromium, with the Rust API and
   # the Typst compiler running inside the page and no server. It drives profile → organization →
