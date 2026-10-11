@@ -32,8 +32,18 @@ import type {
   Result,
   PaginatedResult,
   SourceFilter,
+  UnifiedKanbanStatus,
 } from '../types'
 import type { WhereClause } from '../storage/adapter-types'
+
+/** The statuses a person can move a source to (the board columns). Excludes the legacy `deriving` lock. */
+const SETTABLE_SOURCE_STATUSES: readonly UnifiedKanbanStatus[] = [
+  'draft',
+  'in_review',
+  'approved',
+  'rejected',
+  'archived',
+]
 
 export class SourceService {
   constructor(protected readonly elm: EntityLifecycleManager) {}
@@ -202,6 +212,16 @@ export class SourceService {
     if (input.description !== undefined && input.description.trim().length === 0) {
       return { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Description must not be empty' } }
     }
+    // `deriving` is the legacy lock the derivation flow used to take; a person cannot set it.
+    if (input.status !== undefined && !SETTABLE_SOURCE_STATUSES.includes(input.status)) {
+      return {
+        ok: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid status: ${input.status}. Must be one of: ${SETTABLE_SOURCE_STATUSES.join(', ')}`,
+        },
+      }
+    }
 
     // Fetch to get the current source_type (used to route extension update).
     const existing = await this.elm.get('sources', id)
@@ -215,6 +235,7 @@ export class SourceService {
     const basePatch: Record<string, unknown> = {}
     if (input.title !== undefined) basePatch.title = input.title
     if (input.description !== undefined) basePatch.description = input.description
+    if (input.status !== undefined) basePatch.status = input.status
     if ('start_date' in input) basePatch.start_date = input.start_date ?? null
     if ('end_date' in input) basePatch.end_date = input.end_date ?? null
 

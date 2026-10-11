@@ -213,6 +213,8 @@ pub struct CreateSource {
 pub struct UpdateSource {
     pub title: Option<String>,
     pub description: Option<String>,
+    /// Move the source between board columns. `deriving` is a legacy lock a person cannot set.
+    pub status: Option<SourceStatus>,
     #[serde(
         default,
         deserialize_with = "crate::serde_util::double_option",

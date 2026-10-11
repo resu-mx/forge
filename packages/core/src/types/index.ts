@@ -921,6 +921,8 @@ export interface CreateSource {
 export interface UpdateSource {
   title?: string
   description?: string
+  /** Move the source between board columns. `deriving` is a legacy lock a person cannot set. */
+  status?: UnifiedKanbanStatus
   start_date?: string | null
   end_date?: string | null
   // Role extension fields
