@@ -22,11 +22,13 @@
   let statusFilter = $state('all')
 
   // View mode: list or board
-  let viewMode = $state<'list' | 'board'>(getViewMode('bullets'))
+  // Each tab persists its own mode under forge:viewMode:<bullets|perspectives>.
+  const viewModeKey = (type: ContentType) => (type === 'bullet' ? 'bullets' : 'perspectives')
+  let viewMode = $state<'list' | 'board'>(getViewMode(viewModeKey(contentType)))
 
   function handleViewChange(mode: 'list' | 'board') {
     viewMode = mode
-    setViewMode(contentType === 'bullet' ? 'bullets' : 'perspectives', mode)
+    setViewMode(viewModeKey(contentType), mode)
   }
 
   // Column definitions for kanban boards
@@ -161,6 +163,7 @@
 
   function switchType(type: ContentType) {
     contentType = type
+    viewMode = getViewMode(viewModeKey(type))
     statusFilter = 'all'
     searchQuery = ''
   }
