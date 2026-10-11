@@ -120,6 +120,72 @@ fn get(path: &str) -> Request<Body> {
     Request::builder().uri(path).body(Body::empty()).unwrap()
 }
 
+/// A resume from the "Standard Tech Resume" template (Summary, Experience, Technical Skills,
+/// Education & Certifications, Selected Projects: all empty) linked to a saved summary.
+async fn resume_with_linked_summary(r: &Router, summary_text: &str) -> String {
+    let (_, summary) = json_call(
+        r,
+        "POST",
+        "/api/summaries",
+        Some(json!({"title": "Platform engineer", "description": summary_text})),
+    )
+    .await;
+    let (_, templates) = json_call(r, "GET", "/api/templates", None).await;
+    let template = templates["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Standard Tech Resume")
+        .unwrap();
+    let (status, resume) = json_call(
+        r,
+        "POST",
+        "/api/resumes",
+        Some(json!({
+            "name": "Linked", "target_role": "Engineer", "target_employer": "Acme",
+            "archetype": "agentic-ai", "template_id": template["id"],
+            "summary_id": summary["data"]["id"]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{resume}");
+    resume["data"]["id"].as_str().unwrap().to_string()
+}
+
+async fn typst_source(r: &Router, id: &str) -> String {
+    let (status, _, body) = send(r, get(&format!("/api/export/resume/{id}?format=typst"))).await;
+    assert_eq!(status, StatusCode::OK);
+    String::from_utf8(body).unwrap()
+}
+
+#[tokio::test]
+async fn a_linked_summary_is_rendered_once_and_empty_sections_are_omitted() {
+    let r = router();
+    let text = "Builds the runtime agents run on.";
+    let id = resume_with_linked_summary(&r, text).await;
+
+    // The IR carries the summary twice by design: `summary`, and the synthetic section.
+    let (_, ir) = json_call(&r, "GET", &format!("/api/resumes/{id}/ir"), None).await;
+    assert_eq!(ir["data"]["summary"]["content"], text);
+    assert_eq!(ir["data"]["sections"][0]["type"], "summary");
+
+    let source = typst_source(&r, &id).await;
+    assert_eq!(source.matches(text).count(), 1, "{source}");
+    assert_eq!(source.matches("#sec(").count(), 1, "{source}");
+    assert!(source.contains("#sec(\"Summary\")"), "{source}");
+    // The saved summary's title is not a heading, and the template's empty sections
+    // (including its own "Summary" freeform section) print nothing.
+    for absent in [
+        "Platform engineer",
+        "Experience",
+        "Technical Skills",
+        "Education & Certifications",
+        "Selected Projects",
+    ] {
+        assert!(!source.contains(absent), "{absent} in {source}");
+    }
+}
+
 #[tokio::test]
 async fn typst_export_is_source_with_the_right_headers() {
     let r = router();
@@ -232,6 +298,29 @@ mod with_pdf {
         );
         assert_eq!(headers["x-forge-pdf-cache"], "miss");
         assert!(body.starts_with(b"%PDF-"));
+    }
+
+    /// The words the PDF draws (Typst splits text into glyph runs, so join them).
+    fn drawn_text(pdf_source: &str) -> String {
+        forge_typst::document_text(&forge_typst::compile_document(pdf_source).unwrap()).join(" ")
+    }
+
+    #[tokio::test]
+    async fn post_pdf_draws_a_linked_summary_once() {
+        let r = router();
+        let id = resume_with_linked_summary(&r, "Distinctivesummaryword appears here.").await;
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/resumes/{id}/pdf"))
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = send(&r, req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.starts_with(b"%PDF-"));
+
+        let text = drawn_text(&typst_source(&r, &id).await);
+        assert_eq!(text.matches("Distinctivesummaryword").count(), 1, "{text}");
+        assert!(!text.contains("Experience"), "{text}");
     }
 
     #[tokio::test]

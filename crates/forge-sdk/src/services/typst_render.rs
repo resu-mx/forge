@@ -89,6 +89,12 @@ const PREAMBLE: &str = r#"#set page(paper: "us-letter", margin: (x: 0.5in, y: 0.
 "#;
 
 /// Render a compiled resume as Typst source.
+///
+/// Only `doc.sections` are drawn. The compiler (both runtimes) turns a linked or overridden
+/// summary into a synthetic `Summary` section at the top, which is what the LaTeX and
+/// Markdown renderers draw too; `doc.summary` is that same text kept for the editor, so
+/// drawing it here as well would print the summary twice. A section with nothing to draw
+/// is left out entirely rather than printed as a bare heading, as the LaTeX compiler does.
 pub fn render_typst(doc: &ResumeDocument) -> String {
     let mut out = String::new();
     out.push_str(&PREAMBLE.replace("__FONT__", FONT));
@@ -100,20 +106,29 @@ pub fn render_typst(doc: &ResumeDocument) -> String {
 
     render_header(&doc.header, &mut out);
 
-    if let Some(summary) = &doc.summary {
-        if !summary.content.trim().is_empty() {
-            out.push_str(&format!(
-                "#sec({})\n",
-                lit(summary.title.as_deref().unwrap_or("Summary"))
-            ));
-            out.push_str(&format!("#{}\n\n", lit(&summary.content)));
-        }
-    }
-
-    for section in &doc.sections {
+    for section in doc.sections.iter().filter(|s| section_has_content(s)) {
         render_section(section, &mut out);
     }
     out
+}
+
+/// Whether an item draws anything. Headed items (an organization, a school, a project
+/// name, ...) always do; free text and grouped lists only when they have text in them.
+fn item_has_content(item: &IRSectionItem) -> bool {
+    match item {
+        IRSectionItem::Summary(s) => !s.content.trim().is_empty(),
+        IRSectionItem::Clearance(c) => !c.content.trim().is_empty(),
+        IRSectionItem::SkillGroup(g) => g.categories.iter().any(|c| !c.skills.is_empty()),
+        IRSectionItem::CertificationGroup(g) => g.categories.iter().any(|c| !c.certs.is_empty()),
+        IRSectionItem::ExperienceGroup(g) => !g.subheadings.is_empty(),
+        IRSectionItem::Education(_)
+        | IRSectionItem::Project(_)
+        | IRSectionItem::Presentation(_) => true,
+    }
+}
+
+fn section_has_content(section: &IRSection) -> bool {
+    section.items.iter().any(item_has_content)
 }
 
 fn render_header(h: &ResumeHeader, out: &mut String) {
@@ -173,7 +188,7 @@ fn render_header(h: &ResumeHeader, out: &mut String) {
 fn render_section(section: &IRSection, out: &mut String) {
     out.push_str(&format!("#sec({})\n", lit(&section.title)));
 
-    for item in &section.items {
+    for item in section.items.iter().filter(|i| item_has_content(i)) {
         match item {
             IRSectionItem::Summary(s) => out.push_str(&format!("#{}\n\n", lit(&s.content))),
             IRSectionItem::ExperienceGroup(group) => render_experience(group, out),
@@ -361,7 +376,7 @@ mod tests {
     use super::*;
     use forge_core::{
         CertificationCategoryGroup, CertificationEntry, CertificationGroup, ExperienceSubheading,
-        IRSectionType, ResumeSummary, SkillCategoryGroup, SkillGroup,
+        IRSectionType, ResumeSummary, SkillCategoryGroup, SkillGroup, SummaryItem,
     };
 
     fn bullet(content: &str) -> ExperienceBullet {
@@ -465,9 +480,122 @@ mod tests {
         assert!(out.contains("#set document(title: \"Ada Lovelace\""));
     }
 
+    /// What the compiler emits for a linked summary: `doc.summary` plus a synthetic
+    /// `Summary` section carrying the same text.
+    fn with_summary(mut d: ResumeDocument, title: Option<&str>, content: &str) -> ResumeDocument {
+        d.summary = Some(ResumeSummary {
+            summary_id: Some("sum-1".into()),
+            title: title.map(Into::into),
+            content: content.into(),
+            is_override: false,
+        });
+        d.sections.insert(
+            0,
+            section(
+                "Summary",
+                IRSectionType::Summary,
+                vec![IRSectionItem::Summary(SummaryItem {
+                    content: content.into(),
+                    entry_id: None,
+                })],
+            ),
+        );
+        d
+    }
+
+    #[test]
+    fn a_linked_summary_is_drawn_once_under_one_heading() {
+        let out = render_typst(&with_summary(
+            doc(vec![]),
+            Some("Platform summary"),
+            "Builds reliable platforms.",
+        ));
+        assert_eq!(
+            out.matches("Builds reliable platforms.").count(),
+            1,
+            "summary text drawn once: {out}"
+        );
+        assert_eq!(out.matches("#sec(").count(), 1, "one heading: {out}");
+        assert!(out.contains("#sec(\"Summary\")\n#\"Builds reliable platforms.\""));
+        // The summary's own title names the saved summary; it is not a resume heading.
+        assert!(!out.contains("Platform summary"), "{out}");
+    }
+
+    #[test]
+    fn doc_summary_alone_draws_nothing_the_section_owns_it() {
+        let mut d = doc(vec![]);
+        d.summary = Some(ResumeSummary {
+            summary_id: None,
+            title: None,
+            content: "Only in doc.summary.".into(),
+            is_override: true,
+        });
+        assert!(!render_typst(&d).contains("Only in doc.summary."));
+    }
+
+    #[test]
+    fn empty_sections_print_no_heading() {
+        let out = render_typst(&doc(vec![
+            section("Experience", IRSectionType::Experience, vec![]),
+            section(
+                "Summary",
+                IRSectionType::Freeform,
+                vec![IRSectionItem::Summary(SummaryItem {
+                    content: "  ".into(),
+                    entry_id: Some("e".into()),
+                })],
+            ),
+            section(
+                "Technical Skills",
+                IRSectionType::Skills,
+                vec![IRSectionItem::SkillGroup(SkillGroup { categories: vec![] })],
+            ),
+            section(
+                "Certifications",
+                IRSectionType::Certifications,
+                vec![IRSectionItem::CertificationGroup(CertificationGroup {
+                    categories: vec![],
+                })],
+            ),
+            section("Clearance", IRSectionType::Clearance, vec![]),
+            section(
+                "Awards",
+                IRSectionType::Awards,
+                vec![
+                    IRSectionItem::Summary(SummaryItem {
+                        content: String::new(),
+                        entry_id: Some("a".into()),
+                    }),
+                    IRSectionItem::Summary(SummaryItem {
+                        content: "Best paper".into(),
+                        entry_id: Some("b".into()),
+                    }),
+                ],
+            ),
+        ]));
+        for title in [
+            "Experience",
+            "Summary",
+            "Technical Skills",
+            "Certifications",
+            "Clearance",
+        ] {
+            assert!(
+                !out.contains(&format!("#sec({})", lit(title))),
+                "empty {title} printed a heading: {out}"
+            );
+        }
+        // A section with some content keeps its heading, and its blank items draw nothing.
+        assert!(out.contains("#sec(\"Awards\")\n#\"Best paper\""), "{out}");
+        assert!(
+            !out.contains("#\"\""),
+            "a blank item drew an empty paragraph: {out}"
+        );
+    }
+
     #[test]
     fn summary_and_every_section_kind_render() {
-        let mut d = doc(vec![
+        let d = doc(vec![
             section(
                 "Technical Skills",
                 IRSectionType::Skills,
@@ -493,13 +621,7 @@ mod tests {
                 })],
             ),
         ]);
-        d.summary = Some(ResumeSummary {
-            summary_id: None,
-            title: None,
-            content: "Builds things.".into(),
-            is_override: false,
-        });
-        let out = render_typst(&d);
+        let out = render_typst(&with_summary(d, None, "Builds things."));
         assert!(out.contains("#sec(\"Summary\")\n#\"Builds things.\""));
         assert!(out.contains("#labelled((\"Languages\", \"Rust, Go\"))"));
         assert!(out.contains("#labelled((\"Cloud\", \"CKA\"))"));
