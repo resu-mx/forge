@@ -187,6 +187,21 @@ pub struct CertificationEntry {
     pub name: String,
     pub entry_id: Option<String>,
     pub source_id: Option<String>,
+    /// The certification is being worked toward, not earned yet.
+    #[serde(default)]
+    pub in_progress: bool,
+}
+
+impl CertificationEntry {
+    /// The text every output prints: the short name, marked while the certification is in
+    /// progress. One rule for Markdown, LaTeX and Typst (the TS compiler applies the same one).
+    pub fn display_name(&self) -> String {
+        if self.in_progress {
+            format!("{} (in progress)", self.name)
+        } else {
+            self.name.clone()
+        }
+    }
 }
 
 /// A clearance entry in the IR.

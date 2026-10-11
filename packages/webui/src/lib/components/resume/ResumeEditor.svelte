@@ -329,7 +329,7 @@
           lines.push(escLatex(item.content))
         } else if (item.kind === 'certification_group') {
           for (const cat of item.categories) {
-            lines.push(`\\textbf{${escLatex(cat.label)}:} ${cat.certs.map(c => escLatex(c.name)).join(', ')}`)
+            lines.push(`\\textbf{${escLatex(cat.label)}:} ${cat.certs.map(c => escLatex(c.in_progress ? `${c.name} (in progress)` : c.name)).join(', ')}`)
           }
         } else if (item.kind === 'presentation') {
           lines.push(`\\resumeProjectHeading{${escLatex(item.title)}}{${escLatex(item.date ?? '')}}`)

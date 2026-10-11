@@ -443,7 +443,7 @@
                 <span class="cert-list">
                   {#each cat.certs as cert, i}
                     <span class="cert-item">
-                      {cert.name}{#if onRemoveCertification && cert.entry_id}<button
+                      {cert.name}{#if cert.in_progress}{' (in progress)'}{/if}{#if onRemoveCertification && cert.entry_id}<button
                           type="button"
                           class="btn btn-xs btn-ghost entry-remove-btn"
                           onclick={() => onRemoveCertification?.(cert.entry_id!)}

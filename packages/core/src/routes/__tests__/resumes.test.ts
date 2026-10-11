@@ -502,5 +502,39 @@ describe('Resume Routes', () => {
       expect(ir.sections[0].items[0].kind).toBe('summary')
       expect(ir.sections[0].items[0].content).toBe('Experienced engineer.')
     })
+
+    // The PDF, Markdown and LaTeX outputs all mark an in-progress certification from this flag.
+    // (PDF text itself is not asserted here: the TS PDF needs tectonic.)
+    test('GET /resumes/:id/ir flags an in-progress certification and keeps its name plain', async () => {
+      const resumeId = seedResume(ctx.db)
+      const sectionId = seedResumeSection(ctx.db, resumeId, 'Certifications', 'certifications', 0)
+      const orgId = crypto.randomUUID()
+      ctx.db.run(`INSERT INTO organizations (id, name, org_type) VALUES (?, 'ISC2', 'company')`, [orgId])
+      const pin = (short: string, inProgress: number, position: number) => {
+        const certId = crypto.randomUUID()
+        ctx.db.run(
+          `INSERT INTO certifications (id, short_name, long_name, issuer_id, in_progress)
+           VALUES (?, ?, ?, ?, ?)`,
+          [certId, short, short, orgId, inProgress],
+        )
+        ctx.db.run(
+          `INSERT INTO resume_certifications (id, resume_id, certification_id, section_id, position)
+           VALUES (?, ?, ?, ?, ?)`,
+          [crypto.randomUUID(), resumeId, certId, sectionId, position],
+        )
+      }
+      pin('CISSP', 0, 0)
+      pin('CCSP', 1, 1)
+
+      const irRes = await apiRequest(ctx.app, 'GET', `/resumes/${resumeId}/ir`)
+      expect(irRes.status).toBe(200)
+      const { data: ir } = await irRes.json()
+      const group = ir.sections.find((s: { type: string }) => s.type === 'certifications').items[0]
+      expect(group.kind).toBe('certification_group')
+      expect(group.categories[0].certs.map((c: { name: string; in_progress: boolean }) => [c.name, c.in_progress])).toEqual([
+        ['CISSP', false],
+        ['CCSP', true],
+      ])
+    })
   })
 })

@@ -55,7 +55,7 @@ export function generateMarkdownFromIR(doc: ResumeDocument): string {
         lines.push(`- ${item.content}`)
       } else if (item.kind === 'certification_group') {
         for (const cat of item.categories) {
-          lines.push(`**${cat.label}:** ${cat.certs.map(c => c.name).join(', ')}`)
+          lines.push(`**${cat.label}:** ${cat.certs.map(c => (c.in_progress ? `${c.name} (in progress)` : c.name)).join(', ')}`)
         }
         lines.push('')
       } else if (item.kind === 'presentation') {
