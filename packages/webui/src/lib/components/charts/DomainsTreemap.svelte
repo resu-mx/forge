@@ -10,6 +10,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { forge } from '$lib/sdk'
+  import { listAll } from '$lib/list-all'
   import EChart from './EChart.svelte'
   import { LoadingSpinner, EmptyState } from '$lib/components'
   import { buildDomainsTreemapData, buildDomainsTreemapOption } from './treemap-utils'
@@ -27,7 +28,7 @@
 
   async function loadData() {
     loading = true
-    const p = await forge.perspectives.list({ limit: 5000 })
+    const p = await listAll((params) => forge.perspectives.list(params))
     if (p.ok) perspectives = p.data
     loading = false
   }

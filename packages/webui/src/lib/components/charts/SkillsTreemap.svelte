@@ -7,6 +7,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { forge } from '$lib/sdk'
+  import { listAll } from '$lib/list-all'
   import EChart from './EChart.svelte'
   import { LoadingSpinner, EmptyState } from '$lib/components'
   import { buildSkillsTreemapData, buildSkillsTreemapOption } from './treemap-utils'
@@ -27,7 +28,7 @@
     loading = true
     const [s, b] = await Promise.all([
       forge.skills.list({ limit: 500 }),
-      forge.bullets.list({ limit: 2000 }),
+      listAll((params) => forge.bullets.list(params)),
     ])
     if (s.ok) skills = s.data
     if (b.ok) bullets = b.data

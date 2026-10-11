@@ -18,6 +18,7 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { forge } from '$lib/sdk'
+  import { listAll } from '$lib/list-all'
   import { echarts } from './echarts-registry'
   import EChart from './EChart.svelte'
   import { aggregateByState, buildChoroplethOption } from './choropleth-utils'
@@ -43,7 +44,7 @@
     try {
       const [geoResult, jdsResult] = await Promise.allSettled([
         loadGeoJSON(),
-        forge.jobDescriptions.list({ limit: 500 }),
+        listAll((params) => forge.jobDescriptions.list(params)),
       ])
 
       if (geoResult.status === 'rejected') {
