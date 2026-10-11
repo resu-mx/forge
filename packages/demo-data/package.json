@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@forge/sdk": "workspace:*"
+    "@forge/sdk": "workspace:*",
+    "aws4fetch": "^1.0.20"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

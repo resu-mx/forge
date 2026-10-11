@@ -2,7 +2,8 @@
 
 Builds one SQLite file per persona through the real Rust API, marks it as generated, and
 verifies it. Output: `data/demo/user/<uuid>/{data.sqlite,manifest.json}` plus
-`data/demo/index.json` (gitignored). The R2 push/pull and CI layers are separate work.
+`data/demo/index.json` (gitignored). `src/r2/` pushes and pulls them to and from R2; the
+marker contract, key layout and push guards are in `docs/src/dev/demo-datasets.md`.
 
 ## Run
 
@@ -12,6 +13,14 @@ verifies it. Output: `data/demo/user/<uuid>/{data.sqlite,manifest.json}` plus
 | `just demo-data verify [persona\|all]` | re-check written files: sha256, compaction, `dataset_meta`, invariants, counts, fingerprint; then `crates/forge-sdk/tests/demo_datasets.rs` (ignored by default) opens every dataset with the Rust SDK: no pending migration, no foreign-key violation, `kind=generated` |
 | `just demo-data e2e [playwright flags]` | build the wasm bundles, then `packages/webui/e2e/wasm/demo-datasets.spec.ts`: import each dataset into the browser app (the first through Settings → Storage, the rest through `forgeRuntime.importDatabase`) and check the dashboard, every board column, the PDF preview and the other pages. Fixed port 5198: one run at a time |
 | `just demo-data test` | `bun test`; the integration test skips unless `FORGE_SERVER_BIN` or `target/debug/forge-server` exists |
+| `just demo-data push-preview [persona\|all]` | guarded upload to the preview bucket (`--force`, `--allow-stale`) |
+| `just demo-data publish [persona\|all]` | the same to the **production** bucket, after a confirmation prompt |
+| `just demo-data pull\|head <uuid\|slug> <preview\|prod>`, `ls <preview\|prod>` | download and verify, show metadata, list |
+| `just demo-data roundtrip` | live put/head/list/get/delete test against the preview bucket (`FORGE_R2_ROUNDTRIP=1`) |
+
+The R2 recipes load `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` with `op run`
+(private `_r2` recipe). Never print their values, and never point the round trip or a test at
+the production bucket. `src/r2/__tests__/sign.test.ts` covers signing and every push guard offline.
 
 Defaults are fixed (`--as-of 2026-09-30T17:00:00Z`, `--seed forge-demo-v1`), never the wall clock.
 `verify`'s Rust check and `e2e` read `FORGE_DEMO_DATA_DIR` (default `data/demo`): set it when you
