@@ -3,7 +3,8 @@
 #   just demo-data generate [persona|all] [--seed S] [--as-of ISO] [--out DIR]
 #   just demo-data verify [persona|all]
 
-root := justfile_directory() / "../.."
+# source_directory(), not justfile_directory(): in a module the latter is the ROOT justfile's dir.
+root := source_directory() / "../.."
 cargo := "RUSTC=$(rustup which rustc --toolchain stable) rustup run stable cargo"
 
 # Build forge-server, then generate a persona (default: all) into data/demo/
