@@ -10,9 +10,14 @@
   import { addToast } from '$lib/stores/toast.svelte'
   import { onForgeChanged } from '$lib/forge-changed'
   import { DERIVE_VIA_AGENT } from '$lib/derive-message'
-  import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, SplitPanel, ListPanelHeader, EmptyPanel } from '$lib/components'
+  import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, SplitPanel, ListPanelHeader, EmptyPanel, PageWrapper, PageHeader } from '$lib/components'
   import OrgCombobox from '$lib/components/OrgCombobox.svelte'
-  import type { Source, Organization, Skill, LocationModality, ClearanceLevel, ClearancePolygraph, ClearanceStatus, ClearanceType, ClearanceAccessProgram } from '@forge/sdk'
+  import ViewToggle from '$lib/components/ViewToggle.svelte'
+  import GenericKanban from '$lib/components/kanban/GenericKanban.svelte'
+  import SourceKanbanCard from '$lib/components/kanban/SourceKanbanCard.svelte'
+  import SourceFilterBar from '$lib/components/filters/SourceFilterBar.svelte'
+  import { getViewMode, setViewMode } from '$lib/stores/viewMode.svelte'
+  import type { Source, Organization, Skill, UnifiedKanbanStatus, LocationModality, ClearanceLevel, ClearancePolygraph, ClearanceStatus, ClearanceType, ClearanceAccessProgram } from '@forge/sdk'
   import {
     CLEARANCE_LEVELS,
     CLEARANCE_POLYGRAPHS,
@@ -192,6 +197,56 @@
   })
 
   let selectedSource = $derived(sources.find(s => s.id === selectedId) ?? null)
+
+  // ── Board view ──────────────────────────────────────────────────────
+  // Each source type keeps its own mode (Roles can be a board while Education stays a list).
+  const viewModeKey = `sources:${sourceTypeFilter ?? 'all'}`
+  let viewMode = $state<'list' | 'board'>(getViewMode(viewModeKey))
+
+  function handleViewChange(mode: 'list' | 'board') {
+    viewMode = mode
+    setViewMode(viewModeKey, mode)
+  }
+
+  // Note: legacy 'deriving' items appear in the Approved column.
+  const SOURCE_COLUMNS = [
+    { key: 'draft', label: 'Draft', statuses: ['draft'], accent: '#a5b4fc' },
+    { key: 'in_review', label: 'In Review', statuses: ['in_review'], accent: '#fbbf24' },
+    { key: 'approved', label: 'Approved', statuses: ['approved', 'deriving'], dropStatus: 'approved', accent: '#22c55e' },
+    { key: 'rejected', label: 'Rejected', statuses: ['rejected'], accent: '#ef4444' },
+    { key: 'archived', label: 'Archived', statuses: ['archived'], accent: '#d1d5db' },
+  ]
+
+  let sourceBoardFilters = $state<{ organization?: string; source_type?: string; search?: string }>({})
+
+  // The board shows the same sources the list does (this view's type), narrowed by its filters.
+  let boardSources = $derived.by(() => {
+    let result = filteredSources
+    if (sourceBoardFilters.source_type) result = result.filter(s => s.source_type === sourceBoardFilters.source_type)
+    if (sourceBoardFilters.search) {
+      const q = sourceBoardFilters.search.toLowerCase()
+      result = result.filter(s => s.title.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+    }
+    return result
+  })
+
+  async function handleBoardDrop(itemId: string, newStatus: string) {
+    const result = await forge.sources.update(itemId, { status: newStatus as UnifiedKanbanStatus })
+    if (!result.ok) {
+      addToast({ type: 'error', message: friendlyError(result.error, 'Status update failed') })
+      // Throwing puts the card back in its column.
+      throw new Error('Status update failed')
+    }
+    // Take the stored status from the response, not the one that was asked for.
+    sources = sources.map(s => s.id === itemId ? { ...s, status: result.data.status } : s)
+    addToast({ type: 'success', message: `Source moved to ${result.data.status.replace('_', ' ')}` })
+  }
+
+  /** Open a card from the board in the editor. The mode is not saved, so a reload returns to the board. */
+  function openFromBoard(id: string) {
+    viewMode = 'list'
+    selectSource(id)
+  }
 
   $effect(() => {
     loadSources()
@@ -824,10 +879,43 @@
   </button>
 {/snippet}
 
+{#if viewMode === 'board'}
+<PageWrapper>
+  <PageHeader title="Sources">
+    {#snippet actions()}
+      <button class="btn btn-primary" onclick={() => { viewMode = 'list'; startNew() }}>
+        + New Source
+      </button>
+      <ViewToggle mode={viewMode} onchange={handleViewChange} />
+    {/snippet}
+  </PageHeader>
+  <GenericKanban
+    columns={SOURCE_COLUMNS}
+    items={boardSources}
+    onDrop={handleBoardDrop}
+    {loading}
+    emptyMessage="No sources yet. Create your first source to get started."
+    defaultCollapsed="archived"
+    sortItems={(a, b) => a.title.localeCompare(b.title)}
+  >
+    {#snippet filterBar()}
+      <SourceFilterBar bind:filters={sourceBoardFilters} onchange={() => {}} />
+    {/snippet}
+
+    {#snippet cardContent(source)}
+      <SourceKanbanCard {source} onclick={() => openFromBoard(source.id)} />
+    {/snippet}
+  </GenericKanban>
+</PageWrapper>
+{:else}
 <div class="sources-page">
   <SplitPanel listWidth={340}>
     {#snippet list()}
-      <ListPanelHeader title="Sources" onNew={startNew} newLabel="+ New Source" />
+      <ListPanelHeader title="Sources" onNew={startNew} newLabel="+ New Source">
+        {#snippet actions()}
+          <ViewToggle mode={viewMode} onchange={handleViewChange} />
+        {/snippet}
+      </ListPanelHeader>
 
       {#if !sourceTypeFilter}
     <div class="filter-tabs">
@@ -1379,6 +1467,7 @@
     {/snippet}
   </SplitPanel>
 </div>
+{/if}
 
 <ConfirmDialog
   open={confirmDeleteOpen}

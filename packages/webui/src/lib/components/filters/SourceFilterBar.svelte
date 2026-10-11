@@ -1,7 +1,7 @@
 <script lang="ts">
   import { forge } from '$lib/sdk'
 
-  let { filters, onchange }: {
+  let { filters = $bindable(), onchange }: {
     filters: {
       organization?: string
       source_type?: string

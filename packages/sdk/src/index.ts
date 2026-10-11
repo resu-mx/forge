@@ -16,6 +16,7 @@ export type {
 
 // Core entity types
 export type {
+  UnifiedKanbanStatus,
   Source,
   Bullet,
   Perspective,
