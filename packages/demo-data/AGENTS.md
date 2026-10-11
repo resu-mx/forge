@@ -1,0 +1,59 @@
+# `packages/demo-data`: generated demo datasets
+
+Builds one SQLite file per persona through the real Rust API, marks it as generated, and
+verifies it. Output: `data/demo/user/<uuid>/{data.sqlite,manifest.json}` plus
+`data/demo/index.json` (gitignored). The R2 push/pull, e2e and CI layers are separate work.
+
+## Run
+
+| Command (repo root) | Does |
+|---|---|
+| `just demo-data generate [persona\|all]` | `cargo build -p forge-server`, then generate. Flags: `--seed`, `--as-of`, `--out`, `--server-bin`, `--keep-temp` |
+| `just demo-data verify [persona\|all]` | re-check written files: sha256, compaction, `dataset_meta`, invariants, counts, fingerprint |
+| `just demo-data test` | `bun test`; the integration test skips unless `FORGE_SERVER_BIN` or `target/debug/forge-server` exists |
+
+Defaults are fixed (`--as-of 2026-09-30T17:00:00Z`, `--seed forge-demo-v1`), never the wall clock.
+
+## How a dataset is made (`src/generate/index.ts`)
+
+1. Spawn `forge-server` on a temp file (`src/server.ts`, copied from core's route-test helper).
+2. Drive phases through `ForgeClient`, plus raw `fetch` (`src/api.ts`) where the SDK lacks a
+   route or field: reference data and the **whole skill catalog first** (a derivation invents a
+   lower-case `tool` skill for any unknown technology), profile and answer bank, orgs,
+   qualifications, sources, bullets and perspectives via `derivations.prepare`/`commit`,
+   summaries, JDs, contacts, resumes (tagline regenerated after all JD links), notes, API checks.
+3. Stop the server (SIGINT), then the post-pass (`src/postpass/`): status overlay, timestamp
+   backdating, `dataset_meta`, invariants, compaction, manifest.
+
+## Rules
+
+- Packages may not import `@forge/core` code. Depend on `@forge/sdk` only; read migrations from
+  disk when a test needs a schema (`src/__tests__/helpers.ts`).
+- The repo and the datasets are public. Everything is fictional: `@example.com` emails,
+  `example.*`/`*.test` hosts, `(NNN) 555-01NN` phones, invented organizations (a denylist test
+  catches real ones). Real cities and states are fine. `src/conventions.ts` is the check; it
+  runs over the corpus and every TEXT column of the output.
+- Corpus times are `daysAgo` offsets from `--as-of`; calendar dates are `monthsAgo`. The PRNG
+  (`src/prng.ts`) only jitters timestamps; no faker.
+- Determinism is measured by `content_fingerprint` (ids are random, so sha256 differs per run).
+  Its natural keys come from the data, so titles, bullet and perspective contents, names, etc.
+  must be unique within a persona (`corpus.test.ts` enforces it).
+- Keep each persona under ~150 bullets and perspectives (Rust list endpoints clamp at 200).
+- Persona uuids (`src/ids.ts`) are R2 keys: never change the namespace or a slug.
+
+## The post-pass sets what no API can
+
+Each is transition-checked and logged in the manifest's `overlay`:
+
+- source statuses other than `draft` (no route updates a source's status);
+- `approved → archived` for bullets and perspectives (no archive route);
+- note references to credentials and certifications (the Rust API refuses those entity types).
+
+Backdating covers every `*_at` column from the ledger or a rule (`TIMESTAMP_RULES`); a column
+with neither fails the run, as does a table with ids but no natural-key rule in
+`src/postpass/fingerprint.ts`. A migration that adds either must update those lists.
+
+## Adding a persona
+
+Add `src/personas/<slug>/` (typed corpus + `jds/*.md`), register it in `src/personas/index.ts`,
+add its size bands to `corpus.test.ts`, and run `just demo-data test`.

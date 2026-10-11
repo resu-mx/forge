@@ -12,6 +12,7 @@ file named below before working there.
 | `packages/AGENTS.md` | `packages/**`: the Bun/TypeScript workspace |
 | `packages/webui/AGENTS.md` | `packages/webui/**`: Svelte pages, components, CSS (shared-component rules) |
 | `packages/extension/AGENTS.md` | `packages/extension/**`: the Chrome + Firefox extension |
+| `packages/demo-data/AGENTS.md` | `packages/demo-data/**`: generated demo datasets (`just demo-data …`) |
 | `crates/AGENTS.md` | `crates/**`, `Cargo.toml`, `rust-toolchain.toml` |
 | `docs/AGENTS.md` | `docs/**` |
 | `.docker/AGENTS.md` | `.docker/**`, or any `just docker …` work |
