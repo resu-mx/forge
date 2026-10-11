@@ -2,18 +2,32 @@
 # Recipes run with the working directory set to packages/demo-data.
 #   just demo-data generate [persona|all] [--seed S] [--as-of ISO] [--out DIR]
 #   just demo-data verify [persona|all]
+#   just demo-data e2e [playwright flags]
 
-root := justfile_directory() / "../.."
+# source_directory(), not justfile_directory(): in a module the latter is the ROOT justfile's dir.
+root := source_directory() / "../.."
 cargo := "RUSTC=$(rustup which rustc --toolchain stable) rustup run stable cargo"
+
+# Where verify's Rust check and e2e look for datasets: FORGE_DEMO_DATA_DIR (relative to where
+# just was run), else data/demo, which is also generate's default. Set it when you pass --out.
+data_dir := join(invocation_directory(), env("FORGE_DEMO_DATA_DIR", root / "data/demo"))
 
 # Build forge-server, then generate a persona (default: all) into data/demo/
 generate persona="all" *flags="":
     cd {{root}} && {{cargo}} build -p forge-server
     bun run src/cli.ts generate {{persona}} {{flags}}
 
-# Check generated datasets against their manifests: hashes, compaction, invariants, fingerprint
+# Check generated datasets against their manifests: hashes, compaction, invariants, fingerprint.
+# Then the Rust SDK opens every dataset in data_dir: no pending migration, foreign keys hold.
 verify persona="all" *flags="":
     bun run src/cli.ts verify {{persona}} {{flags}}
+    cd {{root}} && FORGE_DEMO_DATA_DIR={{quote(data_dir)}} {{cargo}} test -p forge-sdk --test demo_datasets -- --ignored
+
+# Import every dataset in data_dir into the browser app and check it renders (Playwright, wasm).
+# Builds the wasm bundles first; uses the fixed port 5198, so one run at a time.
+e2e *flags="":
+    cd {{root}} && just wasm-bundle typst-bundle
+    cd {{root}}/packages/webui && FORGE_DEMO_DATA_DIR={{quote(data_dir)}} bun run test:e2e:wasm e2e/wasm/demo-datasets.spec.ts {{flags}}
 
 # List personas and their dataset uuids
 list:
