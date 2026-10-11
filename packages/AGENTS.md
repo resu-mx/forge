@@ -14,6 +14,7 @@ The product as it runs today. This is a Bun workspace (`packages/*` in the root
 | `extension` | Chrome + Firefox MV3 extension | Svelte, Vite | `bun test`; see `extension/AGENTS.md` |
 | `cli` | the `forge` CLI | citty | `bun test` |
 | `runtime` | browser host for the Rust runtime: the Worker that owns the database, and a `fetch` that talks to it | none | `bun test`, `bun run typecheck` |
+| `demo-data` | generated demo datasets: drives `forge-server` per persona, post-processes, verifies; see `demo-data/AGENTS.md` | `bun:sqlite` | `bun test` (integration needs `target/debug/forge-server`) |
 
 `bun test` is Bun's built-in runner, so it works even where `package.json` has no `test`
 script. From the repo root, `just test <core|sdk|mcp|cli>` runs one package's tests.
@@ -21,10 +22,10 @@ script. From the repo root, `just test <core|sdk|mcp|cli>` runs one package's te
 Dependency direction:
 
 - `core`, `sdk` and `runtime` import no other workspace package.
-- `mcp`, `webui`, `extension` and `cli` use `@forge/sdk`.
+- `mcp`, `webui`, `extension`, `cli` and `demo-data` use `@forge/sdk`.
 - `mcp` and `extension` also import `@forge/core/src/parser`.
 - `webui` uses `@forge/runtime` in wasm mode.
-- Nothing imports `mcp`, `webui`, `extension` or `cli`.
+- Nothing imports `mcp`, `webui`, `extension`, `cli` or `demo-data`.
 
 ## Storage (`core`)
 
