@@ -54,6 +54,18 @@ const SIZES: Record<string, Record<string, [number, number]>> = {
     summaries: [2, 3],
     resumes: [5, 5],
   },
+  'cleared-security-engineer': {
+    orgs: [12, 18],
+    sources: [10, 15],
+    bullets: [30, 45],
+    perspectives: [40, 60],
+    skills: [25, 40],
+    jds: [9, 11],
+    contacts: [6, 8],
+    notes: [6, 8],
+    summaries: [2, 3],
+    resumes: [5, 5],
+  },
 }
 
 /** Column names of the template sections, by template (from migration 008). */
@@ -406,5 +418,44 @@ describe('early-career-developer specifics', () => {
     expect(c.certifications.some((x) => x.in_progress)).toBe(true)
     expect(c.credentials.some((x) => x.credential_type === 'drivers_license')).toBe(true)
     expect(c.resumes.every((r) => r.template === 'Standard Tech Resume')).toBe(true)
+  })
+})
+
+describe('cleared-security-engineer specifics', () => {
+  const c: PersonaCorpus | undefined = PERSONAS['cleared-security-engineer']
+  test('covers the flows it exists for', () => {
+    expect(c).toBeDefined()
+    if (!c) return
+    const clearance = c.credentials.find((x) => x.credential_type === 'clearance')
+    expect(clearance?.status).toBe('active')
+    expect(clearance?.details).toEqual({ level: 'top_secret', polygraph: 'ci', clearance_type: 'personnel', access_programs: ['sci'] })
+    expect(c.orgs.find((o) => o.key === clearance?.orgKey)?.org_type).toBe('government')
+    expect(c.credentials.some((x) => x.credential_type === 'drivers_license')).toBe(true)
+    expect(c.certifications.length).toBeGreaterThanOrEqual(3)
+    expect(c.certifications.length).toBeLessThanOrEqual(4)
+    for (const cert of c.certifications) {
+      expect(cert.skills.length).toBeGreaterThan(0)
+      expect(cert.issuerKey).toBeDefined()
+    }
+    expect(c.certifications.some((x) => x.in_progress)).toBe(true)
+    const orgTypes = new Set(c.orgs.map((o) => o.org_type))
+    for (const t of ['military', 'government', 'volunteer'] as const) expect(orgTypes).toContain(t)
+    const employment = new Set(c.orgs.map((o) => o.employment_type))
+    for (const t of ['military_active', 'contractor', 'volunteer'] as const) expect(employment).toContain(t)
+    const federal = c.resumes.filter((r) => r.template === 'Federal Resume')
+    expect(federal.length).toBeGreaterThanOrEqual(2)
+    expect(c.resumes.some((r) => r.template === 'Standard Tech Resume')).toBe(true)
+    expect(federal.some((r) => r.extraSections.some((s) => s.entry_type === 'certifications') && Object.values(r.certifications).flat().length > 0)).toBe(true)
+    expect(c.resumes.some((r) => r.extraSections.some((s) => s.entry_type === 'presentations'))).toBe(true)
+    for (const a of ['security-engineer', 'public-sector', 'infrastructure'] as const) {
+      expect(c.resumes.map((r) => r.archetype)).toContain(a)
+      expect(c.perspectives.filter((p) => p.status === 'approved').map((p) => p.archetype)).toContain(a)
+    }
+    const locations = c.jds.map((j) => j.location ?? '')
+    for (const where of [', VA', ', MD', ', DC', ', CO', 'Remote']) expect({ where, found: locations.some((l) => l.includes(where)) }).toEqual({ where, found: true })
+    const answer = (k: string) => c.answers.find((a) => a.field_kind === k)?.value
+    expect(answer('eeo.veteran')).toBe('Protected Veteran')
+    for (const k of ['eeo.gender', 'eeo.race', 'eeo.disability']) expect(['Decline to self-identify', 'Prefer not to say']).toContain(answer(k) ?? '')
+    expect(c.profile.salary_minimum).toBeGreaterThanOrEqual(150000)
   })
 })
