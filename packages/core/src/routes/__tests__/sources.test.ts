@@ -101,6 +101,56 @@ describe('Source Routes', () => {
     expect(body.data.title).toBe('New Title')
   })
 
+  // ── PATCH /sources/:id: status (board moves) ──────────────────────
+
+  test('PATCH /sources/:id moves a source to Approved and it stays there', async () => {
+    const sourceId = seedSource(ctx.db, { status: 'draft' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/sources/${sourceId}`, { status: 'approved' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.status).toBe('approved')
+
+    // Not just echoed back: a fresh read sees it.
+    const after = await apiRequest(ctx.app, 'GET', `/sources/${sourceId}`)
+    expect((await after.json()).data.status).toBe('approved')
+  })
+
+  for (const target of ['draft', 'in_review', 'approved', 'rejected', 'archived']) {
+    test(`PATCH /sources/:id accepts status "${target}" from any other column`, async () => {
+      const from = target === 'draft' ? 'archived' : 'draft'
+      const sourceId = seedSource(ctx.db, { status: from })
+
+      const res = await apiRequest(ctx.app, 'PATCH', `/sources/${sourceId}`, { status: target })
+      expect(res.status).toBe(200)
+      expect((await res.json()).data.status).toBe(target)
+    })
+  }
+
+  for (const bad of ['deriving', 'bogus']) {
+    test(`PATCH /sources/:id rejects status "${bad}" with 400 and leaves the source alone`, async () => {
+      const sourceId = seedSource(ctx.db, { status: 'draft', title: 'Keep Me' })
+
+      const res = await apiRequest(ctx.app, 'PATCH', `/sources/${sourceId}`, {
+        status: bad,
+        title: 'Changed Too',
+      })
+      expect(res.status).toBe(400)
+      expect((await res.json()).error.code).toBe('VALIDATION_ERROR')
+
+      const after = (await (await apiRequest(ctx.app, 'GET', `/sources/${sourceId}`)).json()).data
+      expect(after.status).toBe('draft')
+      expect(after.title).toBe('Keep Me')
+    })
+  }
+
+  test('PATCH /sources/:id without status leaves the status unchanged', async () => {
+    const sourceId = seedSource(ctx.db, { status: 'in_review' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/sources/${sourceId}`, { title: 'Renamed' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.status).toBe('in_review')
+  })
+
   // ── DELETE /sources/:id ───────────────────────────────────────────
 
   // ── Education sub-type round-trips ──────────────────────────────────

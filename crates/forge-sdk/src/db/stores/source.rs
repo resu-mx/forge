@@ -200,6 +200,14 @@ impl SourceStore {
             });
         }
 
+        // `deriving` is the legacy lock the derivation flow used to take; a person cannot set it.
+        if matches!(input.status, Some(SourceStatus::Deriving)) {
+            return Err(ForgeError::Validation {
+                message: "Status 'deriving' cannot be set; choose draft, in_review, approved, rejected or archived".into(),
+                field: Some("status".into()),
+            });
+        }
+
         let source = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "source".into(),
             id: id.into(),
@@ -215,6 +223,10 @@ impl SourceStore {
         if let Some(ref v) = input.description {
             sets.push(format!("description = ?{}", bind_values.len() + 1));
             bind_values.push(Box::new(v.clone()));
+        }
+        if let Some(ref v) = input.status {
+            sets.push(format!("status = ?{}", bind_values.len() + 1));
+            bind_values.push(Box::new(v.to_string()));
         }
         if let Some(ref sd) = input.start_date {
             sets.push(format!("start_date = ?{}", bind_values.len() + 1));
@@ -1032,6 +1044,80 @@ mod tests {
         )
         .unwrap();
         assert_eq!(updated.base.title, "New Title");
+    }
+
+    #[test]
+    fn update_source_status_moves_between_columns_and_persists() {
+        let forge = setup();
+        let created = SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Role".into(),
+                description: "desc".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(created.base.status, SourceStatus::Draft);
+
+        for target in [
+            SourceStatus::Approved,
+            SourceStatus::InReview,
+            SourceStatus::Rejected,
+            SourceStatus::Archived,
+            SourceStatus::Draft,
+        ] {
+            let updated = SourceStore::update(
+                forge.conn(),
+                &created.base.id,
+                &UpdateSource {
+                    status: Some(target),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(updated.base.status, target);
+            // A fresh read agrees, so it is stored and not only echoed.
+            let reread = SourceStore::get(forge.conn(), &created.base.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(reread.status, target);
+        }
+    }
+
+    #[test]
+    fn update_source_rejects_the_deriving_lock_and_changes_nothing() {
+        let forge = setup();
+        let created = SourceStore::create(
+            forge.conn(),
+            &CreateSource {
+                title: "Keep Me".into(),
+                description: "desc".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let err = SourceStore::update(
+            forge.conn(),
+            &created.base.id,
+            &UpdateSource {
+                status: Some(SourceStatus::Deriving),
+                title: Some("Changed Too".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ForgeError::Validation { field: Some(f), .. } if f == "status"),
+            "{err:?}"
+        );
+
+        let after = SourceStore::get(forge.conn(), &created.base.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.status, SourceStatus::Draft);
+        assert_eq!(after.title, "Keep Me");
     }
 
     #[test]
