@@ -3,6 +3,10 @@
 #   just demo-data generate [persona|all] [--seed S] [--as-of ISO] [--out DIR]
 #   just demo-data verify [persona|all]
 #   just demo-data e2e [playwright flags]
+#   just demo-data push-preview [persona|all] · publish [persona|all]
+#   just demo-data pull <uuid|slug> <preview|prod> · head <uuid|slug> <preview|prod> · ls <preview|prod>
+#   just demo-data roundtrip
+# R2 recipes and their guards: docs/src/dev/demo-datasets.md.
 
 # source_directory(), not justfile_directory(): in a module the latter is the ROOT justfile's dir.
 root := source_directory() / "../.."
@@ -36,3 +40,52 @@ list:
 # Unit tests, plus the integration test when target/debug/forge-server exists
 test:
     bun test
+
+# ─── R2 (generated datasets only) ─────────────────────────
+
+# Push a dataset (default: all personas) to the PREVIEW bucket. Flags: --force, --allow-stale
+push-preview persona="all" *flags="": (_r2 "r2-preview" "push" persona "--target" "preview" flags)
+
+# Upload a dataset (default: all personas) to the PRODUCTION bucket. Flags: --force, --allow-stale
+[confirm("Upload demo datasets to the PRODUCTION bucket resumx-user-data?")]
+publish persona="all" *flags="": (_r2 "r2-prod" "publish" persona "--yes" flags)
+
+# Download and verify a dataset (uuid or persona slug), then print the import steps. Flags: --out FILE, --force
+pull id target *flags="": (_r2 (if target == "prod" { "r2-prod" } else { "r2-preview" }) "pull" id "--target" target flags)
+
+# Show a dataset object's size and forge-* metadata
+head id target: (_r2 (if target == "prod" { "r2-prod" } else { "r2-preview" }) "head" id "--target" target)
+
+# List the objects under user/ in a bucket
+ls target: (_r2 (if target == "prod" { "r2-prod" } else { "r2-preview" }) "ls" "--target" target)
+
+# Live round trip against the PREVIEW bucket: put, head, list, get, verify, delete
+roundtrip: (_r2 "r2-preview" "roundtrip")
+
+# Run the CLI with R2 credentials from 1Password. The Environment id (an id, not a secret)
+# comes from FORGE_R2_OP_ENV_ID (FORGE_R2_OP_ENV_ID_PROD for r2-prod), else from the GitHub
+# Environment's OP_ENVIRONMENT_ID variable. Credentials exist only in op's child process:
+# never in argv, never echoed. With all three R2_* variables already set (CI), op is skipped.
+[private]
+_r2 gh_env +args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${R2_ACCOUNT_ID:-}" ] && [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then
+        exec bun run src/cli.ts {{ args }}
+    fi
+    case "{{ gh_env }}" in
+        r2-prod) env_id="${FORGE_R2_OP_ENV_ID_PROD:-}" ;;
+        *) env_id="${FORGE_R2_OP_ENV_ID:-}" ;;
+    esac
+    if [ -z "$env_id" ]; then
+        env_id="$(gh variable get OP_ENVIRONMENT_ID -e "{{ gh_env }}" -R resu-mx/forge)"
+    fi
+    if op run --help 2>/dev/null | grep -q -- '--environment'; then
+        exec op run --environment "$env_id" -- bun run src/cli.ts {{ args }}
+    fi
+    # An op without `run --environment`: read the Environment into a 0700 temp dir that is
+    # removed on exit (the infra repo's _tofu recipe does the same).
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    op environment read "$env_id" > "$tmp/r2.env"
+    op run --env-file="$tmp/r2.env" -- bun run src/cli.ts {{ args }}
