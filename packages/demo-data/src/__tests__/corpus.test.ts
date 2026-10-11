@@ -66,6 +66,18 @@ const SIZES: Record<string, Record<string, [number, number]>> = {
     summaries: [2, 3],
     resumes: [5, 5],
   },
+  'ai-ml-engineer': {
+    orgs: [12, 18],
+    sources: [10, 15],
+    bullets: [30, 45],
+    perspectives: [40, 60],
+    skills: [25, 40],
+    jds: [9, 11],
+    contacts: [6, 8],
+    notes: [6, 8],
+    summaries: [2, 3],
+    resumes: [5, 5],
+  },
 }
 
 /** Column names of the template sections, by template (from migration 008). */
@@ -457,5 +469,73 @@ describe('cleared-security-engineer specifics', () => {
     expect(answer('eeo.veteran')).toBe('Protected Veteran')
     for (const k of ['eeo.gender', 'eeo.race', 'eeo.disability']) expect(['Decline to self-identify', 'Prefer not to say']).toContain(answer(k) ?? '')
     expect(c.profile.salary_minimum).toBeGreaterThanOrEqual(150000)
+  })
+})
+
+describe('ai-ml-engineer specifics', () => {
+  const c: PersonaCorpus | undefined = PERSONAS['ai-ml-engineer']
+  const templates = templateSections(db)
+
+  test('projects: open source, personal and employer-backed', () => {
+    expect(c).toBeDefined()
+    if (!c) return
+    const projects = c.sources.flatMap((s) => (s.project ? [s.project] : []))
+    expect(projects.some((p) => p.open_source && p.is_personal)).toBe(true)
+    expect(projects.some((p) => p.open_source && !p.is_personal && p.orgKey)).toBe(true)
+    for (const p of projects) expect(p.url).toBeDefined()
+  })
+
+  test('presentations cover every presentation type', () => {
+    if (!c) return
+    const types = c.sources.flatMap((s) => (s.presentation ? [s.presentation.presentation_type] : []))
+    expect([...PRESENTATION_TYPES].filter((t) => !types.includes(t))).toEqual([])
+  })
+
+  test('resumes: an Academic CV with filled presentations and awards sections, plus Standard Tech Resumes', () => {
+    if (!c) return
+    const cv = c.resumes.find((r) => r.template === 'Academic CV')
+    expect(cv).toBeDefined()
+    if (!cv) return
+    const sections = [...(templates.get(cv.template) ?? []), ...cv.extraSections]
+    const filled = (entryType: string) =>
+      cv.entries.filter((e) => sections.find((s) => s.title === e.section)?.entry_type === entryType).length
+    expect(filled('presentations')).toBeGreaterThanOrEqual(3)
+    expect(filled('awards')).toBeGreaterThanOrEqual(2)
+    expect(Object.values(cv.certifications).flat().length).toBeGreaterThan(0)
+    expect(c.resumes.filter((r) => r.template === 'Standard Tech Resume').length).toBeGreaterThanOrEqual(3)
+    // A resume that lists certifications needs a section to put them in.
+    for (const r of c.resumes) {
+      if (Object.values(r.certifications).flat().length > 0) {
+        expect(r.extraSections.map((s) => s.entry_type)).toContain('certifications')
+      }
+    }
+  })
+
+  test('archetypes agentic-ai, solutions-architect and hft drive perspectives and resumes', () => {
+    if (!c) return
+    for (const a of ['agentic-ai', 'solutions-architect', 'hft'] as const) {
+      expect(c.perspectives.filter((p) => p.archetype === a && p.status === 'approved').length).toBeGreaterThanOrEqual(3)
+      expect(c.resumes.map((r) => r.archetype)).toContain(a)
+    }
+    for (const d of DOMAINS) expect(c.perspectives.map((p) => p.domain)).toContain(d)
+  })
+
+  test('JDs: WA, CA, NY and remote; senior/staff salaries', () => {
+    if (!c) return
+    const locations = c.jds.map((j) => j.location ?? '')
+    for (const where of [/, WA\b/, /, CA\b/, /, NY\b/, /^Remote/]) expect(locations.some((l) => where.test(l))).toBe(true)
+    for (const jd of c.jds) expect(jd.salary_min ?? 0).toBeGreaterThanOrEqual(180000)
+    expect(c.profile.salary_minimum).toBeGreaterThanOrEqual(180000)
+  })
+
+  test("EEO answers decline; a driver's license and one to three certifications", () => {
+    if (!c) return
+    for (const a of c.answers.filter((x) => x.field_kind.startsWith('eeo.'))) {
+      expect(['Decline to self-identify', 'Prefer not to say']).toContain(a.value)
+    }
+    expect(c.credentials.some((x) => x.credential_type === 'drivers_license')).toBe(true)
+    expect(c.certifications.length).toBeGreaterThanOrEqual(1)
+    expect(c.certifications.length).toBeLessThanOrEqual(3)
+    expect(c.certifications.some((x) => x.in_progress)).toBe(true)
   })
 })
