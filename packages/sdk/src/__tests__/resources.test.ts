@@ -356,7 +356,7 @@ describe('Resource clients', () => {
     it('reopen sends PATCH /api/perspectives/:id/reopen', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
-          jsonResponse({ data: { id: 'p1', status: 'draft' } }),
+          jsonResponse({ data: { id: 'p1', status: 'in_review' } }),
         ),
       )
 

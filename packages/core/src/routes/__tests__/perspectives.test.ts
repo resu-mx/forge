@@ -75,6 +75,37 @@ describe('Perspective Routes', () => {
     expect(body.data.status).toBe('rejected')
   })
 
+  // ── PATCH /perspectives/:id/reopen ────────────────────────────────
+
+  test('PATCH /perspectives/:id/reopen after reject returns 200 in_review', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'in_review' })
+
+    const rejectRes = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/reject`, {
+      rejection_reason: 'Too generic',
+    })
+    expect(rejectRes.status).toBe(200)
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/reopen`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.status).toBe('in_review')
+    expect(body.data.rejection_reason).toBeNull()
+  })
+
+  test('PATCH /perspectives/:id/reopen from approved returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'approved' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/reopen`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot transition')
+  })
+
   // ── DELETE /perspectives/:id ──────────────────────────────────────
 
   test('DELETE /perspectives/:id returns 204', async () => {

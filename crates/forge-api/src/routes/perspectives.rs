@@ -158,12 +158,14 @@ async fn reject_perspective(
     Ok(Json(ApiData { data: result }))
 }
 
+/// Send a rejected perspective back for review (`rejected -> in_review`), as TS
+/// `reopenPerspective` does.
 async fn reopen_perspective(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Perspective>>, ApiError> {
     let result = with_conn(&state, move |conn| {
-        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::Draft, None)
+        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::InReview, None)
     })
     .await?;
     Ok(Json(ApiData { data: result }))
