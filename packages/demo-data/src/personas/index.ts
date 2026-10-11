@@ -3,10 +3,12 @@
  */
 
 import type { PersonaCorpus } from '../corpus/types'
+import { clearedSecurityEngineer } from './cleared-security-engineer'
 import { earlyCareerDeveloper } from './early-career-developer'
 
 export const PERSONAS: Readonly<Record<string, PersonaCorpus>> = {
   [earlyCareerDeveloper.slug]: earlyCareerDeveloper,
+  [clearedSecurityEngineer.slug]: clearedSecurityEngineer,
 }
 
 export function getPersona(slug: string): PersonaCorpus {
