@@ -42,6 +42,15 @@ fn full_document(hostile: &str) -> ResumeDocument {
             is_override: false,
         }),
         sections: vec![
+            // The compiler turns `summary` into this synthetic section; it is what is drawn.
+            section(
+                "Summary",
+                IRSectionType::Summary,
+                vec![IRSectionItem::Summary(SummaryItem {
+                    content: "Builds engines.".into(),
+                    entry_id: None,
+                })],
+            ),
             section(
                 "Experience",
                 IRSectionType::Experience,
@@ -185,6 +194,11 @@ fn a_full_resume_compiles_to_a_pdf_that_draws_its_content() {
         );
     }
     assert!(!text.trim().is_empty(), "a PDF that draws nothing");
+    assert_eq!(
+        text.matches("Builds engines").count(),
+        1,
+        "the summary is drawn once: {text}"
+    );
     // A bare "..." in Typst markup draws its quotation marks; summary and clearance text must not.
     assert!(
         !text.contains("\u{201c}Builds") && !text.contains("\"Builds"),
@@ -260,7 +274,12 @@ fn a_long_resume_flows_onto_more_pages() {
         })
         .collect();
     let mut doc = full_document("x");
-    if let IRSectionItem::ExperienceGroup(g) = &mut doc.sections[0].items[0] {
+    let experience = doc
+        .sections
+        .iter_mut()
+        .find(|s| s.section_type == IRSectionType::Experience)
+        .unwrap();
+    if let IRSectionItem::ExperienceGroup(g) = &mut experience.items[0] {
         g.subheadings[0].bullets = many;
     }
     assert!(compile_document(&render_typst(&doc)).unwrap().pages().len() >= 2);

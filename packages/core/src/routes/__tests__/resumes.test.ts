@@ -380,6 +380,99 @@ describe('Resume Routes', () => {
       expect(ir.sections[0].items[0].categories[0].skills).toContain('TypeScript')
     })
 
+    // Renderers (LaTeX, Markdown, Typst) draw only `ir.sections`, so a linked summary must
+    // reach them through exactly one section: the synthetic one at the top. `ir.summary`
+    // is the same text for the editor. Empty sections stay in the IR; renderers omit them.
+    test('linked summary -> IR carries it in exactly one section', async () => {
+      const text = 'Builds the runtime that agents run on.'
+      const sumRes = await apiRequest(ctx.app, 'POST', '/summaries', {
+        title: 'Platform engineer',
+        description: text,
+      })
+      expect(sumRes.status).toBe(201)
+      const { data: summary } = await sumRes.json()
+
+      const createRes = await apiRequest(ctx.app, 'POST', '/resumes', {
+        name: 'Linked summary',
+        target_role: 'Engineer',
+        target_employer: 'Acme',
+        archetype: 'agentic-ai',
+      })
+      expect(createRes.status).toBe(201)
+      const { data: resume } = await createRes.json()
+      const linkRes = await apiRequest(ctx.app, 'PATCH', `/resumes/${resume.id}`, {
+        summary_id: summary.id,
+      })
+      expect(linkRes.status).toBe(200)
+      const secRes = await apiRequest(ctx.app, 'POST', `/resumes/${resume.id}/sections`, {
+        title: 'Experience',
+        entry_type: 'experience',
+        position: 0,
+      })
+      expect(secRes.status).toBe(201)
+
+      const irRes = await apiRequest(ctx.app, 'GET', `/resumes/${resume.id}/ir`)
+      expect(irRes.status).toBe(200)
+      const { data: ir } = await irRes.json()
+      expect(ir.summary.content).toBe(text)
+      expect(ir.sections.map((s: { type: string }) => s.type)).toEqual(['summary', 'experience'])
+      expect(ir.sections[0].title).toBe('Summary')
+      expect(ir.sections[0].items).toHaveLength(1)
+      expect(ir.sections[0].items[0].kind).toBe('summary')
+      expect(ir.sections[0].items[0].content).toBe(text)
+      expect(JSON.stringify(ir.sections).split(text)).toHaveLength(2)
+      expect(ir.sections[1].items).toEqual([])
+    })
+
+    // An entry added by source_id alone has no bullet text of its own; the IR carries the
+    // source's description for it, which the Typst renderer draws (resu-mx/forge#204).
+    test('source-only presentation and project entries -> IR carries the source description', async () => {
+      const createRes = await apiRequest(ctx.app, 'POST', '/resumes', {
+        name: 'Source-only entries',
+        target_role: 'Researcher',
+        target_employer: 'Acme',
+        archetype: 'agentic-ai',
+      })
+      expect(createRes.status).toBe(201)
+      const { data: resume } = await createRes.json()
+
+      const cases = [
+        { source_type: 'presentation', entry_type: 'presentations', kind: 'presentation', description: 'Panelist on audit trails for autonomous agents.' },
+        { source_type: 'project', entry_type: 'projects', kind: 'project', description: 'A laptop-scale robot arm simulator.' },
+      ]
+      for (const [i, c] of cases.entries()) {
+        const srcRes = await apiRequest(ctx.app, 'POST', '/sources', {
+          title: `Source-only ${c.kind}`,
+          description: c.description,
+          source_type: c.source_type,
+        })
+        expect(srcRes.status).toBe(201)
+        const { data: source } = await srcRes.json()
+        const secRes = await apiRequest(ctx.app, 'POST', `/resumes/${resume.id}/sections`, {
+          title: c.entry_type,
+          entry_type: c.entry_type,
+          position: i,
+        })
+        expect(secRes.status).toBe(201)
+        const { data: section } = await secRes.json()
+        const entryRes = await apiRequest(ctx.app, 'POST', `/resumes/${resume.id}/entries`, {
+          section_id: section.id,
+          source_id: source.id,
+        })
+        expect(entryRes.status).toBe(201)
+      }
+
+      const irRes = await apiRequest(ctx.app, 'GET', `/resumes/${resume.id}/ir`)
+      expect(irRes.status).toBe(200)
+      const { data: ir } = await irRes.json()
+      for (const c of cases) {
+        const section = ir.sections.find((s: { type: string }) => s.type === c.entry_type)
+        expect(section.items).toHaveLength(1)
+        expect(section.items[0].kind).toBe(c.kind)
+        expect(section.items[0].description).toBe(c.description)
+      }
+    })
+
     test('add freeform section -> add entry -> verify IR', async () => {
       const resumeId = seedResume(ctx.db)
 

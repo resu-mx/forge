@@ -120,6 +120,155 @@ fn get(path: &str) -> Request<Body> {
     Request::builder().uri(path).body(Body::empty()).unwrap()
 }
 
+/// A resume from the "Standard Tech Resume" template (Summary, Experience, Technical Skills,
+/// Education & Certifications, Selected Projects: all empty) linked to a saved summary.
+async fn resume_with_linked_summary(r: &Router, summary_text: &str) -> String {
+    let (_, summary) = json_call(
+        r,
+        "POST",
+        "/api/summaries",
+        Some(json!({"title": "Platform engineer", "description": summary_text})),
+    )
+    .await;
+    let (_, templates) = json_call(r, "GET", "/api/templates", None).await;
+    let template = templates["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Standard Tech Resume")
+        .unwrap();
+    let (status, resume) = json_call(
+        r,
+        "POST",
+        "/api/resumes",
+        Some(json!({
+            "name": "Linked", "target_role": "Engineer", "target_employer": "Acme",
+            "archetype": "agentic-ai", "template_id": template["id"],
+            "summary_id": summary["data"]["id"]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{resume}");
+    resume["data"]["id"].as_str().unwrap().to_string()
+}
+
+async fn typst_source(r: &Router, id: &str) -> String {
+    let (status, _, body) = send(r, get(&format!("/api/export/resume/{id}?format=typst"))).await;
+    assert_eq!(status, StatusCode::OK);
+    String::from_utf8(body).unwrap()
+}
+
+/// An "Academic CV" resume with a presentation and a project each added by `source_id`
+/// alone (no content, no perspective).
+async fn resume_with_source_only_entries(r: &Router) -> String {
+    let (_, templates) = json_call(r, "GET", "/api/templates", None).await;
+    let template = templates["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Academic CV")
+        .unwrap();
+    let (_, resume) = json_call(
+        r,
+        "POST",
+        "/api/resumes",
+        Some(json!({
+            "name": "CV", "target_role": "Researcher", "target_employer": "Acme",
+            "archetype": "agentic-ai", "template_id": template["id"]
+        })),
+    )
+    .await;
+    let id = resume["data"]["id"].as_str().unwrap().to_string();
+    let (_, full) = json_call(r, "GET", &format!("/api/resumes/{id}"), None).await;
+    let section_id = |entry_type: &str| {
+        full["data"]["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["entry_type"] == entry_type)
+            .unwrap()["id"]
+            .clone()
+    };
+    for (source_type, title, description, entry_type) in [
+        (
+            "presentation",
+            "Panel on agent accountability",
+            "Panelist on audit trails for autonomous agents.\n\nModerated audience questions.",
+            "presentations",
+        ),
+        (
+            "project",
+            "Pocket Arm",
+            "A laptop-scale robot arm simulator.",
+            "projects",
+        ),
+    ] {
+        let (status, src) = json_call(
+            r,
+            "POST",
+            "/api/sources",
+            Some(json!({"title": title, "description": description, "source_type": source_type})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{src}");
+        let (status, entry) = json_call(
+            r,
+            "POST",
+            &format!("/api/resumes/{id}/entries"),
+            Some(json!({"source_id": src["data"]["id"], "section_id": section_id(entry_type)})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{entry}");
+    }
+    id
+}
+
+#[tokio::test]
+async fn source_only_presentation_and_project_entries_render_their_description() {
+    let r = router();
+    let id = resume_with_source_only_entries(&r).await;
+    let source = typst_source(&r, &id).await;
+    assert!(
+        source.contains(
+            "#items(\"Panelist on audit trails for autonomous agents.\", \"Moderated audience questions.\")"
+        ),
+        "{source}"
+    );
+    assert!(
+        source.contains("#items(\"A laptop-scale robot arm simulator.\")"),
+        "{source}"
+    );
+    assert!(!source.contains("#items(\"\""), "an empty bullet: {source}");
+}
+
+#[tokio::test]
+async fn a_linked_summary_is_rendered_once_and_empty_sections_are_omitted() {
+    let r = router();
+    let text = "Builds the runtime agents run on.";
+    let id = resume_with_linked_summary(&r, text).await;
+
+    // The IR carries the summary twice by design: `summary`, and the synthetic section.
+    let (_, ir) = json_call(&r, "GET", &format!("/api/resumes/{id}/ir"), None).await;
+    assert_eq!(ir["data"]["summary"]["content"], text);
+    assert_eq!(ir["data"]["sections"][0]["type"], "summary");
+
+    let source = typst_source(&r, &id).await;
+    assert_eq!(source.matches(text).count(), 1, "{source}");
+    assert_eq!(source.matches("#sec(").count(), 1, "{source}");
+    assert!(source.contains("#sec(\"Summary\")"), "{source}");
+    // The saved summary's title is not a heading, and the template's empty sections
+    // (including its own "Summary" freeform section) print nothing.
+    for absent in [
+        "Platform engineer",
+        "Experience",
+        "Technical Skills",
+        "Education & Certifications",
+        "Selected Projects",
+    ] {
+        assert!(!source.contains(absent), "{absent} in {source}");
+    }
+}
+
 #[tokio::test]
 async fn typst_export_is_source_with_the_right_headers() {
     let r = router();
@@ -232,6 +381,48 @@ mod with_pdf {
         );
         assert_eq!(headers["x-forge-pdf-cache"], "miss");
         assert!(body.starts_with(b"%PDF-"));
+    }
+
+    /// The words the PDF draws (Typst splits text into glyph runs, so join them).
+    fn drawn_text(pdf_source: &str) -> String {
+        forge_typst::document_text(&forge_typst::compile_document(pdf_source).unwrap()).join(" ")
+    }
+
+    #[tokio::test]
+    async fn post_pdf_draws_a_linked_summary_once() {
+        let r = router();
+        let id = resume_with_linked_summary(&r, "Distinctivesummaryword appears here.").await;
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/resumes/{id}/pdf"))
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = send(&r, req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.starts_with(b"%PDF-"));
+
+        let text = drawn_text(&typst_source(&r, &id).await);
+        assert_eq!(text.matches("Distinctivesummaryword").count(), 1, "{text}");
+        assert!(!text.contains("Experience"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn post_pdf_draws_the_description_of_source_only_entries() {
+        let r = router();
+        let id = resume_with_source_only_entries(&r).await;
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/resumes/{id}/pdf"))
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = send(&r, req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.starts_with(b"%PDF-"));
+
+        let text = drawn_text(&typst_source(&r, &id).await);
+        for expected in ["audit trails", "Moderated audience", "robot arm simulator"] {
+            assert!(text.contains(expected), "missing {expected:?}: {text}");
+        }
     }
 
     #[tokio::test]
