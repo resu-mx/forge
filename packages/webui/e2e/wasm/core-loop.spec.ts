@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { inPage, openApp } from './helpers'
 
 /**
  * The browser-first core loop, with no server: the Rust API runs in a Worker inside the page.
@@ -16,29 +17,6 @@ import { expect, test, type Page } from '@playwright/test'
  *
  * The seeded archetypes, domains and templates are used as they ship.
  */
-
-type Forge = Record<string, any>
-
-/** Run `body` in the page with the app's own client (`window.forge`) and return its result. */
-async function inPage<T>(page: Page, body: string): Promise<T> {
-  return page.evaluate(
-    async (src) => {
-      const forge = (window as unknown as { forge: Forge }).forge
-      const ok = <R,>(r: { ok: boolean; data?: R; error?: unknown }): R => {
-        if (!r.ok) throw new Error(JSON.stringify(r.error))
-        return r.data as R
-      }
-      return await new Function('forge', 'ok', `return (async () => { ${src} })()`)(forge, ok)
-    },
-    body,
-  ) as Promise<T>
-}
-
-async function openApp(page: Page, path = '/') {
-  await page.goto(path)
-  await page.waitForFunction(() => !!(window as unknown as { forge?: unknown }).forge)
-  await inPage(page, 'await window.forgeRuntime.ready')
-}
 
 test('core loop: profile to PDF, in the browser', async ({ page }) => {
   const pageErrors: string[] = []
