@@ -1,0 +1,24 @@
+# Demo-data module: generated, clearly marked demo datasets (see AGENTS.md).
+# Recipes run with the working directory set to packages/demo-data.
+#   just demo-data generate [persona|all] [--seed S] [--as-of ISO] [--out DIR]
+#   just demo-data verify [persona|all]
+
+root := justfile_directory() / "../.."
+cargo := "RUSTC=$(rustup which rustc --toolchain stable) rustup run stable cargo"
+
+# Build forge-server, then generate a persona (default: all) into data/demo/
+generate persona="all" *flags="":
+    cd {{root}} && {{cargo}} build -p forge-server
+    bun run src/cli.ts generate {{persona}} {{flags}}
+
+# Check generated datasets against their manifests: hashes, compaction, invariants, fingerprint
+verify persona="all" *flags="":
+    bun run src/cli.ts verify {{persona}} {{flags}}
+
+# List personas and their dataset uuids
+list:
+    bun run src/cli.ts list
+
+# Unit tests, plus the integration test when target/debug/forge-server exists
+test:
+    bun test

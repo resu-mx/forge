@@ -24,6 +24,7 @@ export AR_wasm32_unknown_unknown := if llvm == "" { "ar" } else { llvm / "llvm-a
 mod docker ".docker/justfile"
 mod test "packages/justfile"
 mod data "data/justfile"
+mod demo-data "packages/demo-data/justfile"
 
 # ─── Local development ───────────────────────────────────
 
