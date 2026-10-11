@@ -55,6 +55,14 @@ export interface RuntimeOptions {
   /** Defaults to `navigator.storage.persist()`. */
   persist?: () => Promise<boolean>
   lockName?: string
+  /**
+   * How hard to retry when the Worker cannot get its OPFS sync access handles. After a reload the
+   * previous page's Worker can still hold them for a moment after the lock changes hands.
+   * Defaults to 6 attempts, waiting 100 ms and doubling.
+   */
+  startRetry?: { attempts: number; baseDelayMs: number }
+  /** Defaults to a `setTimeout` promise. Tests inject one that does not wait. */
+  sleep?: (ms: number) => Promise<void>
   /** Defaults to `location.href`. */
   baseHref?: string
   /**
@@ -140,26 +148,67 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
   // A rejected `ready` nobody awaits yet must not surface as an unhandled rejection.
   ready.catch(() => {})
 
+  const startRetry = options.startRetry ?? { attempts: 6, baseDelayMs: 100 }
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+
+  /** The OPFS handles are still held elsewhere: worth another Worker, unlike any other failure. */
+  const isHandleContention = (e: unknown) =>
+    /sync access handle/i.test(e instanceof Error ? e.message : String(e))
+
+  /** Stop the current Worker. That is what releases the OPFS handles it holds. */
+  function discardWorker(): void {
+    const w = worker
+    worker = undefined
+    if (!w) return
+    for (const p of pending.values()) p.reject(new Error('the Forge database Worker was restarted'))
+    pending.clear()
+    w.terminate()
+  }
+
+  /** Create a Worker and open the database in it. */
+  async function startWorker(): Promise<StartInfo> {
+    const w = await options.createWorker()
+    worker = w
+    w.onmessage = (event) => {
+      const reply = event.data as WorkerReply
+      const p = pending.get(reply.id)
+      if (!p) return
+      pending.delete(reply.id)
+      if (reply.ok) p.resolve(reply.result)
+      else p.reject(new Error(reply.error))
+    }
+    w.onerror = (event) => {
+      // A Worker we already replaced must not flip the status of its successor.
+      if (w !== worker) return
+      const message = event.message || 'the Forge database Worker failed'
+      for (const p of pending.values()) p.reject(new Error(message))
+      pending.clear()
+      setStatus({ state: 'error', message })
+    }
+    return call<StartInfo>({ op: 'start' })
+  }
+
+  /**
+   * Open the database, replacing the Worker and trying again while the OPFS handles are busy.
+   * The retry is a whole new Worker because a failed install leaves the handles it did get open
+   * (no `Drop` in sqlite-wasm-vfs 0.2), so asking the same Worker again would trip over itself.
+   */
+  async function startWithRetry(): Promise<StartInfo> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await startWorker()
+      } catch (e) {
+        discardWorker()
+        if (!isHandleContention(e) || attempt >= startRetry.attempts) throw e
+        await sleep(startRetry.baseDelayMs * 2 ** (attempt - 1))
+      }
+    }
+  }
+
   /** This tab owns the database: spin up the Worker and open it. */
   async function own(): Promise<void> {
     try {
-      worker = await options.createWorker()
-      worker.onmessage = (event) => {
-        const reply = event.data as WorkerReply
-        const p = pending.get(reply.id)
-        if (!p) return
-        pending.delete(reply.id)
-        if (reply.ok) p.resolve(reply.result)
-        else p.reject(new Error(reply.error))
-      }
-      worker.onerror = (event) => {
-        const message = event.message || 'the Forge database Worker failed'
-        for (const p of pending.values()) p.reject(new Error(message))
-        pending.clear()
-        setStatus({ state: 'error', message })
-      }
-
-      const info = await call<StartInfo>({ op: 'start' })
+      const info = await startWithRetry()
       let persisted: boolean | null = null
       try {
         persisted = await persist()

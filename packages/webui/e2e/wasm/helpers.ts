@@ -72,6 +72,7 @@ export async function importDataset(page: Page, file: string, via: 'ui' | 'runti
   // "install OPFS storage: An error occurred while creating sync access handle": the tab's
   // Web Lock is handed over before the old Worker lets go of its OPFS handles, and nothing
   // retries. Seen 3 times in 15 immediate reloads; an app bug, not a dataset problem.
+  // The runtime now retries that start (#205); keep this pause until CI shows it is not needed.
   await page.waitForTimeout(800)
   await openApp(page, '/')
 }

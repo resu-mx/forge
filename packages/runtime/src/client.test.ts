@@ -75,8 +75,14 @@ const okBehaviour = (msg: WorkerRequest): unknown => {
   }
 }
 
-function runtimeWith(locks: LockManagerLike, behaviour = okBehaviour, persist = async () => true) {
+function runtimeWith(
+  locks: LockManagerLike,
+  behaviour = okBehaviour,
+  persist = async () => true,
+  retry: { attempts: number; baseDelayMs: number } = { attempts: 4, baseDelayMs: 100 },
+) {
   const workers: FakeWorker[] = []
+  const sleeps: number[] = []
   const runtime = createRuntime({
     createWorker: () => {
       const w = new FakeWorker(behaviour)
@@ -86,8 +92,12 @@ function runtimeWith(locks: LockManagerLike, behaviour = okBehaviour, persist = 
     locks,
     persist,
     baseHref: 'http://forge.test/app',
+    startRetry: retry,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
   })
-  return { runtime, workers }
+  return { runtime, workers, sleeps }
 }
 
 // ── Ownership and status ────────────────────────────────────────────
@@ -159,6 +169,52 @@ describe('createRuntime: owning the database', () => {
     const body = await res.json()
     expect(body.error.code).toBe('STORAGE_UNAVAILABLE')
     expect(body.error.message).toContain('OPFS is not available')
+  })
+
+  const HANDLE_ERROR = 'install OPFS storage: An error occurred while creating sync access handle'
+
+  test('retries with a fresh Worker while the OPFS handles are busy, and never reports an error', async () => {
+    let starts = 0
+    const { runtime, workers, sleeps } = runtimeWith(new FakeLocks(), (msg) => {
+      if (msg.op === 'start' && ++starts <= 2) throw new Error(HANDLE_ERROR)
+      return okBehaviour(msg)
+    })
+    const seen: string[] = []
+    runtime.onStatus((s) => seen.push(s.state))
+
+    await runtime.ready
+
+    expect(workers).toHaveLength(3)
+    expect(workers.map((w) => w.terminated)).toEqual([true, true, false])
+    expect(sleeps).toEqual([100, 200])
+    expect(seen).not.toContain('error')
+    expect(runtime.status().state).toBe('ready')
+    expect((await runtime.fetch('/api/health')).status).toBe(200)
+  })
+
+  test('gives up after the configured attempts with the original message, leaving no Worker running', async () => {
+    const { runtime, workers, sleeps } = runtimeWith(new FakeLocks(), (msg) => {
+      if (msg.op === 'start') throw new Error(HANDLE_ERROR)
+      return null
+    })
+    await expect(runtime.ready).rejects.toThrow('creating sync access handle')
+
+    expect(workers).toHaveLength(4)
+    expect(workers.every((w) => w.terminated)).toBe(true)
+    expect(sleeps).toEqual([100, 200, 400])
+    expect(runtime.status()).toEqual({ state: 'error', message: HANDLE_ERROR })
+    expect((await runtime.fetch('/api/sources')).status).toBe(503)
+  })
+
+  test('a failure that is not about the handles is not retried, and its Worker is stopped', async () => {
+    const { runtime, workers, sleeps } = runtimeWith(new FakeLocks(), (msg) => {
+      if (msg.op === 'start') throw new Error('OPFS is not available')
+      return null
+    })
+    await expect(runtime.ready).rejects.toThrow('OPFS is not available')
+    expect(workers).toHaveLength(1)
+    expect(workers[0].terminated).toBe(true)
+    expect(sleeps).toEqual([])
   })
 
   test('works without Web Locks by owning the database directly', async () => {
