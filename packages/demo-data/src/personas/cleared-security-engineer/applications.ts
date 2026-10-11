@@ -350,6 +350,8 @@ export const resumes: ResumeSpec[] = [
       { section: PROJECTS, perspectiveKey: 'p-ms-thesis-ps' },
       { section: PROJECTS, perspectiveKey: 'p-vc-mentor-ps' },
       { section: PRESENTATIONS, perspectiveKey: 'p-talk-ps' },
+      // Source-only: no content or perspective, so the PDF draws the source description.
+      { key: 'r1-pres-guild-briefing', section: PRESENTATIONS, sourceKey: 'guild-briefing' },
     ],
     skills: {
       [COMPETENCIES]: [
