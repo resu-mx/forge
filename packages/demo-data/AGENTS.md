@@ -2,17 +2,20 @@
 
 Builds one SQLite file per persona through the real Rust API, marks it as generated, and
 verifies it. Output: `data/demo/user/<uuid>/{data.sqlite,manifest.json}` plus
-`data/demo/index.json` (gitignored). The R2 push/pull, e2e and CI layers are separate work.
+`data/demo/index.json` (gitignored). The R2 push/pull and CI layers are separate work.
 
 ## Run
 
 | Command (repo root) | Does |
 |---|---|
 | `just demo-data generate [persona\|all]` | `cargo build -p forge-server`, then generate. Flags: `--seed`, `--as-of`, `--out`, `--server-bin`, `--keep-temp` |
-| `just demo-data verify [persona\|all]` | re-check written files: sha256, compaction, `dataset_meta`, invariants, counts, fingerprint |
+| `just demo-data verify [persona\|all]` | re-check written files: sha256, compaction, `dataset_meta`, invariants, counts, fingerprint; then `crates/forge-sdk/tests/demo_datasets.rs` (ignored by default) opens every dataset with the Rust SDK: no pending migration, no foreign-key violation, `kind=generated` |
+| `just demo-data e2e [playwright flags]` | build the wasm bundles, then `packages/webui/e2e/wasm/demo-datasets.spec.ts`: import each dataset into the browser app (the first through Settings → Storage, the rest through `forgeRuntime.importDatabase`) and check the dashboard, every board column, the PDF preview and the other pages. Fixed port 5198: one run at a time |
 | `just demo-data test` | `bun test`; the integration test skips unless `FORGE_SERVER_BIN` or `target/debug/forge-server` exists |
 
 Defaults are fixed (`--as-of 2026-09-30T17:00:00Z`, `--seed forge-demo-v1`), never the wall clock.
+`verify`'s Rust check and `e2e` read `FORGE_DEMO_DATA_DIR` (default `data/demo`): set it when you
+pass `--out`. Both test every `user/*/data.sqlite` there, whatever the persona argument.
 
 ## How a dataset is made (`src/generate/index.ts`)
 
