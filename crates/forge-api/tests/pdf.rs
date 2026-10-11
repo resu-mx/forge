@@ -158,6 +158,89 @@ async fn typst_source(r: &Router, id: &str) -> String {
     String::from_utf8(body).unwrap()
 }
 
+/// An "Academic CV" resume with a presentation and a project each added by `source_id`
+/// alone (no content, no perspective).
+async fn resume_with_source_only_entries(r: &Router) -> String {
+    let (_, templates) = json_call(r, "GET", "/api/templates", None).await;
+    let template = templates["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Academic CV")
+        .unwrap();
+    let (_, resume) = json_call(
+        r,
+        "POST",
+        "/api/resumes",
+        Some(json!({
+            "name": "CV", "target_role": "Researcher", "target_employer": "Acme",
+            "archetype": "agentic-ai", "template_id": template["id"]
+        })),
+    )
+    .await;
+    let id = resume["data"]["id"].as_str().unwrap().to_string();
+    let (_, full) = json_call(r, "GET", &format!("/api/resumes/{id}"), None).await;
+    let section_id = |entry_type: &str| {
+        full["data"]["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["entry_type"] == entry_type)
+            .unwrap()["id"]
+            .clone()
+    };
+    for (source_type, title, description, entry_type) in [
+        (
+            "presentation",
+            "Panel on agent accountability",
+            "Panelist on audit trails for autonomous agents.\n\nModerated audience questions.",
+            "presentations",
+        ),
+        (
+            "project",
+            "Pocket Arm",
+            "A laptop-scale robot arm simulator.",
+            "projects",
+        ),
+    ] {
+        let (status, src) = json_call(
+            r,
+            "POST",
+            "/api/sources",
+            Some(json!({"title": title, "description": description, "source_type": source_type})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{src}");
+        let (status, entry) = json_call(
+            r,
+            "POST",
+            &format!("/api/resumes/{id}/entries"),
+            Some(json!({"source_id": src["data"]["id"], "section_id": section_id(entry_type)})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{entry}");
+    }
+    id
+}
+
+#[tokio::test]
+async fn source_only_presentation_and_project_entries_render_their_description() {
+    let r = router();
+    let id = resume_with_source_only_entries(&r).await;
+    let source = typst_source(&r, &id).await;
+    assert!(
+        source.contains(
+            "#items(\"Panelist on audit trails for autonomous agents.\", \"Moderated audience questions.\")"
+        ),
+        "{source}"
+    );
+    assert!(
+        source.contains("#items(\"A laptop-scale robot arm simulator.\")"),
+        "{source}"
+    );
+    assert!(!source.contains("#items(\"\""), "an empty bullet: {source}");
+}
+
 #[tokio::test]
 async fn a_linked_summary_is_rendered_once_and_empty_sections_are_omitted() {
     let r = router();
@@ -321,6 +404,25 @@ mod with_pdf {
         let text = drawn_text(&typst_source(&r, &id).await);
         assert_eq!(text.matches("Distinctivesummaryword").count(), 1, "{text}");
         assert!(!text.contains("Experience"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn post_pdf_draws_the_description_of_source_only_entries() {
+        let r = router();
+        let id = resume_with_source_only_entries(&r).await;
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/resumes/{id}/pdf"))
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = send(&r, req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.starts_with(b"%PDF-"));
+
+        let text = drawn_text(&typst_source(&r, &id).await);
+        for expected in ["audit trails", "Moderated audience", "robot arm simulator"] {
+            assert!(text.contains(expected), "missing {expected:?}: {text}");
+        }
     }
 
     #[tokio::test]

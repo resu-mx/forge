@@ -226,12 +226,33 @@ fn render_section(section: &IRSection, out: &mut String) {
     out.push('\n');
 }
 
-fn bullets(list: &[ExperienceBullet], out: &mut String) {
-    if list.is_empty() {
-        return;
+/// A bullet list of the lines that have text; nothing at all when none does, so an entry
+/// with no text (one added straight from a source, say) never draws an empty bullet.
+fn item_list<'a>(lines: impl IntoIterator<Item = &'a str>, out: &mut String) {
+    let args: Vec<String> = lines
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(lit)
+        .collect();
+    if !args.is_empty() {
+        out.push_str(&format!("#items({})\n", args.join(", ")));
     }
-    let args: Vec<String> = list.iter().map(|b| lit(&b.content)).collect();
-    out.push_str(&format!("#items({})\n", args.join(", ")));
+}
+
+fn bullets(list: &[ExperienceBullet], out: &mut String) {
+    item_list(list.iter().map(|b| b.content.as_str()), out);
+}
+
+/// Bullets for a project or presentation. An entry added from a source alone has no bullet
+/// text; the compiler gives it the source's description instead, which is drawn as one
+/// bullet per paragraph: the same lines the TS compiler emits for it (its
+/// `splitDescriptionIntoBullets`).
+fn entry_bullets(list: &[ExperienceBullet], description: Option<&str>, out: &mut String) {
+    if list.iter().any(|b| !b.content.trim().is_empty()) {
+        bullets(list, out);
+    } else if let Some(description) = description {
+        item_list(description.split("\n\n").map(str::trim), out);
+    }
 }
 
 fn render_experience(group: &ExperienceGroup, out: &mut String) {
@@ -277,7 +298,7 @@ fn render_education(edu: &EducationItem, out: &mut String) {
     match kind {
         "self_taught" => {
             let content = edu.edu_description.as_deref().unwrap_or(&edu.degree);
-            out.push_str(&format!("#items({})\n", lit(content)));
+            item_list([content], out);
         }
         "certificate" => {
             let expires = if date.is_empty() {
@@ -347,7 +368,7 @@ fn render_project(project: &ProjectItem, out: &mut String) {
         lit(&project.name),
         opt(&project.date)
     ));
-    bullets(&project.bullets, out);
+    entry_bullets(&project.bullets, project.description.as_deref(), out);
 }
 
 fn render_presentation(p: &PresentationItem, out: &mut String) {
@@ -368,7 +389,7 @@ fn render_presentation(p: &PresentationItem, out: &mut String) {
         lit(&format!("\u{201c}{}\u{201d}", p.title)),
         lit(&venue)
     ));
-    bullets(&p.bullets, out);
+    entry_bullets(&p.bullets, p.description.as_deref(), out);
 }
 
 #[cfg(test)]
@@ -744,5 +765,127 @@ mod tests {
         assert!(out.contains("#projhead(strong(\"Forge\"), \"2026\")"));
         assert!(out.contains("\u{201c}Rust in the browser\u{201d}"));
         assert!(out.contains(" | RustConf, 2026"));
+    }
+
+    /// What the compiler emits for an entry with only a `source_id`: one bullet with no
+    /// text, and the source's description.
+    fn source_only() -> (Vec<ExperienceBullet>, Option<String>) {
+        (
+            vec![ExperienceBullet {
+                content: String::new(),
+                entry_id: Some("e".into()),
+                source_chain: None,
+                is_cloned: false,
+            }],
+            Some("Panel on agent accountability.\n\n\nWith audit trails.\n".into()),
+        )
+    }
+
+    fn presentation(bullets: Vec<ExperienceBullet>, description: Option<String>) -> IRSection {
+        section(
+            "Presentations",
+            IRSectionType::Presentations,
+            vec![IRSectionItem::Presentation(PresentationItem {
+                title: "Who is accountable?".into(),
+                venue: Some("Open Agents Summit".into()),
+                date: Some("2025".into()),
+                entry_id: None,
+                source_id: Some("src".into()),
+                bullets,
+                description,
+                presentation_type: None,
+                url: None,
+                coauthors: None,
+            })],
+        )
+    }
+
+    fn project(bullets: Vec<ExperienceBullet>, description: Option<String>) -> IRSection {
+        section(
+            "Projects",
+            IRSectionType::Projects,
+            vec![IRSectionItem::Project(ProjectItem {
+                name: "Pocket Arm".into(),
+                description,
+                date: None,
+                entry_id: None,
+                source_id: Some("src".into()),
+                bullets,
+            })],
+        )
+    }
+
+    #[test]
+    fn a_source_only_presentation_or_project_draws_its_description_not_an_empty_bullet() {
+        let (bullets, description) = source_only();
+        for out in [
+            render_typst(&doc(vec![presentation(
+                bullets.clone(),
+                description.clone(),
+            )])),
+            render_typst(&doc(vec![project(bullets, description)])),
+        ] {
+            // One bullet per paragraph, as the TS compiler splits it.
+            assert!(
+                out.contains("#items(\"Panel on agent accountability.\", \"With audit trails.\")"),
+                "{out}"
+            );
+            assert!(!out.contains("#items(\"\""), "an empty bullet: {out}");
+            assert_eq!(out.matches("#items(").count(), 1, "{out}");
+        }
+    }
+
+    #[test]
+    fn bullets_with_text_win_over_the_description_and_blank_bullets_are_dropped() {
+        let (mut bullets, description) = source_only();
+        bullets.push(bullet("Built the simulator in Rust"));
+        for out in [
+            render_typst(&doc(vec![presentation(
+                bullets.clone(),
+                description.clone(),
+            )])),
+            render_typst(&doc(vec![project(bullets, description)])),
+        ] {
+            assert!(
+                out.contains("#items(\"Built the simulator in Rust\")"),
+                "{out}"
+            );
+            assert!(!out.contains("accountability"), "{out}");
+        }
+    }
+
+    #[test]
+    fn an_entry_with_no_text_and_no_description_draws_only_its_heading() {
+        let (bullets, _) = source_only();
+        let out = render_typst(&doc(vec![
+            presentation(bullets.clone(), None),
+            project(bullets.clone(), Some("  \n\n ".into())),
+            section(
+                "Experience",
+                IRSectionType::Experience,
+                vec![IRSectionItem::ExperienceGroup(ExperienceGroup {
+                    id: "g".into(),
+                    organization: "Acme".into(),
+                    subheadings: vec![ExperienceSubheading {
+                        id: "s".into(),
+                        title: "Engineer".into(),
+                        location: None,
+                        date_range: "2020".into(),
+                        source_id: Some("src".into()),
+                        bullets,
+                    }],
+                })],
+            ),
+        ]));
+        assert!(out.contains("Who is accountable?"), "{out}");
+        assert!(
+            out.contains("#projhead(strong(\"Pocket Arm\"), \"\")"),
+            "{out}"
+        );
+        assert!(
+            out.contains("#sub(\"Acme\", \"\", \"Engineer\", \"2020\")"),
+            "{out}"
+        );
+        assert!(!out.contains("#items("), "an empty bullet list: {out}");
     }
 }
