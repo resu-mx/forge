@@ -3,7 +3,7 @@
  * note that tells anyone who opens the file what it is.
  */
 
-import { ApiError, unwrap } from '../api'
+import { unwrap } from '../api'
 import type { NoteEntityType, PersonaCorpus } from '../corpus/types'
 import { personaUuid } from '../ids'
 import { type GenContext, phase, stamp } from './context'
@@ -55,15 +55,7 @@ export async function phaseNotes(ctx: GenContext, generatorVersion: string): Pro
     ledger.add('note', n.key, 'user_notes', row.id, { created_at: t, updated_at: t })
     for (const ref of n.refs) {
       const entityId = ledger.id(REF_KIND[ref.type], ref.key)
-      try {
-        await unwrap(forge.notes.addReference(row.id, { entity_type: ref.type, entity_id: entityId }), `note ${n.key} → ${ref.type} ${ref.key}`)
-      } catch (e) {
-        // The Rust API's NoteReferenceEntityType has no credential/certification (the schema
-        // and the TS API do), so those references are inserted by the post-pass instead.
-        const refused = e instanceof ApiError && e.code === 'VALIDATION_ERROR' && /Invalid entity_type/.test(e.message)
-        if (!refused || (ref.type !== 'credential' && ref.type !== 'certification')) throw e
-        ctx.noteReferences.push({ ref: `note:${n.key}`, noteId: row.id, entityType: ref.type, entityRef: `${ref.type}:${ref.key}`, entityId })
-      }
+      await unwrap(forge.notes.addReference(row.id, { entity_type: ref.type, entity_id: entityId }), `note ${n.key} → ${ref.type} ${ref.key}`)
     }
   }
 }

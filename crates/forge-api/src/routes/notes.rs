@@ -118,10 +118,20 @@ async fn delete_note(
 
 // ── References ──────────────────────────────────────────────────────
 
-fn parse_entity_type(raw: &str) -> Result<NoteReferenceEntityType, ApiError> {
+/// An entity type the schema allows, or 400 with the TS message (note-service.ts
+/// `addReference` lists the valid types; `getNotesForEntity` does not).
+fn parse_entity_type(raw: &str, list_valid: bool) -> Result<NoteReferenceEntityType, ApiError> {
     raw.parse().map_err(|_| {
+        let message = if list_valid {
+            format!(
+                "Invalid entity_type: {raw}. Must be one of: {}",
+                NoteReferenceEntityType::names().join(", ")
+            )
+        } else {
+            format!("Invalid entity_type: {raw}")
+        };
         ApiError(forge_core::ForgeError::Validation {
-            message: format!("Invalid entity_type '{raw}'"),
+            message,
             field: Some("entity_type".into()),
         })
     })
@@ -139,7 +149,7 @@ async fn add_reference(
     Path(id): Path<String>,
     Json(body): Json<AddReferenceBody>,
 ) -> Result<Created<Option<()>>, ApiError> {
-    let entity_type = parse_entity_type(&body.entity_type)?;
+    let entity_type = parse_entity_type(&body.entity_type, true)?;
     with_conn(&state, move |conn| {
         NoteStore::get(conn, &id)?.ok_or_else(|| forge_core::ForgeError::NotFound {
             entity_type: "Note".into(),
@@ -155,7 +165,15 @@ async fn remove_reference(
     State(state): State<SharedState>,
     Path((id, entity_type, entity_id)): Path<(String, String, String)>,
 ) -> Result<NoContent, ApiError> {
-    let entity_type = parse_entity_type(&entity_type)?;
+    // TS does not validate the type here: no row can match an unknown one, so it is 404.
+    let entity_type = entity_type
+        .parse::<NoteReferenceEntityType>()
+        .map_err(|_| {
+            ApiError(forge_core::ForgeError::NotFound {
+                entity_type: "note_reference".into(),
+                id: format!("{id}/{entity_type}/{entity_id}"),
+            })
+        })?;
     with_conn(&state, move |conn| {
         NoteStore::remove_reference(conn, &id, entity_type, &entity_id)
     })
@@ -167,7 +185,7 @@ async fn notes_for_entity(
     State(state): State<SharedState>,
     Path((entity_type, entity_id)): Path<(String, String)>,
 ) -> Result<Json<ApiData<Vec<UserNote>>>, ApiError> {
-    let entity_type = parse_entity_type(&entity_type)?;
+    let entity_type = parse_entity_type(&entity_type, false)?;
     let data = with_conn(&state, move |conn| {
         NoteStore::find_by_entity(conn, entity_type, &entity_id)
     })

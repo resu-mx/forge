@@ -1,8 +1,7 @@
 /**
  * The post-pass runs on the database file after `forge-server` has exited:
  *
- * 1. one transaction: status overlay (and refused note references), timestamp backdating,
- *    `dataset_meta`;
+ * 1. one transaction: status overlay, timestamp backdating, `dataset_meta`;
  * 2. invariants;
  * 3. compaction (checkpoint, DELETE journal mode, VACUUM) and its byte-level checks;
  * 4. invariants again on the read-only result, then counts, coverage and the fingerprint.
@@ -17,7 +16,7 @@ import { contentFingerprint } from './fingerprint'
 import { assertInvariants } from './invariants'
 import { coverageReport, tableCounts } from './manifest'
 import { type DatasetMeta, schemaHead, writeDatasetMeta } from './meta'
-import { type NoteReferenceStep, type OverlayLogEntry, type OverlayStep, applyNoteReferences, applyOverlay } from './overlay'
+import { type OverlayLogEntry, type OverlayStep, applyOverlay } from './overlay'
 
 export interface PostPassInput {
   dbPath: string
@@ -27,7 +26,6 @@ export interface PostPassInput {
   epoch: string
   entries: readonly LedgerEntry[]
   overlay: readonly OverlayStep[]
-  noteReferences: readonly NoteReferenceStep[]
   meta: Omit<DatasetMeta, 'schema_head'>
 }
 
@@ -49,7 +47,7 @@ export function runPostPass(input: PostPassInput): PostPassResult {
     db.run('PRAGMA foreign_keys = ON')
     head = schemaHead(db)
     const apply = db.transaction(() => {
-      const log = [...applyOverlay(db, input.overlay), ...applyNoteReferences(db, input.noteReferences)]
+      const log = applyOverlay(db, input.overlay)
       const result = backdate(db, input.entries, input.epoch)
       writeDatasetMeta(db, { ...input.meta, schema_head: head })
       return { log, result }

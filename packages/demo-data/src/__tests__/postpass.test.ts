@@ -12,7 +12,7 @@ import { compact, fileFacts, verifyCompacted } from '../postpass/compact'
 import { contentFingerprint, naturalKeyMap } from '../postpass/fingerprint'
 import { INVARIANTS, type InvariantContext } from '../postpass/invariants'
 import { META_KEYS, type DatasetMeta, readDatasetMeta, schemaHead, writeDatasetMeta } from '../postpass/meta'
-import { applyNoteReferences, applyOverlay } from '../postpass/overlay'
+import { applyOverlay } from '../postpass/overlay'
 import { PERSONAS } from '../personas'
 import { MIGRATIONS_DIR, migratedDb, tempDir, uuid } from './helpers'
 
@@ -154,19 +154,6 @@ describe('overlay', () => {
     f.db.run("INSERT INTO resume_sections (id, resume_id, title, entry_type) VALUES (?, ?, 'Experience', 'experience')", [section, resume])
     f.db.run("INSERT INTO resume_entries (id, resume_id, section_id, perspective_id, perspective_content_snapshot) VALUES (?, ?, ?, ?, 'P')", [uuid(), resume, section, persp])
     expect(() => applyOverlay(f.db, [{ table: 'perspectives', ref: 'perspective:p', id: persp, from: 'approved', to: 'archived' }])).toThrow(/resume entr/)
-  })
-
-  test('inserts note references the API refuses, checking both ends', () => {
-    const f = fixture()
-    const note = uuid()
-    const cred = uuid()
-    f.db.run("INSERT INTO user_notes (id, content) VALUES (?, 'n')", [note])
-    f.db.run("INSERT INTO credentials (id, credential_type, label) VALUES (?, 'drivers_license', 'DL')", [cred])
-    applyNoteReferences(f.db, [{ ref: 'note:n', noteId: note, entityType: 'credential', entityRef: 'credential:c', entityId: cred }])
-    expect(get<{ n: number }>(f.db, "SELECT COUNT(*) n FROM note_references WHERE entity_type = 'credential'").n).toBe(1)
-    expect(() => applyNoteReferences(f.db, [{ ref: 'note:n', noteId: note, entityType: 'certification', entityRef: 'certification:x', entityId: uuid() }])).toThrow(
-      /no certifications row/,
-    )
   })
 })
 

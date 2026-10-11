@@ -6,10 +6,10 @@ import type { ForgeClient } from '@forge/sdk'
 import type { Raw } from '../api'
 import type { PersonaCorpus, RelDate } from '../corpus/types'
 import type { Ledger } from '../ledger'
-import type { NoteReferenceStep, OverlayStep } from '../postpass/overlay'
+import type { OverlayStep } from '../postpass/overlay'
 import { type Clock, monthsAgoDate } from '../time'
 
-export type { NoteReferenceStep, OverlayStep }
+export type { OverlayStep }
 
 export interface GenContext {
   corpus: PersonaCorpus
@@ -20,8 +20,6 @@ export interface GenContext {
   clock: Clock
   seed: string
   overlay: OverlayStep[]
-  /** Note references the API refused, inserted by the post-pass. */
-  noteReferences: NoteReferenceStep[]
   /** Seeded reference rows, by name. */
   seeded: {
     archetypes: Map<string, string>

@@ -391,6 +391,31 @@ mod tests {
     }
 
     #[test]
+    fn every_entity_type_passes_the_schema_check() {
+        let forge = setup();
+        let note = NoteStore::create(forge.conn(), None, "content").unwrap();
+        for name in NoteReferenceEntityType::names() {
+            let entity_type: NoteReferenceEntityType = name.parse().unwrap();
+            NoteStore::add_reference(forge.conn(), &note.id, entity_type, &format!("{name}-1"))
+                .unwrap();
+        }
+
+        let refs = NoteStore::list_references(forge.conn(), &note.id).unwrap();
+        assert_eq!(refs.len(), NoteReferenceEntityType::names().len());
+        assert!(refs
+            .iter()
+            .any(|r| r.entity_type == NoteReferenceEntityType::Certification
+                && r.entity_id == "certification-1"));
+        let notes = NoteStore::find_by_entity(
+            forge.conn(),
+            NoteReferenceEntityType::Credential,
+            "credential-1",
+        )
+        .unwrap();
+        assert_eq!(notes.len(), 1);
+    }
+
+    #[test]
     fn remove_reference() {
         let forge = setup();
         let note = NoteStore::create(forge.conn(), Some("Ref Note"), "content").unwrap();

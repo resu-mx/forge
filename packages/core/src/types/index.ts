@@ -691,6 +691,8 @@ export type NoteReferenceEntityType =
   | 'organization'
   | 'job_description'
   | 'contact'
+  | 'credential'
+  | 'certification'
 
 /** A reference linking a note to an entity. */
 export interface NoteReference {

@@ -130,6 +130,32 @@ mod enum_roundtrip {
     }
 
     #[test]
+    fn note_reference_entity_type() {
+        use NoteReferenceEntityType as N;
+        roundtrip!(N, N::ResumeEntry, "resume_entry");
+        roundtrip!(N, N::JobDescription, "job_description");
+        roundtrip!(N, N::Credential, "credential");
+        roundtrip!(N, N::Certification, "certification");
+        // The schema CHECK (migration 037) and TS VALID_ENTITY_TYPES, in order.
+        assert_eq!(
+            N::names(),
+            [
+                "source",
+                "bullet",
+                "perspective",
+                "resume_entry",
+                "resume",
+                "skill",
+                "organization",
+                "job_description",
+                "contact",
+                "credential",
+                "certification",
+            ]
+        );
+    }
+
+    #[test]
     fn invalid_fromstr_fails() {
         assert!(SourceStatus::from_str("nonexistent").is_err());
         assert!(SkillCategory::from_str("").is_err());
