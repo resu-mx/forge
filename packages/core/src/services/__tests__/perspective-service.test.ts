@@ -227,6 +227,40 @@ describe('PerspectiveService', () => {
     expect(result.data.status).toBe('in_review')
   })
 
+  // ── submitPerspective ─────────────────────────────────────────────
+
+  test('submitPerspective transitions draft to in_review', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }])
+    const perspId = seedPerspective(db, bulletId, { status: 'draft' })
+
+    const result = await service.submitPerspective(perspId)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.status).toBe('in_review')
+  })
+
+  test('submitPerspective rejects non-draft perspective', async () => {
+    for (const status of ['in_review', 'approved', 'rejected', 'archived']) {
+      const srcId = seedSource(db)
+      const bulletId = seedBullet(db, [{ id: srcId }])
+      const perspId = seedPerspective(db, bulletId, { status })
+
+      const result = await service.submitPerspective(perspId)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.code).toBe('VALIDATION_ERROR')
+      expect(result.error.message).toContain('Only draft perspectives')
+    }
+  })
+
+  test('submitPerspective returns NOT_FOUND for missing ID', async () => {
+    const result = await service.submitPerspective('nonexistent')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('NOT_FOUND')
+  })
+
   test('approvePerspective returns NOT_FOUND for missing ID', async () => {
     const result = await service.approvePerspective('nonexistent')
     expect(result.ok).toBe(false)

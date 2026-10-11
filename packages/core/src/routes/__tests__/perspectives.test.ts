@@ -106,6 +106,39 @@ describe('Perspective Routes', () => {
     expect(body.error.message).toContain('Cannot transition')
   })
 
+  // ── PATCH /perspectives/:id/submit ────────────────────────────────
+
+  test('PATCH /perspectives/:id/submit transitions draft to in_review', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'draft' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/submit`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.id).toBe(perspId)
+    expect(body.data.status).toBe('in_review')
+  })
+
+  test('PATCH /perspectives/:id/submit on non-draft returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'rejected' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/submit`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Only draft perspectives')
+  })
+
+  test('PATCH /perspectives/nonexistent/submit returns 404', async () => {
+    const res = await apiRequest(ctx.app, 'PATCH', '/perspectives/nonexistent/submit')
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+
   // ── DELETE /perspectives/:id ──────────────────────────────────────
 
   test('DELETE /perspectives/:id returns 204', async () => {

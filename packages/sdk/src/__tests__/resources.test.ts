@@ -367,6 +367,23 @@ describe('Resource clients', () => {
       )
     })
 
+    it('submit sends PATCH /api/perspectives/:id/submit', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse({ data: { id: 'p1', status: 'in_review' } }),
+        ),
+      )
+
+      const result = await client.perspectives.submit('p1')
+
+      expect(calledUrl(fetchMock)).toBe(
+        'http://localhost:3000/api/perspectives/p1/submit',
+      )
+      expect(calledInit(fetchMock).method).toBe('PATCH')
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.status).toBe('in_review')
+    })
+
     it('update sends PATCH /api/perspectives/:id', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(jsonResponse({ data: { id: 'p1' } })),

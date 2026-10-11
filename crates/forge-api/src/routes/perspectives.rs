@@ -171,6 +171,15 @@ async fn reopen_perspective(
     Ok(Json(ApiData { data: result }))
 }
 
+/// Submit a draft perspective for review (`draft -> in_review`).
+async fn submit_perspective(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Perspective>>, ApiError> {
+    let result = with_conn(&state, move |conn| PerspectiveStore::submit(conn, &id)).await?;
+    Ok(Json(ApiData { data: result }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────
 
 pub fn router() -> Router<SharedState> {
@@ -188,4 +197,5 @@ pub fn router() -> Router<SharedState> {
         .route("/perspectives/{id}/approve", patch(approve_perspective))
         .route("/perspectives/{id}/reject", patch(reject_perspective))
         .route("/perspectives/{id}/reopen", patch(reopen_perspective))
+        .route("/perspectives/{id}/submit", patch(submit_perspective))
 }
