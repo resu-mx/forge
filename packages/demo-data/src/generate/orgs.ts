@@ -3,6 +3,7 @@
  * credentials and certifications.
  */
 
+import type { CredentialDetails } from '@forge/sdk'
 import { unwrap } from '../api'
 import { type GenContext, phase, relDate, stamp } from './context'
 
@@ -62,21 +63,23 @@ export async function phaseOrganizations(ctx: GenContext): Promise<void> {
 
 export async function phaseQualifications(ctx: GenContext): Promise<void> {
   phase(ctx, 'credentials and certifications')
-  const { corpus, forge, raw, ledger } = ctx
+  const { corpus, forge, ledger } = ctx
 
   for (const cred of corpus.credentials) {
     const t = stamp(ctx, cred.daysAgo, `credential:${cred.key}`)
-    // The Rust API takes `details` as a JSON *string* (CreateCredential.details: Option<String>);
-    // the SDK's object form is rejected there. See the generator's report for the bug.
-    const row = await raw<Row>('POST', '/credentials', {
-      credential_type: cred.credential_type,
-      label: cred.label,
-      status: cred.status,
-      organization_id: cred.orgKey ? ledger.id('org', cred.orgKey) : undefined,
-      details: JSON.stringify(cred.details),
-      issued_date: relDate(ctx, cred.issued),
-      expiry_date: relDate(ctx, cred.expires),
-    })
+    // `details` is the type-specific object; both runtimes validate its required fields.
+    const row = await unwrap(
+      forge.credentials.create({
+        credential_type: cred.credential_type,
+        label: cred.label,
+        status: cred.status,
+        organization_id: cred.orgKey ? ledger.id('org', cred.orgKey) : undefined,
+        details: cred.details as unknown as CredentialDetails,
+        issued_date: relDate(ctx, cred.issued),
+        expiry_date: relDate(ctx, cred.expires),
+      }),
+      `credential ${cred.key}`,
+    )
     ledger.add('credential', cred.key, 'credentials', row.id, { created_at: t, updated_at: t })
   }
 

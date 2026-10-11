@@ -68,6 +68,54 @@ describe('Credential routes', () => {
       }
     })
 
+    test('details is taken and returned as an object, for each type', async () => {
+      const cases = [
+        { type: 'clearance', details: clearanceDetails },
+        { type: 'drivers_license', details: { class: 'C', state: 'OR', endorsements: [] } },
+        { type: 'bar_admission', details: { jurisdiction: 'Oregon', bar_number: null } },
+        { type: 'medical_license', details: { license_type: 'MD', state: 'OR', license_number: '12345' } },
+      ]
+      for (const { type, details } of cases) {
+        const res = await apiRequest(ctx.app, 'POST', '/credentials', {
+          credential_type: type,
+          label: `Shape ${type}`,
+          details,
+        })
+        expect(res.status).toBe(201)
+        expect((await res.json()).data.details).toEqual(details)
+      }
+
+      const list = (await (await apiRequest(ctx.app, 'GET', '/credentials')).json()).data
+      expect(list).toHaveLength(4)
+      for (const { type, details } of cases) {
+        expect(list.find((c: { credential_type: string }) => c.credential_type === type).details).toEqual(details)
+      }
+    })
+
+    test('400 for details sent as a JSON string', async () => {
+      // The type-specific fields are read from the value itself, so a string has none.
+      const res = await apiRequest(ctx.app, 'POST', '/credentials', {
+        credential_type: 'drivers_license',
+        label: 'DL',
+        details: JSON.stringify({ class: 'C', state: 'OR' }),
+      })
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.error.code).toBe('VALIDATION_ERROR')
+      expect(body.error.message).toContain('class')
+    })
+
+    test('400 for missing details', async () => {
+      const res = await apiRequest(ctx.app, 'POST', '/credentials', {
+        credential_type: 'bar_admission',
+        label: 'No details',
+      })
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.error.code).toBe('VALIDATION_ERROR')
+      expect(body.error.message).toContain('details')
+    })
+
     test('400 for unknown credential_type', async () => {
       const res = await apiRequest(ctx.app, 'POST', '/credentials', {
         credential_type: 'bogus',
@@ -248,6 +296,26 @@ describe('Credential routes', () => {
       expect(body.data.details.polygraph).toBe('full_scope') // updated
       expect(body.data.details.level).toBe('top_secret')     // preserved
       expect(body.data.details.access_programs).toEqual(['sci']) // preserved
+
+      const getRes = await apiRequest(ctx.app, 'GET', `/credentials/${created.id}`)
+      expect((await getRes.json()).data.details).toEqual({ ...clearanceDetails, polygraph: 'full_scope' })
+    })
+
+    test('400 when a details update drops a required field', async () => {
+      const createRes = await apiRequest(ctx.app, 'POST', '/credentials', {
+        credential_type: 'drivers_license',
+        label: 'DL',
+        details: { class: 'C', state: 'OR', endorsements: [] },
+      })
+      const created = (await createRes.json()).data
+
+      const res = await apiRequest(ctx.app, 'PATCH', `/credentials/${created.id}`, {
+        details: { state: '' },
+      })
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.error.code).toBe('VALIDATION_ERROR')
+      expect(body.error.message).toContain('state')
     })
 
     test('404 for unknown id', async () => {

@@ -793,7 +793,9 @@ pub struct Credential {
     pub label: String,
     pub status: CredentialStatus,
     pub organization_id: Option<String>,
-    pub details: String,
+    /// The type-specific details object (`credentials.details` is JSON text).
+    /// TS returns it parsed; a value that is not valid JSON comes back as the raw string.
+    pub details: serde_json::Value,
     pub issued_date: Option<String>,
     pub expiry_date: Option<String>,
     pub created_at: String,
