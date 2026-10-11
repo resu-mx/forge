@@ -27,6 +27,9 @@ agent's steps go through `window.forge`; approving, creating the resume and the 
 steps. It runs with one worker because the board drag is driven by animation frames. Playwright's
 own browser download can hang under Node 26: use `bun --bun x playwright install chromium`.
 The older `e2e/*.spec.ts` files use `playwright.config.ts` and need the TypeScript server.
+Shared steps (`inPage`, `openApp`, `importDataset`) are in `e2e/wasm/helpers.ts`.
+`e2e/wasm/demo-datasets.spec.ts` skips unless `FORGE_DEMO_DATA_DIR` is set; run it with
+`just demo-data e2e` (see `packages/demo-data/AGENTS.md`).
 
 ## Checks
 
