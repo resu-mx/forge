@@ -327,6 +327,35 @@ export class PerspectiveService {
     return this.transition(id, 'in_review')
   }
 
+  /**
+   * Submit a draft perspective for review (draft -> in_review).
+   * Only draft perspectives can be submitted. Use reopenPerspective for rejected ones.
+   */
+  async submitPerspective(id: string): Promise<Result<Perspective>> {
+    const existing = await this.elm.get('perspectives', id)
+    if (!existing.ok) {
+      return { ok: false, error: storageErrorToForgeError(existing.error) }
+    }
+    const row = existing.value as unknown as PerspectiveRow
+    if (row.status !== 'draft') {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Only draft perspectives can be submitted for review' },
+      }
+    }
+    return this.transition(id, 'in_review')
+  }
+
+  /** Archive an approved perspective (approved -> archived). */
+  async archivePerspective(id: string): Promise<Result<Perspective>> {
+    return this.transition(id, 'archived')
+  }
+
+  /** Return an archived perspective to draft (archived -> draft). */
+  async unarchivePerspective(id: string): Promise<Result<Perspective>> {
+    return this.transition(id, 'draft')
+  }
+
   // ── private helpers ─────────────────────────────────────────────────
 
   private async transition(

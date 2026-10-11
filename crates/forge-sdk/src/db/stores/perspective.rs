@@ -405,6 +405,22 @@ impl PerspectiveStore {
             .ok_or_else(|| ForgeError::Internal("Perspective transitioned but not found".into()))
     }
 
+    /// Submit a draft for review. Unlike `transition_status` this accepts only
+    /// drafts: a rejected perspective is sent back with `reopen`, not `submit`.
+    pub fn submit(conn: &Connection, id: &str) -> Result<Perspective, ForgeError> {
+        let p = Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "perspective".into(),
+            id: id.into(),
+        })?;
+        if p.status != PerspectiveStatus::Draft {
+            return Err(ForgeError::Validation {
+                message: "Only draft perspectives can be submitted for review".into(),
+                field: Some("status".into()),
+            });
+        }
+        Self::transition_status(conn, id, PerspectiveStatus::InReview, None)
+    }
+
     // ── Delete ───────────────────────────────────────────────────────
 
     /// Delete a perspective. Refused while a resume entry uses it.
@@ -620,6 +636,35 @@ mod tests {
         .unwrap();
         assert_eq!(p.status, PerspectiveStatus::Approved);
         assert!(p.approved_at.is_some());
+    }
+
+    #[test]
+    fn submit_accepts_only_drafts() {
+        let (forge, _, bullet_id) = setup();
+        let p = PerspectiveStore::create(
+            forge.conn(),
+            &CreatePerspectiveInput {
+                bullet_id,
+                content: "Test".into(),
+                bullet_content_snapshot: "snap".into(),
+                target_archetype: "a".into(),
+                domain: "d".into(),
+                framing: Framing::Accomplishment,
+                status: None,
+                prompt_log_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.status, PerspectiveStatus::Draft);
+
+        let p = PerspectiveStore::submit(forge.conn(), &p.id).unwrap();
+        assert_eq!(p.status, PerspectiveStatus::InReview);
+
+        let err = PerspectiveStore::submit(forge.conn(), &p.id).unwrap_err();
+        assert!(matches!(err, ForgeError::Validation { .. }));
+
+        let err = PerspectiveStore::submit(forge.conn(), "missing").unwrap_err();
+        assert!(matches!(err, ForgeError::NotFound { .. }));
     }
 
     #[test]

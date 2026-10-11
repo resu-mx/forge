@@ -85,5 +85,23 @@ export function perspectiveRoutes(services: Services) {
     return c.json({ data: result.data })
   })
 
+  app.patch('/perspectives/:id/submit', async (c) => {
+    const result = await services.perspectives.submitPerspective(c.req.param('id'))
+    if (!result.ok) return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    return c.json({ data: result.data })
+  })
+
+  app.patch('/perspectives/:id/archive', async (c) => {
+    const result = await services.perspectives.archivePerspective(c.req.param('id'))
+    if (!result.ok) return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    return c.json({ data: result.data })
+  })
+
+  app.patch('/perspectives/:id/unarchive', async (c) => {
+    const result = await services.perspectives.unarchivePerspective(c.req.param('id'))
+    if (!result.ok) return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    return c.json({ data: result.data })
+  })
+
   return app
 }

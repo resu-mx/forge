@@ -87,4 +87,28 @@ export class PerspectivesResource {
       `/api/perspectives/${id}/reopen`,
     )
   }
+
+  /** Submit a draft perspective for review (draft -> in_review). */
+  submit(id: string): Promise<Result<Perspective>> {
+    return this.request<Perspective>(
+      'PATCH',
+      `/api/perspectives/${id}/submit`,
+    )
+  }
+
+  /** Archive an approved perspective (approved -> archived). */
+  archive(id: string): Promise<Result<Perspective>> {
+    return this.request<Perspective>(
+      'PATCH',
+      `/api/perspectives/${id}/archive`,
+    )
+  }
+
+  /** Return an archived perspective to draft (archived -> draft). */
+  unarchive(id: string): Promise<Result<Perspective>> {
+    return this.request<Perspective>(
+      'PATCH',
+      `/api/perspectives/${id}/unarchive`,
+    )
+  }
 }

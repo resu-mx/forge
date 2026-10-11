@@ -259,4 +259,41 @@ describe('BulletService', () => {
     if (result.ok) return
     expect(result.error.code).toBe('NOT_FOUND')
   })
+
+  // ── archiveBullet / unarchiveBullet ────────────────────────────────
+
+  test('archiveBullet then unarchiveBullet returns an approved bullet to draft', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }], { status: 'approved' })
+
+    const archived = await service.archiveBullet(bulletId)
+    expect(archived.ok).toBe(true)
+    if (!archived.ok) return
+    expect(archived.data.status).toBe('archived')
+
+    const unarchived = await service.unarchiveBullet(bulletId)
+    expect(unarchived.ok).toBe(true)
+    if (!unarchived.ok) return
+    expect(unarchived.data.status).toBe('draft')
+  })
+
+  test('archiveBullet rejects a non-approved bullet', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }], { status: 'in_review' })
+
+    const result = await service.archiveBullet(bulletId)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('VALIDATION_ERROR')
+  })
+
+  test('unarchiveBullet rejects a non-archived bullet', async () => {
+    const srcId = seedSource(db)
+    const bulletId = seedBullet(db, [{ id: srcId }], { status: 'approved' })
+
+    const result = await service.unarchiveBullet(bulletId)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('VALIDATION_ERROR')
+  })
 })

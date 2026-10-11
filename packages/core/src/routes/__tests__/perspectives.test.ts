@@ -96,6 +96,130 @@ describe('Perspective Routes', () => {
     expect(body.data.status).toBe('rejected')
   })
 
+  // ── PATCH /perspectives/:id/reopen ────────────────────────────────
+
+  test('PATCH /perspectives/:id/reopen after reject returns 200 in_review', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'in_review' })
+
+    const rejectRes = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/reject`, {
+      rejection_reason: 'Too generic',
+    })
+    expect(rejectRes.status).toBe(200)
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/reopen`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.status).toBe('in_review')
+    expect(body.data.rejection_reason).toBeNull()
+  })
+
+  test('PATCH /perspectives/:id/reopen from approved returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'approved' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/reopen`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot transition')
+  })
+
+  // ── PATCH /perspectives/:id/submit ────────────────────────────────
+
+  test('PATCH /perspectives/:id/submit transitions draft to in_review', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'draft' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/submit`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.id).toBe(perspId)
+    expect(body.data.status).toBe('in_review')
+  })
+
+  test('PATCH /perspectives/:id/submit on non-draft returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'rejected' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/submit`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Only draft perspectives')
+  })
+
+  test('PATCH /perspectives/nonexistent/submit returns 404', async () => {
+    const res = await apiRequest(ctx.app, 'PATCH', '/perspectives/nonexistent/submit')
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+
+  // ── PATCH /perspectives/:id/archive, /unarchive ───────────────────
+
+  test('PATCH /perspectives/:id/archive from approved returns 200 archived', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'approved' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/archive`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.id).toBe(perspId)
+    expect(body.data.status).toBe('archived')
+  })
+
+  test('PATCH /perspectives/:id/unarchive after archive returns 200 draft', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'approved' })
+
+    const archiveRes = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/archive`)
+    expect(archiveRes.status).toBe(200)
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/unarchive`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.status).toBe('draft')
+    expect(body.data.rejection_reason).toBeNull()
+  })
+
+  test('PATCH /perspectives/:id/archive from in_review returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'in_review' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/archive`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot transition')
+  })
+
+  test('PATCH /perspectives/:id/unarchive from draft returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'draft' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/perspectives/${perspId}/unarchive`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot transition')
+  })
+
+  test('PATCH /perspectives/nonexistent/archive returns 404', async () => {
+    const res = await apiRequest(ctx.app, 'PATCH', '/perspectives/nonexistent/archive')
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+
   // ── DELETE /perspectives/:id ──────────────────────────────────────
 
   test('DELETE /perspectives/:id returns 204', async () => {

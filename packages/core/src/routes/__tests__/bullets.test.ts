@@ -233,6 +233,61 @@ describe('Bullet Routes', () => {
     expect(res.status).toBe(404)
   })
 
+  // ── PATCH /bullets/:id/archive, /unarchive ─────────────────────────
+
+  test('PATCH /bullets/:id/archive from approved returns 200 archived', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }], { status: 'approved' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/bullets/${bulletId}/archive`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.id).toBe(bulletId)
+    expect(body.data.status).toBe('archived')
+  })
+
+  test('PATCH /bullets/:id/unarchive after archive returns 200 draft', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }], { status: 'approved' })
+
+    const archiveRes = await apiRequest(ctx.app, 'PATCH', `/bullets/${bulletId}/archive`)
+    expect(archiveRes.status).toBe(200)
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/bullets/${bulletId}/unarchive`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.status).toBe('draft')
+  })
+
+  test('PATCH /bullets/:id/archive from draft returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }], { status: 'draft' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/bullets/${bulletId}/archive`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot transition')
+  })
+
+  test('PATCH /bullets/:id/unarchive from approved returns 400', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }], { status: 'approved' })
+
+    const res = await apiRequest(ctx.app, 'PATCH', `/bullets/${bulletId}/unarchive`)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot transition')
+  })
+
+  test('PATCH /bullets/nonexistent/archive returns 404', async () => {
+    const res = await apiRequest(ctx.app, 'PATCH', '/bullets/nonexistent/archive')
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+
   // ── Bullet Skills ──────────────────────────────────────────────────
 
   test('GET /bullets/:id/skills returns linked skills', async () => {

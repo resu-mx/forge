@@ -158,7 +158,42 @@ async fn reject_perspective(
     Ok(Json(ApiData { data: result }))
 }
 
+/// Send a rejected perspective back for review (`rejected -> in_review`), as TS
+/// `reopenPerspective` does.
 async fn reopen_perspective(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Perspective>>, ApiError> {
+    let result = with_conn(&state, move |conn| {
+        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::InReview, None)
+    })
+    .await?;
+    Ok(Json(ApiData { data: result }))
+}
+
+/// Submit a draft perspective for review (`draft -> in_review`).
+async fn submit_perspective(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Perspective>>, ApiError> {
+    let result = with_conn(&state, move |conn| PerspectiveStore::submit(conn, &id)).await?;
+    Ok(Json(ApiData { data: result }))
+}
+
+/// Archive an approved perspective (`approved -> archived`).
+async fn archive_perspective(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiData<Perspective>>, ApiError> {
+    let result = with_conn(&state, move |conn| {
+        PerspectiveStore::transition_status(conn, &id, PerspectiveStatus::Archived, None)
+    })
+    .await?;
+    Ok(Json(ApiData { data: result }))
+}
+
+/// Return an archived perspective to draft (`archived -> draft`).
+async fn unarchive_perspective(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiData<Perspective>>, ApiError> {
@@ -186,4 +221,7 @@ pub fn router() -> Router<SharedState> {
         .route("/perspectives/{id}/approve", patch(approve_perspective))
         .route("/perspectives/{id}/reject", patch(reject_perspective))
         .route("/perspectives/{id}/reopen", patch(reopen_perspective))
+        .route("/perspectives/{id}/submit", patch(submit_perspective))
+        .route("/perspectives/{id}/archive", patch(archive_perspective))
+        .route("/perspectives/{id}/unarchive", patch(unarchive_perspective))
 }

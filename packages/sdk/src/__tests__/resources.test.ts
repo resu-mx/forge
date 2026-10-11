@@ -271,6 +271,32 @@ describe('Resource clients', () => {
       expect(calledInit(fetchMock).method).toBe('PATCH')
     })
 
+    it('archive sends PATCH /api/bullets/:id/archive', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { id: 'b1', status: 'archived' } })),
+      )
+
+      await client.bullets.archive('b1')
+
+      expect(calledUrl(fetchMock)).toBe(
+        'http://localhost:3000/api/bullets/b1/archive',
+      )
+      expect(calledInit(fetchMock).method).toBe('PATCH')
+    })
+
+    it('unarchive sends PATCH /api/bullets/:id/unarchive', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { id: 'b1', status: 'draft' } })),
+      )
+
+      await client.bullets.unarchive('b1')
+
+      expect(calledUrl(fetchMock)).toBe(
+        'http://localhost:3000/api/bullets/b1/unarchive',
+      )
+      expect(calledInit(fetchMock).method).toBe('PATCH')
+    })
+
   })
 
   // -----------------------------------------------------------------------
@@ -356,7 +382,7 @@ describe('Resource clients', () => {
     it('reopen sends PATCH /api/perspectives/:id/reopen', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(
-          jsonResponse({ data: { id: 'p1', status: 'draft' } }),
+          jsonResponse({ data: { id: 'p1', status: 'in_review' } }),
         ),
       )
 
@@ -365,6 +391,51 @@ describe('Resource clients', () => {
       expect(calledUrl(fetchMock)).toBe(
         'http://localhost:3000/api/perspectives/p1/reopen',
       )
+    })
+
+    it('submit sends PATCH /api/perspectives/:id/submit', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse({ data: { id: 'p1', status: 'in_review' } }),
+        ),
+      )
+
+      const result = await client.perspectives.submit('p1')
+
+      expect(calledUrl(fetchMock)).toBe(
+        'http://localhost:3000/api/perspectives/p1/submit',
+      )
+      expect(calledInit(fetchMock).method).toBe('PATCH')
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.status).toBe('in_review')
+    })
+
+    it('archive sends PATCH /api/perspectives/:id/archive', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse({ data: { id: 'p1', status: 'archived' } }),
+        ),
+      )
+
+      await client.perspectives.archive('p1')
+
+      expect(calledUrl(fetchMock)).toBe(
+        'http://localhost:3000/api/perspectives/p1/archive',
+      )
+      expect(calledInit(fetchMock).method).toBe('PATCH')
+    })
+
+    it('unarchive sends PATCH /api/perspectives/:id/unarchive', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { id: 'p1', status: 'draft' } })),
+      )
+
+      await client.perspectives.unarchive('p1')
+
+      expect(calledUrl(fetchMock)).toBe(
+        'http://localhost:3000/api/perspectives/p1/unarchive',
+      )
+      expect(calledInit(fetchMock).method).toBe('PATCH')
     })
 
     it('update sends PATCH /api/perspectives/:id', async () => {

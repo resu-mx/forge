@@ -74,6 +74,18 @@ export function bulletRoutes(services: Services, db: Database) {
     return c.json({ data: result.data })
   })
 
+  app.patch('/bullets/:id/archive', async (c) => {
+    const result = await services.bullets.archiveBullet(c.req.param('id'))
+    if (!result.ok) return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    return c.json({ data: result.data })
+  })
+
+  app.patch('/bullets/:id/unarchive', async (c) => {
+    const result = await services.bullets.unarchiveBullet(c.req.param('id'))
+    if (!result.ok) return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    return c.json({ data: result.data })
+  })
+
   app.post('/bullets/:id/derive-perspectives', (c) => {
     return c.json({
       error: {
