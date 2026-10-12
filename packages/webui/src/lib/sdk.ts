@@ -1,6 +1,6 @@
 import { ForgeClient, isDevMode } from '@forge/sdk'
 import type { ForgeError } from '@forge/sdk'
-import { createRuntime, installApiFetch } from '@forge/runtime'
+import { createRuntime } from '@forge/runtime'
 
 /**
  * Where the API lives:
@@ -22,10 +22,8 @@ export const runtime =
       })
     : null
 
-// The UI also makes raw `fetch('/api/...')` calls that bypass the SDK; send those to the
-// runtime as well.
-if (runtime) installApiFetch(runtime)
-
+// Every API call goes through this client (`sdk-only.test.ts` enforces it), so the runtime's
+// `fetch` is injected here and nothing patches the global one.
 export const forge = new ForgeClient({ baseUrl: '', debug: true, fetch: runtime?.fetch })
 
 // `window.forge` is the same client the UI uses, so an agent driving this tab (Claude in

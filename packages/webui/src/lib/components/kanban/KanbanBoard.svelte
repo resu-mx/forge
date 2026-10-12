@@ -73,15 +73,11 @@
     const promises = orgs.map(async (org) => {
       try {
         const [aliasRes, hq] = await Promise.all([
-          fetch(`/api/organizations/${org.id}/aliases`), // raw until resu-mx/forge#127
+          forge.organizations.listAliases(org.id),
           hqLocationLabel(forge, org.id),
         ])
-        if (aliasRes.ok) {
-          const aliasBody = await aliasRes.json()
-          const aliases = aliasBody.data ?? []
-          if (aliases.length > 0) {
-            aliasMap.set(org.id, aliases.length)
-          }
+        if (aliasRes.ok && aliasRes.data.length > 0) {
+          aliasMap.set(org.id, aliasRes.data.length)
         }
         if (hq.ok && hq.data) hqMap.set(org.id, hq.data)
       } catch {

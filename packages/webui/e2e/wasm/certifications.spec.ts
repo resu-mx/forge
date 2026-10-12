@@ -99,8 +99,10 @@ test('certifications: more than 50 load, sorted by short name', async ({ page })
   const expected = Array.from({ length: 55 }, (_, i) => `E2E-${String(i + 1).padStart(2, '0')}`)
   expect(await names.allTextContents()).toEqual(expected)
 
-  // The contract: every row as {data}, no pagination envelope (raw fetch goes to the runtime).
-  const body = await page.evaluate(async () => (await fetch('/api/certifications')).json())
+  // The contract: every row as {data}, no pagination envelope (the runtime's own fetch, below the SDK).
+  const body = await page.evaluate(async () =>
+    (await (window as unknown as { forgeRuntime: { fetch: typeof fetch } }).forgeRuntime.fetch('/api/certifications')).json(),
+  )
   expect(body.data).toHaveLength(55)
   expect(body).not.toHaveProperty('pagination')
 
