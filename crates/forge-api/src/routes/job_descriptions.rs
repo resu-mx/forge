@@ -13,11 +13,12 @@ use serde::{Deserialize, Serialize};
 
 use forge_ai::prompts::jd_skill_extraction;
 use forge_core::{
-    ContactLink, CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionStatus,
-    JobDescriptionWithOrg, ResumeLink, ResumeTaglineRegenerationResult, Skill, SkillRow,
-    UpdateJobDescription,
+    ContactLink, CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionWithOrg,
+    ResumeLink, ResumeTaglineRegenerationResult, Skill, SkillRow, UpdateJobDescription,
 };
-use forge_sdk::db::{ContactStore, JdResumeStore, JdStore, ResumeStore, SkillStore};
+use forge_sdk::db::{
+    parse_status_filter, ContactStore, JdResumeStore, JdStore, ResumeStore, SkillStore,
+};
 use forge_sdk::services::tagline;
 
 use super::bullets::LinkSkillBody;
@@ -57,10 +58,9 @@ async fn list_job_descriptions(
     State(state): State<SharedState>,
     Query(q): Query<JdListQuery>,
 ) -> Result<Json<ApiList<JobDescriptionWithOrg>>, ApiError> {
+    // Validate before any query: an unknown (or empty) value is a 400, as TS, not "no filter".
     let filter = JobDescriptionFilter {
-        status: q
-            .status
-            .and_then(|s| s.parse::<JobDescriptionStatus>().ok()),
+        status: q.status.as_deref().map(parse_status_filter).transpose()?,
         organization_id: q.organization_id,
     };
     let offset = q.offset.unwrap_or(0).max(0);
