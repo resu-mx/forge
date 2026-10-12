@@ -107,6 +107,74 @@ describe('Profile routes', () => {
     expect(body.data.updated_at >= before.updated_at).toBe(true)
   })
 
+  // Strict updated_at checks. The case above uses `>=`, which a missed bump
+  // satisfies. Here the old value is seeded through SQL, so only a real write
+  // of the current time can pass. TS refreshes updated_at on every PATCH
+  // because ProfileService always calls elm.update('user_profile', ...), even
+  // when only the address or the URL list changed.
+  describe('PATCH /profile updated_at', () => {
+    const OLD = '2020-01-01T00:00:00Z'
+    const ISO_Z = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
+
+    function seedOldUpdatedAt(): void {
+      const result = ctx.db.run('UPDATE user_profile SET updated_at = ?', [OLD])
+      expect(result.changes).toBe(1)
+    }
+
+    function expectBumped(data: { updated_at: string }): void {
+      expect(data.updated_at).toMatch(ISO_Z)
+      expect(data.updated_at > OLD).toBe(true)
+    }
+
+    test('scalar-only PATCH bumps updated_at', async () => {
+      seedOldUpdatedAt()
+      const res = await apiRequest(ctx.app, 'PATCH', '/profile', { name: 'Scalar' })
+      expect(res.status).toBe(200)
+      expectBumped((await res.json()).data)
+    })
+
+    test('address-only PATCH creating a new address bumps updated_at', async () => {
+      seedOldUpdatedAt()
+      const res = await apiRequest(ctx.app, 'PATCH', '/profile', {
+        address: { name: 'Home', city: 'Washington', state: 'DC' },
+      })
+      expect(res.status).toBe(200)
+      const data = (await res.json()).data
+      expect(data.address.city).toBe('Washington')
+      expectBumped(data)
+    })
+
+    test('address-only PATCH updating an existing address bumps updated_at', async () => {
+      seedProfile(ctx.db, { addressName: 'Old address' })
+      seedOldUpdatedAt()
+      const res = await apiRequest(ctx.app, 'PATCH', '/profile', {
+        address: { name: 'New address', city: 'Boston', state: 'MA' },
+      })
+      expect(res.status).toBe(200)
+      const data = (await res.json()).data
+      expect(data.address.name).toBe('New address')
+      expectBumped(data)
+    })
+
+    test('empty-body PATCH bumps updated_at', async () => {
+      seedOldUpdatedAt()
+      const res = await apiRequest(ctx.app, 'PATCH', '/profile', {})
+      expect(res.status).toBe(200)
+      expectBumped((await res.json()).data)
+    })
+
+    test('urls-only PATCH bumps updated_at', async () => {
+      seedOldUpdatedAt()
+      const res = await apiRequest(ctx.app, 'PATCH', '/profile', {
+        urls: [{ key: 'github', url: 'github.com/adam' }],
+      })
+      expect(res.status).toBe(200)
+      const data = (await res.json()).data
+      expect(data.urls).toHaveLength(1)
+      expectBumped(data)
+    })
+  })
+
   test('PATCH /profile ignores unknown fields', async () => {
     const res = await apiRequest(ctx.app, 'PATCH', '/profile', {
       name: 'Safe',
