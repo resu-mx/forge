@@ -266,6 +266,79 @@ mod error_serialization {
             .contains("title is required"));
     }
 
+    fn prefixed_variants() -> Vec<(ForgeError, &'static str, &'static str)> {
+        vec![
+            (
+                ForgeError::Validation {
+                    message: "Title must not be empty".into(),
+                    field: Some("title".into()),
+                },
+                "VALIDATION_ERROR",
+                "Title must not be empty",
+            ),
+            (
+                ForgeError::Conflict {
+                    message: "name already exists".into(),
+                },
+                "CONFLICT",
+                "name already exists",
+            ),
+            (
+                ForgeError::ForeignKey {
+                    message: "domain_id does not exist".into(),
+                },
+                "VALIDATION_ERROR",
+                "domain_id does not exist",
+            ),
+            (
+                ForgeError::Gone {
+                    message: "link expired".into(),
+                },
+                "GONE",
+                "link expired",
+            ),
+        ]
+    }
+
+    #[test]
+    fn client_message_is_bare_for_prefixed_variants() {
+        for (err, _, bare) in prefixed_variants() {
+            assert_eq!(err.client_message(), bare);
+        }
+    }
+
+    #[test]
+    fn serialized_message_is_bare_for_prefixed_variants() {
+        for (err, code, bare) in prefixed_variants() {
+            let json = serde_json::to_value(&err).unwrap();
+            assert_eq!(json["code"], code);
+            assert_eq!(json["message"], bare);
+        }
+    }
+
+    #[test]
+    fn display_keeps_the_label_for_logs() {
+        let err = ForgeError::Validation {
+            message: "x".into(),
+            field: None,
+        };
+        assert_eq!(err.to_string(), "validation error: x");
+    }
+
+    #[test]
+    fn client_message_keeps_not_found_and_internal_text() {
+        let nf = ForgeError::NotFound {
+            entity_type: "source".into(),
+            id: "abc-123".into(),
+        };
+        assert_eq!(nf.client_message(), "source not found: abc-123");
+        assert_eq!(ForgeError::Internal("boom".into()).client_message(), "boom");
+        assert_eq!(
+            ForgeError::WasmDatabase("lost".into()).client_message(),
+            "database error: lost"
+        );
+    }
+
     #[test]
     fn database_error_code() {
         let err = ForgeError::Internal("unexpected".into());
