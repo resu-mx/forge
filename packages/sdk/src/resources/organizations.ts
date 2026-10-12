@@ -3,6 +3,7 @@ import type {
   LocationModality,
   Organization,
   OrganizationFilter,
+  OrgAlias,
   OrgLocation,
   PaginatedResult,
   PaginationParams,
@@ -92,5 +93,19 @@ export class OrganizationsResource {
 
   deleteLocation(locationId: string): Promise<Result<void>> {
     return this.request<void>('DELETE', `/api/locations/${locationId}`)
+  }
+
+  // ── Org name variants ─────────────────────────────────────────────
+
+  listAliases(orgId: string): Promise<Result<OrgAlias[]>> {
+    return this.request<OrgAlias[]>('GET', `/api/organizations/${orgId}/aliases`)
+  }
+
+  createAlias(orgId: string, alias: string): Promise<Result<OrgAlias>> {
+    return this.request<OrgAlias>('POST', `/api/organizations/${orgId}/aliases`, { alias })
+  }
+
+  deleteAlias(aliasId: string): Promise<Result<void>> {
+    return this.request<void>('DELETE', `/api/aliases/${aliasId}`)
   }
 }
