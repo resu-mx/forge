@@ -29,7 +29,7 @@ impl CampusStore {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, input.organization_id, input.name, modality.as_ref(), input.address_id, is_hq, now],
         )
-        .map_err(Self::map_fk_violation)?;
+        ?;
 
         Self::get_location(conn, &id)?
             .ok_or_else(|| ForgeError::Internal("OrgLocation created but not found".into()))
@@ -43,22 +43,6 @@ impl CampusStore {
         )?;
         let result = stmt.query_row(params![id], Self::map_location).optional()?;
         Ok(result)
-    }
-
-    /// A dangling organization or address reference breaks a foreign key; TS answers that with a
-    /// validation error (packages/core/src/storage/error-mapper.ts), not a 500.
-    fn map_fk_violation(e: rusqlite::Error) -> ForgeError {
-        if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
-            if err.code == rusqlite::ErrorCode::ConstraintViolation
-                && msg.as_deref().unwrap_or("").contains("FOREIGN KEY")
-            {
-                return ForgeError::Validation {
-                    message: "Referenced organization or address does not exist".into(),
-                    field: None,
-                };
-            }
-        }
-        ForgeError::Database { source: e }
     }
 
     /// List all locations for an organization, by name (TS org-location-service.ts).
@@ -116,8 +100,7 @@ impl CampusStore {
             conn.execute(
                 &sql,
                 rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
-            )
-            .map_err(Self::map_fk_violation)?;
+            )?;
         }
 
         Self::get_location(conn, id)?
@@ -158,9 +141,9 @@ impl CampusStore {
             params![id, org_id, trimmed],
         ) {
             Ok(_) => {}
-            Err(rusqlite::Error::SqliteFailure(err, _))
-                if err.code == rusqlite::ErrorCode::ConstraintViolation =>
-            {
+            // TS answers a duplicate alias with 400 VALIDATION_ERROR, not 409
+            // (packages/core/src/routes/campuses.ts), so this stays a targeted mapping.
+            Err(e) if forge_core::is_unique(&e) => {
                 return Err(ForgeError::Validation {
                     message: "Alias already exists for this organization".into(),
                     field: Some("alias".into()),

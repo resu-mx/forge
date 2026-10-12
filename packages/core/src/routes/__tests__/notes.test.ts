@@ -116,6 +116,19 @@ describe('Note reference routes', () => {
     expect((await res.json()).error.code).toBe('VALIDATION_ERROR')
   })
 
+  test('409 when the same reference is added twice (UNIQUE/PRIMARY KEY class)', async () => {
+    const noteId = await createNote()
+    const body = { entity_type: 'skill', entity_id: testUuid() }
+
+    let res = await apiRequest(ctx.app, 'POST', `/notes/${noteId}/references`, body)
+    expect(res.status).toBe(201)
+
+    res = await apiRequest(ctx.app, 'POST', `/notes/${noteId}/references`, body)
+    expect(res.status).toBe(409)
+    const json = await res.json()
+    expect(json.error.code).toBe('CONFLICT')
+  })
+
   test('404 when removing a reference that does not exist', async () => {
     const noteId = await createNote()
     for (const entityType of ['credential', 'bogus']) {

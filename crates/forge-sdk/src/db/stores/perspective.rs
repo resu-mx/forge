@@ -435,7 +435,9 @@ impl PerspectiveStore {
                 message: "Cannot delete perspective that is in a resume".into(),
             });
         }
-        let deleted = conn.execute("DELETE FROM perspectives WHERE id = ?1", params![id])?;
+        let deleted = conn
+            .execute("DELETE FROM perspectives WHERE id = ?1", params![id])
+            .map_err(|e| ForgeError::from_sqlite_delete(e, "perspective"))?;
         if deleted == 0 {
             return Err(ForgeError::NotFound {
                 entity_type: "perspective".into(),

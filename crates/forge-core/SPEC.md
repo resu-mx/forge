@@ -60,6 +60,23 @@ the storage layer. IR types use `bool` for computed fields like
 `details` (serde_json::Value). All fallible operations across the
 workspace return `Result<T, ForgeError>`.
 
+With the `rusqlite` feature, `From<rusqlite::Error> for ForgeError` (`types/sqlite_error.rs`)
+maps SQLite constraint failures to the TS codes (TS: `storage/error-mapper.ts`), so every
+store's `?` gets it and both hosts (forge-server, forge-wasm) behave alike:
+
+| SQLite | Extended code | `ForgeError` | Code / status |
+|---|---|---|---|
+| FOREIGN KEY (insert/update) | 787 | `Validation` | `VALIDATION_ERROR` 400 |
+| `ON DELETE RESTRICT` blocked | **1811** (`CONSTRAINT_TRIGGER`, message `FOREIGN KEY constraint failed`) | `Conflict` | `CONFLICT` 409 |
+| FOREIGN KEY on delete without RESTRICT | 787 | `Conflict` via `ForgeError::from_sqlite_delete` | `CONFLICT` 409 |
+| UNIQUE / PRIMARY KEY | 2067 / 1555 | `Conflict` | `CONFLICT` 409 |
+| CHECK, NOT NULL | 275, 1299 | `Validation` | `VALIDATION_ERROR` 400 |
+| anything else | n/a | `Database` | `DATABASE_ERROR` 500 |
+
+`ForgeError::ForeignKey` serializes as `VALIDATION_ERROR` (TS never sends `FK_VIOLATION`).
+Stores keep a targeted mapping only where TS answers differently (skill name → 409 with its own
+message; org alias duplicate → 400, as `routes/campuses.ts` does).
+
 ## Rust Divergences from TS
 
 | TS Pattern | Rust Equivalent |
