@@ -373,7 +373,7 @@ impl PerspectiveStore {
         })?;
 
         if new_status == PerspectiveStatus::Rejected
-            && rejection_reason.map_or(true, |r| r.trim().is_empty())
+            && rejection_reason.is_none_or(|r| r.trim().is_empty())
         {
             return Err(ForgeError::Validation {
                 message: "Rejection reason must not be empty".into(),

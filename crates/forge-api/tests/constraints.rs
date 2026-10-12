@@ -27,7 +27,10 @@ async fn call(r: &Router, method: &str, path: &str, body: Option<Value>) -> (Sta
     let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
         .await
         .unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 fn code(v: &Value) -> &str {
@@ -39,15 +42,22 @@ async fn duplicate_note_reference_is_409_conflict() {
     let r = router();
     let (s, n) = call(&r, "POST", "/api/notes", Some(json!({ "content": "n" }))).await;
     assert_eq!(s, StatusCode::CREATED, "{n}");
-    let path = format!("/api/notes/{}/references", n["data"]["id"].as_str().unwrap());
-    let body = json!({ "entity_type": "skill", "entity_id": "11111111-1111-4111-8111-111111111111" });
+    let path = format!(
+        "/api/notes/{}/references",
+        n["data"]["id"].as_str().unwrap()
+    );
+    let body =
+        json!({ "entity_type": "skill", "entity_id": "11111111-1111-4111-8111-111111111111" });
 
     let (s, _) = call(&r, "POST", &path, Some(body.clone())).await;
     assert_eq!(s, StatusCode::CREATED);
     let (s, e) = call(&r, "POST", &path, Some(body)).await;
     assert_eq!(s, StatusCode::CONFLICT, "{e}");
     assert_eq!(code(&e), "CONFLICT");
-    assert!(!e.to_string().contains("UNIQUE constraint"), "leaks SQL: {e}");
+    assert!(
+        !e.to_string().contains("UNIQUE constraint"),
+        "leaks SQL: {e}"
+    );
 }
 
 #[tokio::test]

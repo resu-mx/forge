@@ -59,7 +59,7 @@ async fn export_data(
 async fn dump_database(
     State(state): State<SharedState>,
 ) -> Result<Json<ApiData<String>>, ApiError> {
-    let result = with_conn(&state, move |conn| ExportService::dump_database(conn)).await?;
+    let result = with_conn(&state, ExportService::dump_database).await?;
     Ok(Json(ApiData { data: result }))
 }
 

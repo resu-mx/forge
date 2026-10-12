@@ -19,7 +19,7 @@ use crate::state::SharedState;
 async fn get_pending_review(
     State(state): State<SharedState>,
 ) -> Result<Json<ApiData<ReviewQueue>>, ApiError> {
-    let result = with_conn(&state, move |conn| ReviewService::get_pending_review(conn)).await?;
+    let result = with_conn(&state, ReviewService::get_pending_review).await?;
     Ok(Json(ApiData { data: result }))
 }
 

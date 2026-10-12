@@ -127,15 +127,12 @@ jobs:
             packages/webui/test-results
           retention-days: 7
 
-  # Advisory until the codebase is formatted and clippy-clean: the repo has never
-  # been through rustfmt (~10k diff lines) and clippy still reports about ten
-  # warnings (forge-sdk, forge-api, forge-wasm). The ~200 that came from the dead
-  # todo!() service stubs went with them (#118). Promote to blocking (drop
-  # continue-on-error) once those are cleared.
+  # Blocking (resu-mx/forge#225): the workspace is rustfmt-clean and clippy-clean, so a new
+  # warning or unformatted file fails the job. This is the same pair of commands as
+  # `just lint-rust`; run that before pushing.
   lint:
-    name: fmt + clippy (advisory)
+    name: fmt + clippy
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -143,6 +140,4 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
-        continue-on-error: true
-      - run: cargo clippy --workspace --all-targets
-        continue-on-error: true
+      - run: cargo clippy --workspace --all-targets -- -D warnings

@@ -433,8 +433,8 @@ fn build_hnsw_from_snapshot(
     for i in 0..nodes.len() {
         let start = i * bytes_per_node;
         let mut floats = Vec::with_capacity(dim);
-        for chunk in embeddings[start..start + bytes_per_node].chunks_exact(4) {
-            floats.push(f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        for chunk in embeddings[start..start + bytes_per_node].as_chunks::<4>().0 {
+            floats.push(f32::from_ne_bytes(*chunk));
         }
         decoded.push((i, floats));
     }

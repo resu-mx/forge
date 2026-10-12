@@ -53,7 +53,7 @@ sysroot) is never used.
 |---|---|
 | `just check-rust` | `cargo check --workspace` |
 | `just test rust` | `cargo test --workspace`: inline `#[cfg(test)]` modules plus `tests/` in api, server and typst |
-| `just lint-rust` | `cargo fmt --check` + `clippy -D warnings` (advisory in CI for now) |
+| `just lint-rust` | `cargo fmt --check` + `clippy -D warnings` (what CI's `fmt + clippy` job runs) |
 | `just server` | run `forge-server` on :3000 against `FORGE_DB_PATH` |
 | `just parity [files]` / `just parity-tier0` | the TS route tests, run against the Rust server |
 | `just wasm-build` | build `forge-wasm` for wasm32 |

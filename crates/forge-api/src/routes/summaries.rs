@@ -51,12 +51,13 @@ pub struct SummaryGetQuery {
     pub include: Option<String>,
 }
 
-/// `GET /summaries/:id` answers one of two shapes; `untagged` serializes the inner value as-is.
+/// `GET /summaries/:id` answers one of two shapes; `untagged` serializes the inner value as-is
+/// (a `Box` serializes as its content, so the wire shape is unchanged).
 #[derive(Serialize)]
 #[serde(untagged)]
 enum SummaryBody {
-    Plain(Summary),
-    Hydrated(SummaryWithRelations),
+    Plain(Box<Summary>),
+    Hydrated(Box<SummaryWithRelations>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -183,10 +184,10 @@ async fn get_summary(
     let hydrate = q.include.as_deref() == Some("relations");
     let data = with_conn(&state, move |conn| {
         if hydrate {
-            get_with_relations(conn, &id).map(SummaryBody::Hydrated)
+            get_with_relations(conn, &id).map(|s| SummaryBody::Hydrated(Box::new(s)))
         } else {
             SummaryStore::get(conn, &id)?
-                .map(SummaryBody::Plain)
+                .map(|s| SummaryBody::Plain(Box::new(s)))
                 .ok_or_else(|| summary_not_found(&id))
         }
     })
