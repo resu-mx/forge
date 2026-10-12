@@ -267,6 +267,32 @@ export function generateTagline(
 }
 
 // ---------------------------------------------------------------------------
+// Blank tagline text (resu-mx/forge#72)
+// ---------------------------------------------------------------------------
+
+/**
+ * The one rule for a tagline column that may hold text: an empty or whitespace-only string is
+ * absent. The writers already store blank as NULL, so this only matters for a row written another
+ * way. Every reader (`resolved`, `has_override`, the resume header) uses it, in both runtimes.
+ * The text is returned as stored, never trimmed.
+ */
+export function nonBlank(value: string | null | undefined): string | null {
+  return value && value.trim().length > 0 ? value : null
+}
+
+/**
+ * What a resume's two tagline columns resolve to: a real override, else the generated tagline,
+ * else the empty string. `has_override` agrees with `resolved` by construction.
+ */
+export function resolveTagline(
+  override: string | null | undefined,
+  generated: string | null | undefined,
+): { resolved: string; has_override: boolean } {
+  const real = nonBlank(override)
+  return { resolved: real ?? nonBlank(generated) ?? '', has_override: real !== null }
+}
+
+// ---------------------------------------------------------------------------
 // DB-backed regeneration (Phase 92 T92.3)
 // ---------------------------------------------------------------------------
 
@@ -353,7 +379,7 @@ export async function regenerateResumeTagline(
   const taglineOverride = resumeRow.tagline_override as string | null
   return {
     generated_tagline: result.tagline,
-    has_override: !!(taglineOverride && taglineOverride.trim().length > 0),
+    has_override: nonBlank(taglineOverride) !== null,
     keywords: result.keywords,
   }
 }

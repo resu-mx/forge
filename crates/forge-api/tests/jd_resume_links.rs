@@ -387,6 +387,108 @@ async fn unlink_rebuilds_from_the_remaining_jds_and_clears_when_none_remain() {
     assert_eq!(none["tagline_override"], "Keep Me");
 }
 
+// ── DELETE /job-descriptions/:id regenerates its resumes' taglines (forge#72) ────────
+
+#[tokio::test]
+async fn delete_jd_rebuilds_each_linked_resume_from_the_jds_it_still_has() {
+    let f = Forge::open_memory().unwrap();
+    let doomed = jd(
+        &f,
+        json!({"title": "A", "raw_text": "kafka kubernetes terraform"}),
+    );
+    let kept = jd(
+        &f,
+        json!({"title": "B", "raw_text": "python django postgres"}),
+    );
+    let (both, only) = (resume(&f, "Both"), resume(&f, "Only"));
+    f.conn()
+        .execute(
+            "UPDATE resumes SET tagline_override = 'Keep Me' WHERE id = ?1",
+            [&both],
+        )
+        .unwrap();
+    let r = app(AppState::new(f));
+    for (j, res) in [(&doomed, &both), (&kept, &both), (&doomed, &only)] {
+        call(
+            &r,
+            "POST",
+            &format!("/api/job-descriptions/{j}/resumes"),
+            Some(json!({"resume_id": res})),
+        )
+        .await;
+    }
+    let before = stored_tagline(&r, &both).await;
+    assert!(before["generated_tagline"]
+        .as_str()
+        .unwrap()
+        .contains("kafka"));
+    assert!(stored_tagline(&r, &only).await["generated_tagline"]
+        .as_str()
+        .unwrap()
+        .contains("kafka"));
+
+    let (status, body) = call(
+        &r,
+        "DELETE",
+        &format!("/api/job-descriptions/{doomed}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body.is_null());
+
+    // `both` still has the second JD: rebuilt from it alone, so it stops quoting the deleted one.
+    let after = stored_tagline(&r, &both).await;
+    let generated = after["generated_tagline"].as_str().unwrap();
+    assert!(!generated.contains("kafka"), "{generated}");
+    assert!(generated.contains("python"), "{generated}");
+    assert_eq!(after["tagline_override"], "Keep Me");
+    // `only` had nothing else: cleared.
+    assert!(stored_tagline(&r, &only).await["generated_tagline"].is_null());
+}
+
+#[tokio::test]
+async fn delete_jd_leaves_resumes_it_was_not_linked_to_alone() {
+    let f = Forge::open_memory().unwrap();
+    let j = jd(&f, json!({"title": "A", "raw_text": "kafka kubernetes"}));
+    let (linked, other) = (resume(&f, "Linked"), resume(&f, "Other"));
+    JdResumeStore::link(f.conn(), &j, &linked).unwrap();
+    f.conn()
+        .execute(
+            "UPDATE resumes SET generated_tagline = 'seeded' WHERE id = ?1",
+            [&other],
+        )
+        .unwrap();
+    let r = app(AppState::new(f));
+
+    let (status, _) = call(&r, "DELETE", &format!("/api/job-descriptions/{j}"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        stored_tagline(&r, &other).await["generated_tagline"],
+        "seeded"
+    );
+}
+
+#[tokio::test]
+async fn delete_unknown_jd_is_404_and_regenerates_nothing() {
+    let f = Forge::open_memory().unwrap();
+    let res = resume(&f, "R");
+    f.conn()
+        .execute(
+            "UPDATE resumes SET generated_tagline = 'seeded' WHERE id = ?1",
+            [&res],
+        )
+        .unwrap();
+    let r = app(AppState::new(f));
+
+    let (status, _) = call(&r, "DELETE", "/api/job-descriptions/no-such-id", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        stored_tagline(&r, &res).await["generated_tagline"],
+        "seeded"
+    );
+}
+
 #[tokio::test]
 async fn unlink_is_idempotent_204() {
     let f = Forge::open_memory().unwrap();
