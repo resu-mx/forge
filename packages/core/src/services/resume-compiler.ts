@@ -8,6 +8,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { buildDefaultElm } from '../storage/build-elm'
+import { nonBlank } from './tagline-service'
 import type { EntityLifecycleManager } from '../storage/lifecycle-manager'
 import type {
   ResumeDocument,
@@ -299,17 +300,22 @@ function parseHeader(db: Database, resume: ResumeRow, profile: UserProfile | nul
   //   2. resume.generated_tagline (TF-IDF extracted from linked JDs)
   //   3. header JSON tagline (legacy resume-specific header)
   //   4. resume.target_role (fallback)
+  // A blank string (empty or whitespace-only) counts as absent at every step, the same rule as
+  // `resolved` and `has_override` (resu-mx/forge#72).
   let tagline: string | null = resume.target_role
   if (resume.header) {
     try {
       const parsed = JSON.parse(resume.header)
-      if (parsed.tagline) tagline = parsed.tagline
+      const legacy = typeof parsed.tagline === 'string' ? nonBlank(parsed.tagline) : null
+      if (legacy) tagline = legacy
     } catch {
       // Fall through
     }
   }
-  if (resume.generated_tagline) tagline = resume.generated_tagline
-  if (resume.tagline_override) tagline = resume.tagline_override
+  const generated = nonBlank(resume.generated_tagline)
+  if (generated) tagline = generated
+  const override = nonBlank(resume.tagline_override)
+  if (override) tagline = override
 
   // Warn on placeholder profile data
   const name = profile?.name ?? resume.name

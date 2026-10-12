@@ -15,6 +15,8 @@ use forge_core::{
     ResumeSummary, SkillCategoryGroup, SkillGroup, SourceChain, SummaryItem,
 };
 
+use super::tagline::non_blank;
+
 /// Resume IR compiler.
 pub struct CompilerService;
 
@@ -492,7 +494,9 @@ impl CompilerService {
             (None, None, None)
         };
 
-        // Tagline resolution: tagline_override > generated_tagline > header.tagline > target_role
+        // Tagline resolution: tagline_override > generated_tagline > header.tagline > target_role.
+        // A blank string (empty or whitespace-only) counts as absent at every step, the same rule
+        // as `resolved` and `has_override` and as the TS compiler (resu-mx/forge#72).
         let header_tagline = resume.header.as_ref().and_then(|h| {
             serde_json::from_str::<serde_json::Value>(h)
                 .ok()
@@ -501,11 +505,10 @@ impl CompilerService {
                         .and_then(|t| t.as_str().map(|s| s.to_string()))
                 })
         });
-        let tagline = resume
-            .tagline_override
-            .clone()
-            .or_else(|| resume.generated_tagline.clone())
-            .or(header_tagline)
+        let tagline = non_blank(resume.tagline_override.as_deref())
+            .or(non_blank(resume.generated_tagline.as_deref()))
+            .or(non_blank(header_tagline.as_deref()))
+            .map(str::to_owned)
             .or_else(|| Some(resume.target_role.clone()));
 
         // Clearance in header
@@ -1652,6 +1655,46 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(doc.header.tagline, Some("Custom Tagline".into()));
+    }
+
+    /// resu-mx/forge#72: a blank string (empty or whitespace-only) is absent at every step of the
+    /// fallback chain, the same rule as `resolved` and `has_override`, and as the TS compiler.
+    #[test]
+    fn a_blank_tagline_column_is_absent_in_the_header() {
+        let forge = setup();
+        create_profile(forge.conn());
+        let resume_id = create_resume(forge.conn());
+        let tagline = |forge: &Forge| {
+            CompilerService::compile(forge.conn(), &resume_id)
+                .unwrap()
+                .unwrap()
+                .header
+                .tagline
+        };
+        let set = |forge: &Forge, generated: Option<&str>, over: Option<&str>| {
+            forge
+                .conn()
+                .execute(
+                    "UPDATE resumes SET generated_tagline = ?1, tagline_override = ?2 WHERE id = ?3",
+                    params![generated, over, resume_id],
+                )
+                .unwrap();
+        };
+
+        // A whitespace-only or empty override falls back to the generated tagline.
+        set(&forge, Some("Generated Tagline"), Some("   "));
+        assert_eq!(tagline(&forge), Some("Generated Tagline".into()));
+        set(&forge, Some("Generated Tagline"), Some(""));
+        assert_eq!(tagline(&forge), Some("Generated Tagline".into()));
+        // A blank generated tagline falls back to the target role.
+        set(&forge, Some("   "), None);
+        assert_eq!(tagline(&forge), Some("Site Reliability Engineer".into()));
+        // Both blank: the target role.
+        set(&forge, Some(" "), Some("\t"));
+        assert_eq!(tagline(&forge), Some("Site Reliability Engineer".into()));
+        // A real override still wins, and is kept as written (not trimmed).
+        set(&forge, Some("Generated Tagline"), Some(" Real Override "));
+        assert_eq!(tagline(&forge), Some(" Real Override ".into()));
     }
 
     #[test]

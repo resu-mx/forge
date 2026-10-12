@@ -56,5 +56,5 @@ A browser compiler that cannot run is `500 PDF_UNAVAILABLE`; a build with no com
 ## Consequences
 
 - The TS server still uses tectonic; it is untouched and keeps working.
-- `wasm-bindgen-cli` must match the version in `Cargo.lock` (0.2.129) for `just typst-bundle`.
+- `wasm-bindgen-cli` must match the version in `Cargo.lock` (0.2.129 when this was written; CI reads it from the lockfile) for `just typst-bundle`.
 - 25 MB is heavy on a slow connection; it is a one-time cost per browser, cached afterwards.
