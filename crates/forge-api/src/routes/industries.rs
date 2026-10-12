@@ -1,12 +1,12 @@
 //! Industry CRUD routes.
 //!
-//! Simple lookup table — no pagination, no update.
+//! Simple lookup table — no pagination (resu-mx/forge#141).
 
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use forge_core::{CreateIndustryInput, Industry};
+use forge_core::{CreateIndustryInput, Industry, UpdateIndustryInput};
 use forge_sdk::db::IndustryStore;
 
 use crate::db::with_conn;
@@ -45,6 +45,17 @@ async fn get_industry(
     Ok(Json(ApiData { data: result }))
 }
 
+/// `PATCH /industries/:id` (TS industries.ts:33-38). 200 with the row, 400 for a blank name,
+/// 404 for an unknown id, 409 for a name another industry has.
+async fn update_industry(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(input): Json<UpdateIndustryInput>,
+) -> Result<Json<ApiData<Industry>>, ApiError> {
+    let result = with_conn(&state, move |conn| IndustryStore::update(conn, &id, &input)).await?;
+    Ok(Json(ApiData { data: result }))
+}
+
 async fn delete_industry(
     State(state): State<SharedState>,
     Path(id): Path<String>,
@@ -60,6 +71,8 @@ pub fn router() -> Router<SharedState> {
         .route("/industries", post(create_industry).get(list_industries))
         .route(
             "/industries/{id}",
-            get(get_industry).delete(delete_industry),
+            get(get_industry)
+                .patch(update_industry)
+                .delete(delete_industry),
         )
 }
