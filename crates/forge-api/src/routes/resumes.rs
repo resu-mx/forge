@@ -113,12 +113,29 @@ async fn get_resume(
     Ok(Json(ApiData { data: result }))
 }
 
+/// `PATCH /resumes/:id` (TS resumes.ts:46-69). The generated tagline starts with the resume's target
+/// role, so a role that actually changes regenerates it (resu-mx/forge#72). The old role is read
+/// before the update, and both happen in one transaction. A same-role patch, or one that leaves the
+/// role out, leaves the tagline alone. The answer is the updated resume, as in TS.
 async fn update_resume(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     Json(input): Json<UpdateResume>,
 ) -> Result<Json<ApiData<Resume>>, ApiError> {
-    let result = with_conn(&state, move |conn| ResumeStore::update(conn, &id, &input)).await?;
+    let result = with_conn(&state, move |conn| {
+        let tx = conn.unchecked_transaction()?;
+        let old_role = match input.target_role {
+            Some(_) => ResumeStore::get(&tx, &id)?.map(|r| r.target_role),
+            None => None,
+        };
+        let updated = ResumeStore::update(&tx, &id, &input)?;
+        if old_role.is_some_and(|old| old != updated.target_role) {
+            tagline::regenerate(&tx, &id)?;
+        }
+        tx.commit()?;
+        Ok(updated)
+    })
+    .await?;
     Ok(Json(ApiData { data: result }))
 }
 

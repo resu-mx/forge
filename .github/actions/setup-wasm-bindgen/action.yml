@@ -1,0 +1,43 @@
+name: Set up wasm-bindgen-cli
+description: >
+  Install the wasm-bindgen CLI at the exact version of the wasm-bindgen crate in Cargo.lock.
+  The CLI has to match the crate or the generated JS glue will not load the wasm, so the version is
+  read from Cargo.lock here and never written into a workflow. A bump is one Cargo.lock change.
+
+outputs:
+  version:
+    description: The wasm-bindgen version read from Cargo.lock
+    value: ${{ steps.wbg.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read the wasm-bindgen version from Cargo.lock
+      id: wbg
+      shell: bash
+      run: |
+        v=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)
+        [ -n "$v" ] || { echo "could not read wasm-bindgen version from Cargo.lock"; exit 1; }
+        echo "version=$v" >> "$GITHUB_OUTPUT"
+        echo "wasm-bindgen $v"
+    - uses: actions/cache@v4
+      id: wbg-cache
+      with:
+        path: ~/.cargo/bin/wasm-bindgen
+        key: wasm-bindgen-cli-${{ steps.wbg.outputs.version }}
+    - name: Install wasm-bindgen-cli (prebuilt binary, source build as fallback)
+      if: steps.wbg-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -e
+        v="${{ steps.wbg.outputs.version }}"
+        tarball="wasm-bindgen-$v-x86_64-unknown-linux-musl"
+        if curl -fsSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$v/$tarball.tar.gz" | tar -xz -C /tmp; then
+          install -m 0755 "/tmp/$tarball/wasm-bindgen" "$HOME/.cargo/bin/wasm-bindgen"
+        else
+          echo "prebuilt binary unavailable; building from source (slow)"
+          cargo install wasm-bindgen-cli --version "$v" --locked
+        fi
+    - name: Check the installed CLI
+      shell: bash
+      run: wasm-bindgen --version

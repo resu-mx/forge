@@ -71,7 +71,7 @@ Chrome 156, rustc 1.99.0, 2026-10-02.
 - **Persistence is not granted by default.** Chrome did not grant `navigator.storage.persist()`
   here, so the UI shows a notice pointing at Settings → Storage and the export button.
 - **Build needs a wasm-capable clang** (ADR 0001) and `wasm-bindgen-cli` pinned to the version in
-  `Cargo.lock` (0.2.129). `just wasm-bundle` builds the runtime; the UI build in `api` mode needs neither.
+  `Cargo.lock` (0.2.129 when this was written; CI reads it from the lockfile). `just wasm-bundle` builds the runtime; the UI build in `api` mode needs neither.
 - **Not served yet** (501 in the browser): the legacy `/organizations/:id/campuses` routes the UI
   calls directly, alignment, extension and the other Tier-1/2 endpoints from the M3 parity run;
   PDF is M5.
