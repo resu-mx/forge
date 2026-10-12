@@ -515,6 +515,7 @@ pub enum CredentialStatus {
     strum::Display,
     strum::EnumString,
     strum::AsRefStr,
+    strum::VariantNames,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -528,6 +529,13 @@ pub enum JobDescriptionStatus {
     Rejected,
     Withdrawn,
     Closed,
+}
+
+impl JobDescriptionStatus {
+    /// Every value as the API spells it, in declaration order.
+    pub fn names() -> &'static [&'static str] {
+        <Self as strum::VariantNames>::VARIANTS
+    }
 }
 
 /// Valid relationship types for contact-organization links.

@@ -1,6 +1,22 @@
 //! Repository for job description persistence.
 //!
 //! Provides CRUD operations and query methods for the `job_descriptions` table.
+//!
+//! # Input rules enforced here
+//!
+//! The store carries the TS `JobDescriptionService` validation, so every in-process caller
+//! (HTTP routes, the wasm runtime, tests) gets it. This is the record that replaces the dead
+//! `services/jd_service.rs`:
+//!
+//! - `title` must not be blank: `Title must not be empty`.
+//! - `raw_text` must not be blank: `Job description text (raw_text) must not be empty`.
+//! - `status`, when sent, must be one of [`JobDescriptionStatus::names`]:
+//!   `Invalid status: <s>. Must be one of: ...`. The input carries it as a string so the
+//!   store, not serde, produces that message.
+//! - `salary_min` must not exceed `salary_max`: `salary_min must not exceed salary_max`.
+//!   On update only values sent in the same request are compared.
+//!
+//! Not enforced here: the list route's `status` query filter, which ignores an invalid value.
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -24,10 +40,13 @@ impl JdStore {
     ) -> Result<JobDescription, ForgeError> {
         require_non_blank(&input.title, "title", TITLE_EMPTY)?;
         require_non_blank(&input.raw_text, "raw_text", RAW_TEXT_EMPTY)?;
+        let status = match input.status.as_deref() {
+            Some(s) => parse_status(s)?,
+            None => JobDescriptionStatus::Discovered,
+        };
         require_salary_bounds(input.salary_min, input.salary_max)?;
         let id = new_id();
         let now = now_iso();
-        let status = input.status.unwrap_or(JobDescriptionStatus::Discovered);
 
         conn.execute(
             "INSERT INTO job_descriptions (id, organization_id, title, url, raw_text, status,
@@ -186,6 +205,7 @@ impl JdStore {
         if let Some(ref v) = input.raw_text {
             require_non_blank(v, "raw_text", RAW_TEXT_EMPTY)?;
         }
+        let status = input.status.as_deref().map(parse_status).transpose()?;
         // Only values sent in this request are compared, as TS: a clear (`Some(None)`) or an
         // absent bound never triggers the rule, and the stored value is not consulted.
         require_salary_bounds(input.salary_min.flatten(), input.salary_max.flatten())?;
@@ -214,7 +234,7 @@ impl JdStore {
             sets.push(format!("raw_text = ?{}", bind_values.len() + 1));
             bind_values.push(Box::new(v.clone()));
         }
-        if let Some(ref v) = input.status {
+        if let Some(v) = status {
             sets.push(format!("status = ?{}", bind_values.len() + 1));
             bind_values.push(Box::new(v.to_string()));
         }
@@ -440,6 +460,18 @@ fn require_non_blank(value: &str, field: &str, message: &str) -> Result<(), Forg
     Ok(())
 }
 
+/// Parse a status string, with the TS `Invalid status: ...` message on failure. The list is built
+/// from the enum, so the message cannot drift from the accepted values.
+fn parse_status(raw: &str) -> Result<JobDescriptionStatus, ForgeError> {
+    raw.parse().map_err(|_| ForgeError::Validation {
+        message: format!(
+            "Invalid status: {raw}. Must be one of: {}",
+            JobDescriptionStatus::names().join(", ")
+        ),
+        field: Some("status".into()),
+    })
+}
+
 /// Reject `salary_min > salary_max` when both are present, mirroring the TS `JobDescriptionService`.
 fn require_salary_bounds(min: Option<f64>, max: Option<f64>) -> Result<(), ForgeError> {
     if let (Some(lo), Some(hi)) = (min, max) {
@@ -627,6 +659,62 @@ mod tests {
         assert_eq!(cleared.salary_max, Some(50.0));
     }
 
+    const INVALID_STATUS: &str = "Invalid status: bogus. Must be one of: discovered, analyzing, \
+        applying, applied, interviewing, offered, rejected, withdrawn, closed";
+
+    #[test]
+    fn create_rejects_invalid_status_with_the_ts_message_and_writes_nothing() {
+        let forge = setup();
+        let mut input = sample_input();
+        input.status = Some("bogus".into());
+        match JdStore::create(forge.conn(), &input).unwrap_err() {
+            ForgeError::Validation { message, field } => {
+                assert_eq!(message, INVALID_STATUS);
+                assert_eq!(field.as_deref(), Some("status"));
+            }
+            other => panic!("expected validation error, got {other:?}"),
+        }
+        assert_eq!(count_jds(&forge), 0);
+    }
+
+    #[test]
+    fn update_rejects_invalid_status_and_writes_nothing() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let bad = UpdateJobDescription {
+            title: Some("Changed".into()),
+            status: Some("bogus".into()),
+            ..Default::default()
+        };
+        match JdStore::update(forge.conn(), &jd.id, &bad).unwrap_err() {
+            ForgeError::Validation { message, field } => {
+                assert_eq!(message, INVALID_STATUS);
+                assert_eq!(field.as_deref(), Some("status"));
+            }
+            other => panic!("expected validation error, got {other:?}"),
+        }
+        let after = JdStore::get(forge.conn(), &jd.id).unwrap().unwrap();
+        assert_eq!(after.title, jd.title);
+        assert_eq!(after.status, jd.status);
+    }
+
+    #[test]
+    fn every_status_value_is_accepted() {
+        let forge = setup();
+        for name in JobDescriptionStatus::names() {
+            let mut input = sample_input();
+            input.status = Some((*name).into());
+            let jd = JdStore::create(forge.conn(), &input).unwrap();
+            assert_eq!(jd.status.as_ref(), *name);
+            let upd = UpdateJobDescription {
+                status: Some((*name).into()),
+                ..Default::default()
+            };
+            JdStore::update(forge.conn(), &jd.id, &upd).unwrap();
+        }
+        assert_eq!(JobDescriptionStatus::names().len(), 9);
+    }
+
     #[test]
     fn list_skills_orders_by_name_and_carries_created_at() {
         let forge = setup();
@@ -796,7 +884,7 @@ mod tests {
             &CreateJobDescription {
                 title: "Python Dev".into(),
                 raw_text: "Python job".into(),
-                status: Some(JobDescriptionStatus::Applied),
+                status: Some("applied".into()),
                 ..sample_input()
             },
         )
