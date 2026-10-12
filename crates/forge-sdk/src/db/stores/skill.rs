@@ -26,6 +26,11 @@ impl SkillStore {
     /// Insert a new skill row. The `name` is capitalized on the first
     /// character (preserving the rest, e.g. "SAFe" stays "SAFe").
     /// Returns `CONFLICT` if a skill with the same name already exists.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `skill-service.ts:67-92`: `name` must
+    /// not be empty (an empty name is inserted as-is), and an invalid `category` must answer
+    /// `VALIDATION_ERROR`. The route drops an unparsable category (`routes/skills.rs`), so it
+    /// falls back silently.
     pub fn create(
         conn: &Connection,
         name: &str,
@@ -148,6 +153,11 @@ impl SkillStore {
     }
 
     /// Partially update a skill's `name` and/or `category`.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `skill-service.ts:164-187`: `name`,
+    /// when sent, must not be empty, and an invalid `category` must answer `VALIDATION_ERROR`
+    /// (the route drops it, as in [`SkillStore::create`]). `list` has the same category gap
+    /// (`:106-115`).
     pub fn update(
         conn: &Connection,
         id: &str,
@@ -342,12 +352,15 @@ impl SkillStore {
 
     // ── Merge ───────────────────────────────────────────────────────
 
-    /// Atomically merge `source_id` into `target_id`: re-point all junction
+    /// Merge `source_id` into `target_id`: re-point all junction
     /// rows from the source skill to the target, handle UNIQUE constraint
     /// conflicts by deleting the conflicting source rows, then delete the
     /// source skill.
     ///
     /// Returns the surviving target skill after merge.
+    ///
+    /// TODO(resu-mx/forge#240): not atomic. TS runs the same steps in one transaction
+    /// (`skill-service.ts:352-368`); here a failure part-way leaves the junctions half moved.
     pub fn merge(conn: &Connection, source_id: &str, target_id: &str) -> Result<Skill, ForgeError> {
         if source_id == target_id {
             return Err(ForgeError::Validation {

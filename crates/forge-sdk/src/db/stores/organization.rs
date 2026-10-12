@@ -37,6 +37,11 @@ impl OrganizationStore {
     ///
     /// If `tags` is omitted, defaults to `[org_type]` (e.g. `["company"]`).
     /// The `worked` field is a boolean stored as `0/1`.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `organization-service.ts:64-91`: `name`
+    /// must not be blank, and an invalid `org_type` should answer `Invalid org_type: <value>`.
+    /// Here the column's CHECK rejects it with a generic 400. [`OrganizationStore::update`]
+    /// already enforces both.
     pub fn create(
         conn: &Connection,
         input: &CreateOrganizationInput,

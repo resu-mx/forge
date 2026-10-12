@@ -18,6 +18,9 @@ impl SummaryStore {
     // ── Core CRUD ───────────────────────────────────────────────────
 
     /// Insert a new summary row.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `summary-service.ts:52-57`:
+    /// `is_template`, when sent, must be 0 or 1. Any integer is accepted here.
     pub fn create(conn: &Connection, input: &CreateSummary) -> Result<Summary, ForgeError> {
         let id = new_id();
         let now = now_iso();
@@ -176,6 +179,9 @@ impl SummaryStore {
     }
 
     /// Apply a partial update to an existing summary.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `summary-service.ts:236-241`:
+    /// `is_template`, when sent, must be 0 or 1.
     pub fn update(
         conn: &Connection,
         id: &str,

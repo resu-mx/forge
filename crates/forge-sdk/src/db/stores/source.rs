@@ -97,6 +97,11 @@ impl SourceStore {
     }
 
     /// List sources with optional filters and pagination.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `source-service.ts:103-160`: the
+    /// `organization_id` (roles and projects) and `education_type` filters. The route passes
+    /// them in `SourceFilter`, but only `source_type`, `status` and `search` are applied, so
+    /// a request using the others gets an unfiltered list.
     pub fn list(
         conn: &Connection,
         filter: &SourceFilter,
@@ -182,6 +187,9 @@ impl SourceStore {
     // ── Update ───────────────────────────────────────────────────────
 
     /// Update a source's base row and extension row.
+    ///
+    /// TODO(resu-mx/forge#240): the base and extension writes are not in one transaction
+    /// (see [`SourceStore::create`], which is).
     pub fn update(
         conn: &Connection,
         id: &str,

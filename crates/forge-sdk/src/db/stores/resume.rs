@@ -20,6 +20,10 @@ impl ResumeStore {
     // ── Resume CRUD ─────────────────────────────────────────────────
 
     /// Insert a new resume row. Returns the hydrated `Resume`.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `resume-service.ts:93-104`: `name`,
+    /// `target_role`, `target_employer` and `archetype` must each be non-empty. Only the
+    /// template path (`template.rs`) checks them.
     pub fn create(conn: &Connection, input: &CreateResume) -> Result<Resume, ForgeError> {
         let id = new_id();
         let now = now_iso();
@@ -168,6 +172,12 @@ impl ResumeStore {
 
     /// Partially update a resume. Only fields present in `UpdateResume`
     /// are patched. Timestamps for override fields are auto-managed.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `resume-service.ts:139-164`:
+    /// - `name`, when sent, must not be empty.
+    /// - Clearing `markdown_override` or `latex_override` should clear its `*_updated_at`
+    ///   (it is left as it was), and `summary_override` should be stamped even when cleared
+    ///   (it is stamped only when set).
     pub fn update(conn: &Connection, id: &str, input: &UpdateResume) -> Result<Resume, ForgeError> {
         // Verify exists
         Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
@@ -490,7 +500,11 @@ impl ResumeStore {
         Ok(())
     }
 
-    /// Atomically reorder entries across sections.
+    /// Reorder entries across sections.
+    ///
+    /// TODO(resu-mx/forge#240): not atomic, unlike TS `resume-service.ts:339-370`. The updates
+    /// run one by one outside a transaction, so rows before a failing id stay committed. TS
+    /// checks every id first and answers `VALIDATION_ERROR`; this answers `NOT_FOUND`.
     pub fn reorder_entries(
         conn: &Connection,
         resume_id: &str,
@@ -756,7 +770,13 @@ impl ResumeStore {
         Ok(skills)
     }
 
-    /// Atomically reorder skills within a section.
+    /// Reorder skills within a section.
+    ///
+    /// TODO(resu-mx/forge#240): differs from TS `resume-service.ts:663-684` in two ways.
+    /// - The first element of each `skills` tuple is matched against `resume_skills.id`, but
+    ///   the route fills it from the request's `skill_id`. TS matches `(section_id, skill_id)`.
+    /// - Not atomic (TS runs in a transaction), and an unmatched id is `NOT_FOUND` where TS
+    ///   updates nothing and succeeds.
     pub fn reorder_skills(
         conn: &Connection,
         resume_id: &str,
@@ -783,6 +803,9 @@ impl ResumeStore {
     // ── Certifications (per resume) ─────────────────────────────────
 
     /// Add a certification to a certifications-type section.
+    ///
+    /// TODO(resu-mx/forge#240): the automatic `position` is `MAX(position)` per resume; TS
+    /// `resume-service.ts:716-717` takes it per section.
     pub fn add_certification(
         conn: &Connection,
         resume_id: &str,
@@ -1083,6 +1106,9 @@ impl ResumeStore {
     // ── Header / Override storage ───────────────────────────────────
 
     /// Persist a structured header JSON blob on a resume.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `resume-service.ts:798-803`:
+    /// `header.name` must be a non-empty string.
     pub fn update_header(
         conn: &Connection,
         id: &str,
@@ -1167,6 +1193,9 @@ impl ResumeStore {
     }
 
     /// Set or clear the Markdown override for a resume.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `resume-service.ts:817-828`: a new
+    /// override is linted (`lib/markdown-linter.ts`) and rejected with `VALIDATION_ERROR`.
     pub fn update_markdown_override(
         conn: &Connection,
         id: &str,
@@ -1195,6 +1224,10 @@ impl ResumeStore {
     }
 
     /// Set or clear the LaTeX override for a resume.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `resume-service.ts:843-854`: a new
+    /// override is linted (`lib/latex-linter.ts`). This may be obsolete, since PDFs are now
+    /// rendered from Typst and the LaTeX override is no longer compiled.
     pub fn update_latex_override(
         conn: &Connection,
         id: &str,

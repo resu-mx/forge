@@ -2,6 +2,9 @@
 //!
 //! Perspectives reframe bullets for specific archetypes/domains.
 //! Each perspective links back to a bullet (and transitively to a source).
+//!
+//! TODO(resu-mx/forge#240): TS embeds a perspective after it is created, through the entity
+//! map's hook (`perspective-service.ts:15`). Nothing here does.
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -138,6 +141,11 @@ impl PerspectiveStore {
     }
 
     /// Get perspective with its full derivation chain (bullet + source).
+    ///
+    /// TODO(resu-mx/forge#240): differs from TS `perspective-service.ts:122-178`. TS follows
+    /// only the primary source link (`is_primary = true`) and answers `NOT_FOUND` for an
+    /// incomplete chain. Here any source is used when none is primary, and a missing bullet
+    /// or source surfaces as a database error (500). `AuditService::trace_chain` inherits this.
     pub fn get_with_chain(
         conn: &Connection,
         id: &str,
@@ -303,6 +311,8 @@ impl PerspectiveStore {
 
     // ── Update ───────────────────────────────────────────────────────
 
+    /// TODO(resu-mx/forge#240): not yet ported from TS `perspective-service.ts:266-271`:
+    /// `content`, when sent, must not be empty.
     pub fn update(
         conn: &Connection,
         id: &str,

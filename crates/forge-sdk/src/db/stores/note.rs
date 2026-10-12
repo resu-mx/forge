@@ -16,6 +16,9 @@ impl NoteStore {
     // ── Core CRUD ───────────────────────────────────────────────────
 
     /// Insert a new user note row.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `note-service.ts:40-45`: `content` must
+    /// not be empty or whitespace.
     pub fn create(
         conn: &Connection,
         title: Option<&str>,
@@ -109,6 +112,9 @@ impl NoteStore {
     }
 
     /// Apply a partial update to an existing note (title and/or content).
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `note-service.ts:113-118`: `content`,
+    /// when sent, must not be empty or whitespace.
     pub fn update(
         conn: &Connection,
         id: &str,

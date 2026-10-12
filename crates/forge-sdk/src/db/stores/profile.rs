@@ -1,8 +1,9 @@
 //! Profile repository — data access for the singleton user profile.
 //!
-//! The `user_profile` table is a singleton: it contains exactly one row,
-//! seeded by migration. The repository enforces this by always fetching
-//! the first row and never exposing a `create` method.
+//! The `user_profile` table is a singleton: it holds one row, normally
+//! seeded by migration. The repository always fetches the first row and
+//! exposes no `create` method, but [`ProfileStore::update_profile`] inserts
+//! the row when it is missing (first update on a fresh database).
 //!
 //! TS source: `packages/core/src/services/profile-service.ts` (data access portions)
 
@@ -117,6 +118,13 @@ impl ProfileStore {
     /// Only the fields present in `UpdateProfile` are written; absent
     /// fields are left unchanged. Creates the profile row if it doesn't
     /// exist yet (first update on a fresh DB). Returns the updated profile.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `profile-service.ts`:
+    /// - `urls` must not repeat a `key`, compared case-insensitively; TS answers
+    ///   `Duplicate URL keys` (`:126-131`). The replace helper below says the caller must
+    ///   validate, and no caller does.
+    /// - TS answers `NOT_FOUND` when the profile row is missing (`:83-86`) instead of
+    ///   creating it.
     pub fn update_profile(
         conn: &Connection,
         patch: &UpdateProfile,
