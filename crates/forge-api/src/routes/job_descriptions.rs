@@ -14,9 +14,11 @@ use serde::{Deserialize, Serialize};
 use forge_ai::prompts::jd_skill_extraction;
 use forge_core::{
     ContactLink, CreateJobDescription, ForgeError, JobDescriptionFilter, JobDescriptionStatus,
-    JobDescriptionWithOrg, ResumeLink, Skill, SkillRow, UpdateJobDescription,
+    JobDescriptionWithOrg, ResumeLink, ResumeTaglineRegenerationResult, Skill, SkillRow,
+    UpdateJobDescription,
 };
 use forge_sdk::db::{ContactStore, JdResumeStore, JdStore, ResumeStore, SkillStore};
+use forge_sdk::services::tagline;
 
 use super::bullets::LinkSkillBody;
 use crate::db::with_conn;
@@ -344,9 +346,9 @@ async fn remove_job_description_skill(
 #[derive(Serialize)]
 struct LinkResumeResponse {
     data: ResumeLink,
-    /// TS `RegenerateResult`. Always `null` until resu-mx/forge#71 regenerates the tagline on
-    /// link. Never omitted: TS always sends the key.
-    tagline: Option<serde_json::Value>,
+    /// TS `RegenerateResult` (a sibling of `data`, not inside it): the tagline regenerated from
+    /// every JD now linked to the resume, whether the link is new or was already there.
+    tagline: ResumeTaglineRegenerationResult,
 }
 
 /// `GET /job-descriptions/:id/resumes` (TS job-descriptions.ts:146-166). 404 for an unknown JD
@@ -384,7 +386,7 @@ async fn link_resume(
             field: Some("resume_id".into()),
         })?;
 
-    let (created, link) = with_conn(&state, move |conn| {
+    let (created, link, tagline) = with_conn(&state, move |conn| {
         // 2. JD, then 3. resume (:180-191).
         JdStore::get(conn, &jd_id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "JobDescription".into(),
@@ -394,13 +396,20 @@ async fn link_resume(
             entity_type: "Resume".into(),
             id: resume_id.clone(),
         })?;
-        // 4. Idempotent insert; `created` picks 201 or 200 (:193-199, :218-219).
-        let created = JdResumeStore::link(conn, &jd_id, &resume_id)?;
-        // TODO(resu-mx/forge#71): regenerate the resume's generated_tagline from all linked
-        // JDs here, for new links and re-links alike, and return it as `tagline`.
-        let link = JdResumeStore::get_link(conn, &jd_id, &resume_id)?
+        // 4. Idempotent insert; `created` picks 201 or 200 (:193-199, :218-219). The link and
+        // the regeneration commit together, so a failure cannot leave a link with a stale
+        // tagline (TS runs them as two statements; the JSON is the same).
+        let tx = conn.unchecked_transaction()?;
+        let created = JdResumeStore::link(&tx, &jd_id, &resume_id)?;
+        // Regeneration runs for a repeated link too (TS :201-216). It writes `generated_tagline`
+        // and `updated_at`, never `tagline_override`.
+        let tagline = tagline::regenerate(&tx, &resume_id)?.ok_or_else(|| {
+            ForgeError::Internal("Resume vanished while its tagline was regenerated".into())
+        })?;
+        let link = JdResumeStore::get_link(&tx, &jd_id, &resume_id)?
             .ok_or_else(|| ForgeError::Internal("JD-resume link written but not found".into()))?;
-        Ok((created, link))
+        tx.commit()?;
+        Ok((created, link, tagline))
     })
     .await?;
 
@@ -413,7 +422,7 @@ async fn link_resume(
         status,
         Json(LinkResumeResponse {
             data: link,
-            tagline: None,
+            tagline,
         }),
     ))
 }
@@ -425,9 +434,13 @@ async fn unlink_resume(
     Path((jd_id, resume_id)): Path<(String, String)>,
 ) -> Result<NoContent, ApiError> {
     with_conn(&state, move |conn| {
-        JdResumeStore::unlink(conn, &jd_id, &resume_id)?;
-        // TODO(resu-mx/forge#71): regenerate generated_tagline from the remaining links
-        // (NULL when none remain). Never touch tagline_override.
+        // Delete the link, then rebuild the tagline from what is still linked (NULL when nothing
+        // is). Together in one transaction. An unknown resume regenerates nothing (`None`), and
+        // that is still a 204, as in TS (:224-239). `tagline_override` is never touched.
+        let tx = conn.unchecked_transaction()?;
+        JdResumeStore::unlink(&tx, &jd_id, &resume_id)?;
+        tagline::regenerate(&tx, &resume_id)?;
+        tx.commit()?;
         Ok(())
     })
     .await?;

@@ -109,6 +109,44 @@ test('targeted JDs: lists linked JDs, links and unlinks from the resume, survive
   expect(pageErrors).toEqual([])
 })
 
+// resu-mx/forge#71: linking a JD regenerates the tagline in the browser runtime, as it does in TS.
+// A person never has to click Regenerate for the AUTO tagline to follow the resume's JDs.
+test('tagline: linking a JD fills the AUTO tagline and unlinking the last one clears it', async ({ page }) => {
+  const pageErrors = trackErrors(page)
+  await openApp(page)
+  const resume = await seedResume(page, 'Tagline follows links')
+  await seedJd(page, 'Platform SRE')
+  const stored = () =>
+    inPage<{ generated_tagline: string | null }>(
+      page,
+      `return ok(await forge.resumes.getTagline('${resume.id}'))`,
+    ).then((s) => s.generated_tagline)
+  expect(await stored()).toBeNull()
+
+  await openResume(page, 'Tagline follows links')
+  const header = page.locator('.header-editor')
+  await expect(header).toBeVisible()
+
+  // Link from the resume's own panel, as a person does. No Regenerate click anywhere.
+  await targeted(page).getByRole('button', { name: '+ Link JD' }).click()
+  await page.locator('.picker-item', { hasText: 'Platform SRE' }).click()
+  await expect(targeted(page).locator('.linked-card')).toHaveCount(1)
+  await expect.poll(stored).not.toBeNull()
+  expect((await stored())!.startsWith('Platform Engineer -- ')).toBe(true)
+
+  // The header editor shows it as the AUTO tagline.
+  await openResume(page, 'Tagline follows links')
+  await expect(header.locator('.tagline-badge.generated')).toHaveText('AUTO')
+  await expect(header.locator('.header-tagline')).toContainText('Platform Engineer')
+
+  // Unlink the only JD: nothing is left to generate from, so the stored tagline is cleared.
+  await targeted(page).getByRole('button', { name: 'Unlink Platform SRE' }).click()
+  await expect(targeted(page).locator('.linked-card')).toHaveCount(0)
+  await expect.poll(stored).toBeNull()
+
+  expect(pageErrors).toEqual([])
+})
+
 test('tagline: regenerate, override survives a reload, reset returns the generated tagline', async ({ page }) => {
   const pageErrors = trackErrors(page)
   await openApp(page)
