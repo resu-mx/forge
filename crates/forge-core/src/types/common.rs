@@ -271,9 +271,10 @@ pub struct CoverageSummary {
 pub struct ResumeTaglineState {
     pub generated_tagline: Option<String>,
     pub tagline_override: Option<String>,
-    /// `tagline_override ?? generated_tagline ?? ""`, with no trim.
+    /// A non-blank override, else a non-blank generated tagline, else `""`. A blank value is
+    /// absent (resu-mx/forge#72); the text is returned as stored, never trimmed.
     pub resolved: String,
-    /// True only for a non-blank override.
+    /// True only for a non-blank override, so it always agrees with `resolved`.
     pub has_override: bool,
 }
 

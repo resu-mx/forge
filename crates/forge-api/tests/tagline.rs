@@ -106,12 +106,26 @@ async fn get_tagline_override_wins() {
     );
 }
 
+/// resu-mx/forge#72: a blank override (empty or whitespace-only, only possible for a row written
+/// directly) is no override. `resolved` and `has_override` agree, and the stored text is untouched.
 #[tokio::test]
-async fn get_tagline_whitespace_override_resolves_as_is_but_is_not_an_override() {
-    let (forge, id) = forge_with_resume(Some(GENERATED), Some("   "));
+async fn get_tagline_blank_override_is_no_override() {
+    for blank in ["   ", ""] {
+        let (forge, id) = forge_with_resume(Some(GENERATED), Some(blank));
+        let r = app(AppState::new(forge));
+        let (_, body) = call(&r, "GET", &format!("/api/resumes/{id}/tagline"), None).await;
+        assert_eq!(body["data"]["resolved"], GENERATED, "override {blank:?}");
+        assert_eq!(body["data"]["has_override"], false);
+        assert_eq!(body["data"]["tagline_override"], blank);
+    }
+}
+
+#[tokio::test]
+async fn get_tagline_blank_override_with_nothing_generated_resolves_empty() {
+    let (forge, id) = forge_with_resume(None, Some("   "));
     let r = app(AppState::new(forge));
     let (_, body) = call(&r, "GET", &format!("/api/resumes/{id}/tagline"), None).await;
-    assert_eq!(body["data"]["resolved"], "   ");
+    assert_eq!(body["data"]["resolved"], "");
     assert_eq!(body["data"]["has_override"], false);
 }
 
@@ -377,4 +391,95 @@ async fn regenerate_ignores_body() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+}
+
+// ── PATCH /resumes/:id regenerates the tagline when target_role changes (resu-mx/forge#72) ──
+
+async fn stored_state(r: &Router, id: &str) -> Value {
+    call(r, "GET", &format!("/api/resumes/{id}/tagline"), None)
+        .await
+        .1["data"]
+        .clone()
+}
+
+#[tokio::test]
+async fn patch_resume_with_a_changed_role_rebuilds_the_tagline_with_the_new_prefix() {
+    let (forge, id) = forge_with_resume(None, Some("Mine"));
+    seed_terraform_jd(&forge, &id);
+    let r = app(AppState::new(forge));
+    call(
+        &r,
+        "POST",
+        &format!("/api/resumes/{id}/tagline/regenerate"),
+        None,
+    )
+    .await;
+    let before = stored_state(&r, &id).await;
+    assert!(before["generated_tagline"]
+        .as_str()
+        .unwrap()
+        .starts_with("Senior Platform Engineer -- "));
+
+    let (status, body) = call(
+        &r,
+        "PATCH",
+        &format!("/api/resumes/{id}"),
+        Some(json!({"target_role": "Staff SRE"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["target_role"], "Staff SRE");
+
+    let after = stored_state(&r, &id).await;
+    assert!(after["generated_tagline"]
+        .as_str()
+        .unwrap()
+        .starts_with("Staff SRE -- "));
+    // Regeneration never writes the override.
+    assert_eq!(after["tagline_override"], "Mine");
+}
+
+#[tokio::test]
+async fn patch_resume_with_the_same_role_or_another_field_leaves_the_tagline_alone() {
+    let (forge, id) = forge_with_resume(Some("seeded"), None);
+    seed_terraform_jd(&forge, &id); // sets the role to "Senior Platform Engineer"
+    let r = app(AppState::new(forge));
+
+    for body in [
+        json!({"target_role": "Senior Platform Engineer"}),
+        json!({"name": "Renamed"}),
+    ] {
+        let (status, _) = call(&r, "PATCH", &format!("/api/resumes/{id}"), Some(body)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(stored_state(&r, &id).await["generated_tagline"], "seeded");
+    }
+}
+
+#[tokio::test]
+async fn patch_resume_with_a_changed_role_and_no_linked_jd_leaves_the_tagline_empty() {
+    let (forge, id) = forge_with_resume(None, None);
+    let r = app(AppState::new(forge));
+    let (status, _) = call(
+        &r,
+        "PATCH",
+        &format!("/api/resumes/{id}"),
+        Some(json!({"target_role": "Staff SRE"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(stored_state(&r, &id).await["generated_tagline"].is_null());
+}
+
+#[tokio::test]
+async fn patch_unknown_resume_is_404() {
+    let (forge, _) = forge_with_resume(None, None);
+    let r = app(AppState::new(forge));
+    let (status, _) = call(
+        &r,
+        "PATCH",
+        "/api/resumes/no-such-id",
+        Some(json!({"target_role": "Staff SRE"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

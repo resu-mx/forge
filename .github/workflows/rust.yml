@@ -62,7 +62,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
       - uses: extractions/setup-just@v2
       - run: bun install --frozen-lockfile
       - run: just parity-tier0
@@ -77,7 +77,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
         working-directory: packages/runtime
@@ -102,11 +102,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
       - uses: extractions/setup-just@v2
-      # Must match the wasm-bindgen version in Cargo.lock.
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+      # Installs wasm-bindgen-cli at the version of the wasm-bindgen crate in Cargo.lock. No version
+      # is written here, so a `cargo update` that moves wasm-bindgen cannot break this job.
+      - uses: ./.github/actions/setup-wasm-bindgen
       - run: bun install --frozen-lockfile
       - name: Build the wasm bundles
         run: just wasm-bundle typst-bundle
