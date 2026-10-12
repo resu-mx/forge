@@ -19,7 +19,7 @@ forge-core = { workspace = true, features = ["rusqlite"] }
 forge-sdk = { workspace = true }
 forge-ai = { workspace = true }
 forge-typst = { workspace = true, optional = true }
-axum = { version = "0.8", default-features = false, features = ["json", "query"] }
+axum = { version = "0.8", default-features = false, features = ["json", "query", "original-uri"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }

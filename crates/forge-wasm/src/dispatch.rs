@@ -246,6 +246,35 @@ mod tests {
             .contains("/api/definitely-not-a-route"));
     }
 
+    /// resu-mx/forge#124: a path the API serves, hit with a method it doesn't (`PATCH` on a
+    /// route that has only `GET`), used to answer 405, which the rewrite never saw, so the UI read
+    /// it as a client bug. It is the same "not ported yet" as an unknown path.
+    #[tokio::test]
+    async fn an_unserved_method_on_a_served_path_is_501_only_when_asked() {
+        let r = router();
+        let plain = dispatch(&r, req("PATCH", "/api/health", "{}"), false)
+            .await
+            .unwrap();
+        assert_eq!(plain.status, 404, "native: the TS server's answer");
+        assert_eq!(json(&plain)["error"]["code"], "NOT_FOUND");
+
+        let rewritten = dispatch(&r, req("PATCH", "/api/health", "{}"), true)
+            .await
+            .unwrap();
+        assert_eq!(rewritten.status, 501);
+        assert_eq!(json(&rewritten)["error"]["code"], "NOT_IMPLEMENTED");
+        assert_eq!(
+            json(&rewritten)["error"]["message"],
+            "PATCH /api/health is not available in the browser runtime yet"
+        );
+
+        // The method the path does serve is untouched.
+        let ok = dispatch(&r, req("GET", "/api/health", ""), true)
+            .await
+            .unwrap();
+        assert_eq!(ok.status, 200);
+    }
+
     #[tokio::test]
     async fn a_handlers_own_404_is_not_rewritten() {
         let resp = dispatch(&router(), req("GET", "/api/sources/missing", ""), true)
