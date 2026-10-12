@@ -104,7 +104,7 @@ const RESUME_LINK_KEYS: [&str; 8] = [
 // ── POST /job-descriptions/:id/resumes (forge#27) ────────────────────
 
 #[tokio::test]
-async fn link_resume_201_then_200_with_null_tagline() {
+async fn link_resume_201_then_200_with_the_regenerated_tagline() {
     let f = Forge::open_memory().unwrap();
     let j = jd(
         &f,
@@ -116,17 +116,115 @@ async fn link_resume_201_then_200_with_null_tagline() {
 
     let (status, first) = call(&r, "POST", &path, Some(json!({"resume_id": res}))).await;
     assert_eq!(status, StatusCode::CREATED);
+    // `tagline` is a sibling of `data`, not inside it.
     assert_eq!(keys(&first), set(&["data", "tagline"]));
-    assert!(first["tagline"].is_null());
+    assert_eq!(
+        keys(&first["tagline"]),
+        set(&["generated_tagline", "has_override", "keywords"])
+    );
+    let generated = first["tagline"]["generated_tagline"].as_str().unwrap();
+    assert!(
+        generated.starts_with("Security Engineer -- "),
+        "{generated}"
+    );
+    assert_eq!(first["tagline"]["has_override"], false);
+    assert!(!first["tagline"]["keywords"].as_array().unwrap().is_empty());
     assert_eq!(first["data"]["resume_id"], res.as_str());
     assert_eq!(first["data"]["resume_name"], "Linked Resume");
     assert_eq!(keys(&first["data"]), set(&RESUME_LINK_KEYS));
 
+    // A repeated link is 200, and it regenerates too: `tagline` is still there.
     let (status, again) = call(&r, "POST", &path, Some(json!({"resume_id": res}))).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(again["tagline"].is_null());
+    assert_eq!(again["tagline"]["generated_tagline"], generated);
     // The original row is kept.
     assert_eq!(again["data"]["created_at"], first["data"]["created_at"]);
+}
+
+/// `generated_tagline` as `GET /resumes/:id/tagline` reports it.
+async fn stored_tagline(r: &Router, resume_id: &str) -> Value {
+    let (status, body) = call(r, "GET", &format!("/api/resumes/{resume_id}/tagline"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    body["data"].clone()
+}
+
+#[tokio::test]
+async fn link_aggregates_every_linked_jd_and_never_writes_the_override() {
+    let f = Forge::open_memory().unwrap();
+    let j1 = jd(
+        &f,
+        json!({"title": "A", "raw_text": "kubernetes terraform python"}),
+    );
+    let j2 = jd(
+        &f,
+        json!({"title": "B", "raw_text": "kubernetes prometheus grafana"}),
+    );
+    let res = resume(&f, "Targeted");
+    f.conn()
+        .execute(
+            "UPDATE resumes SET tagline_override = 'Manually Set Tagline' WHERE id = ?1",
+            [&res],
+        )
+        .unwrap();
+    let r = app(AppState::new(f));
+
+    call(
+        &r,
+        "POST",
+        &format!("/api/job-descriptions/{j1}/resumes"),
+        Some(json!({"resume_id": res})),
+    )
+    .await;
+    let (_, second) = call(
+        &r,
+        "POST",
+        &format!("/api/job-descriptions/{j2}/resumes"),
+        Some(json!({"resume_id": res})),
+    )
+    .await;
+
+    // "kubernetes" is in both JDs, so it ranks in the aggregate.
+    let terms: Vec<&str> = second["tagline"]["keywords"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k["term"].as_str().unwrap())
+        .collect();
+    assert!(terms.contains(&"kubernetes"), "{terms:?}");
+    // An override makes `has_override` true, yet the generated tagline still updates.
+    assert_eq!(second["tagline"]["has_override"], true);
+    let state = stored_tagline(&r, &res).await;
+    assert_eq!(state["tagline_override"], "Manually Set Tagline");
+    assert_eq!(
+        state["generated_tagline"],
+        second["tagline"]["generated_tagline"]
+    );
+}
+
+#[tokio::test]
+async fn link_with_no_jd_text_leaves_generated_tagline_null() {
+    let f = Forge::open_memory().unwrap();
+    // The store rejects blank text, so write the row directly, as the TS seed does.
+    let j = forge_core::new_id();
+    f.conn()
+        .execute(
+            "INSERT INTO job_descriptions (id, title, raw_text, status) VALUES (?1, 'Empty', '', 'discovered')",
+            [&j],
+        )
+        .unwrap();
+    let res = resume(&f, "R");
+    let r = app(AppState::new(f));
+
+    let (status, body) = call(
+        &r,
+        "POST",
+        &format!("/api/job-descriptions/{j}/resumes"),
+        Some(json!({"resume_id": res})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["tagline"]["generated_tagline"], "");
+    assert!(stored_tagline(&r, &res).await["generated_tagline"].is_null());
 }
 
 #[tokio::test]
@@ -205,7 +303,7 @@ async fn unlink_removes_only_that_link() {
         .map(|l| l.resume_id)
         .collect();
     assert_eq!(left, vec![r2.clone()]);
-    // Until forge#71, the tagline is left as it was.
+    // r1's only link is gone, so its tagline is rebuilt from nothing: NULL, not the seeded value.
     let tagline: Option<String> = probe
         .query_row(
             "SELECT generated_tagline FROM resumes WHERE id = ?1",
@@ -213,7 +311,7 @@ async fn unlink_removes_only_that_link() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(tagline.as_deref(), Some("seeded"));
+    assert_eq!(tagline, None);
     // The JD and the unlinked resume still exist.
     assert_eq!(
         call(&r, "GET", &format!("/api/job-descriptions/{j}"), None)
@@ -229,6 +327,64 @@ async fn unlink_removes_only_that_link() {
     for suffix in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
     }
+}
+
+#[tokio::test]
+async fn unlink_rebuilds_from_the_remaining_jds_and_clears_when_none_remain() {
+    let f = Forge::open_memory().unwrap();
+    let j1 = jd(
+        &f,
+        json!({"title": "A", "raw_text": "kafka kubernetes terraform"}),
+    );
+    let j2 = jd(
+        &f,
+        json!({"title": "B", "raw_text": "python django postgres"}),
+    );
+    let res = resume(&f, "R");
+    f.conn()
+        .execute(
+            "UPDATE resumes SET tagline_override = 'Keep Me' WHERE id = ?1",
+            [&res],
+        )
+        .unwrap();
+    let r = app(AppState::new(f));
+    for j in [&j1, &j2] {
+        call(
+            &r,
+            "POST",
+            &format!("/api/job-descriptions/{j}/resumes"),
+            Some(json!({"resume_id": res})),
+        )
+        .await;
+    }
+    let both = stored_tagline(&r, &res).await["generated_tagline"].clone();
+    assert!(both.is_string());
+
+    // Unlink the first JD: the tagline is rebuilt from the second alone.
+    let (status, _) = call(
+        &r,
+        "DELETE",
+        &format!("/api/job-descriptions/{j1}/resumes/{res}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let one = stored_tagline(&r, &res).await;
+    assert!(one["generated_tagline"].is_string());
+    assert_ne!(one["generated_tagline"], both);
+    assert_eq!(one["tagline_override"], "Keep Me");
+
+    // Unlink the last JD: nothing is left to generate from, so the column is cleared.
+    call(
+        &r,
+        "DELETE",
+        &format!("/api/job-descriptions/{j2}/resumes/{res}"),
+        None,
+    )
+    .await;
+    let none = stored_tagline(&r, &res).await;
+    assert!(none["generated_tagline"].is_null());
+    assert_eq!(none["tagline_override"], "Keep Me");
 }
 
 #[tokio::test]
