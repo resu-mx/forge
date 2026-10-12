@@ -1,12 +1,12 @@
 //! RoleType CRUD routes.
 //!
-//! Simple lookup table — no pagination, no update.
+//! Simple lookup table — no pagination (resu-mx/forge#141).
 
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use forge_core::{CreateRoleTypeInput, RoleType};
+use forge_core::{CreateRoleTypeInput, RoleType, UpdateRoleTypeInput};
 use forge_sdk::db::RoleTypeStore;
 
 use crate::db::with_conn;
@@ -45,6 +45,17 @@ async fn get_role_type(
     Ok(Json(ApiData { data: result }))
 }
 
+/// `PATCH /role-types/:id` (TS role-types.ts:33-38). 200 with the row, 400 for a blank name,
+/// 404 for an unknown id, 409 for a name another role type has.
+async fn update_role_type(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Json(input): Json<UpdateRoleTypeInput>,
+) -> Result<Json<ApiData<RoleType>>, ApiError> {
+    let result = with_conn(&state, move |conn| RoleTypeStore::update(conn, &id, &input)).await?;
+    Ok(Json(ApiData { data: result }))
+}
+
 async fn delete_role_type(
     State(state): State<SharedState>,
     Path(id): Path<String>,
@@ -60,6 +71,8 @@ pub fn router() -> Router<SharedState> {
         .route("/role-types", post(create_role_type).get(list_role_types))
         .route(
             "/role-types/{id}",
-            get(get_role_type).delete(delete_role_type),
+            get(get_role_type)
+                .patch(update_role_type)
+                .delete(delete_role_type),
         )
 }
