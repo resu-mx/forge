@@ -104,7 +104,7 @@ Deviations: the server binds 127.0.0.1 by default (`FORGE_HOST` to change) becau
 `just parity-tier0` is the CI gate. Baseline 241/415 passing; now 300/415, with every Tier-0 file (contracts, sources, bullets, perspectives,
 resumes, derivations, profile) plus export, CORS, server and review passing (154 tests). The 115 remaining failures are Tier-1/2 files
 (job descriptions, extension, campuses, credentials, certifications, summaries, domains, archetypes, supporting).
-Not done: the stubbed `forge-sdk` services were not implemented; the validation rules were put in the stores instead, where the routes call them.
+The stubbed per-entity `forge-sdk` services were never implemented and have been deleted (#118): the validation rules live in the stores, where the routes call them. The rules the stores don't enforce yet are listed in #240.
 `POST /pdf` and `?format=pdf` answer 501 until M5. Tagline, resume job-description and contact links are Tier 2 and not ported.
 Tier-0 endpoints (about 40), taken from what the web UI, MCP server and CLI call:
 - health, `GET`/`PATCH` profile, `GET` archetypes and domains, `GET`/`POST` orgs

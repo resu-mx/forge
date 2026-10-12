@@ -19,6 +19,11 @@ impl ContactStore {
     // ── Core CRUD ───────────────────────────────────────────────────
 
     /// Insert a new contact row.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `contact-service.ts:67-102` (validators
+    /// at `:566-577`): `name` must not be empty, `email` must be well-formed and `linkedin`
+    /// must be a URL. TS also returns the contact with its organization name
+    /// (`ContactWithOrg`); this returns a plain `Contact`.
     pub fn create(conn: &Connection, input: &CreateContact) -> Result<Contact, ForgeError> {
         let id = new_id();
         let now = now_iso();
@@ -148,6 +153,10 @@ impl ContactStore {
     }
 
     /// Apply a partial update to an existing contact.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `contact-service.ts:168-208`: the same
+    /// `name`, `email` and `linkedin` checks as [`ContactStore::create`], when the field is
+    /// sent, and a `ContactWithOrg` return.
     pub fn update(
         conn: &Connection,
         id: &str,

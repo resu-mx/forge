@@ -1,15 +1,15 @@
-//! Forge facade — single entry point for all SDK operations.
+//! Forge facade — opens the database, runs migrations and owns the connection.
 //!
-//! Mirrors the TS `createServices(db)` factory. Binary crates construct
-//! one `Forge` instance and pass references to route handlers.
+//! Binary crates construct one `Forge` instance and pass its connection to the stores in
+//! [`crate::db::stores`]. Unlike the TS `createServices(db)` factory it holds no services:
+//! each store takes a `&Connection` per call.
 
 use forge_core::ForgeError;
 use rusqlite::Connection;
 
 use crate::db::migrate::run_migrations;
 
-/// The main SDK entry point. Owns the database connection and provides
-/// access to all domain services.
+/// The main SDK entry point. Owns the database connection.
 pub struct Forge {
     conn: Connection,
 }

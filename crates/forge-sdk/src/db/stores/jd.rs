@@ -17,6 +17,9 @@
 //!   On update only values sent in the same request are compared.
 //!
 //! Not enforced here: the list route's `status` query filter, which ignores an invalid value.
+//!
+//! TODO(resu-mx/forge#240): TS embeds a job description after create and re-embeds it when
+//! `raw_text` changes (`job-description-service.ts:137-147`, `:285-293`). Nothing here does.
 
 use rusqlite::{params, Connection, OptionalExtension};
 

@@ -2,7 +2,7 @@
 name = "forge-sdk"
 version = "0.1.0"
 edition = "2021"
-description = "Repositories, services, and IR compiler for Forge"
+description = "Stores, cross-entity services, and IR compiler for Forge"
 
 [dependencies]
 forge-core = { workspace = true, features = ["rusqlite"] }

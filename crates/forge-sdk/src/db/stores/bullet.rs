@@ -2,6 +2,9 @@
 //!
 //! Bullets are derived from sources. The `technologies` field is a projection
 //! of linked skill names via the `bullet_skills` junction table.
+//!
+//! TODO(resu-mx/forge#240): TS embeds a bullet after it is created, through the entity map's
+//! `afterCreate` hook (`bullet-service.ts:19-21`). Nothing here does.
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -30,6 +33,11 @@ impl BulletStore {
     // ── Create ───────────────────────────────────────────────────────
 
     /// Create a bullet, optionally linking to sources and technologies.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `bullet-service.ts:75-100`: `content`
+    /// must not be empty. The `is_primary` flag in `source_ids` comes from the caller, and
+    /// the route defaults a missing value to `false` (`routes/bullets.rs`); TS defaults it to
+    /// `true` (`src.is_primary !== false`).
     pub fn create(
         conn: &Connection,
         content: &str,
@@ -211,6 +219,9 @@ impl BulletStore {
     // ── Update ───────────────────────────────────────────────────────
 
     /// Update bullet content/metrics/domain fields.
+    ///
+    /// TODO(resu-mx/forge#240): not yet ported from TS `bullet-service.ts:224-227`: `content`,
+    /// when sent, must not be empty.
     pub fn update(
         conn: &Connection,
         id: &str,
@@ -492,6 +503,9 @@ impl BulletStore {
     }
 
     /// Replace all technologies for a bullet (clear + re-insert).
+    ///
+    /// TODO(resu-mx/forge#240): a technology with no matching skill is created with category
+    /// `tool`; TS creates it as `other` (`bullet-service.ts:463-467`).
     fn replace_technologies(
         conn: &Connection,
         bullet_id: &str,

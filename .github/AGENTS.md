@@ -93,8 +93,8 @@ inputs. It runs in this order:
 
 - `rust.yml` has **no `paths:` filter, on purpose**. A required check that a path filter skips
   never reports, and that blocks the PR. Do not add one.
-- Lint stays advisory (`continue-on-error`) until the workspace is rustfmt-clean and the
-  `todo!()` stubs are gone. Then drop `continue-on-error` to make it blocking.
+- Lint stays advisory (`continue-on-error`) until the workspace is rustfmt-clean and
+  clippy-clean (about ten warnings remain). Then drop `continue-on-error` to make it blocking.
 - The Bun version is the repo's pin, `.bun-version`: CI's `setup-bun` steps read it with
   `bun-version-file`, and the Dockerfile's `ARG BUN_VERSION` default must equal it (`docker.yml`
   fails the build when they differ). Bump all of them by editing those two files. (The extension
