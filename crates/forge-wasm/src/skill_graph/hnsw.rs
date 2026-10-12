@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn build_rejects_mismatched_dim() {
-        let owned = vec![(0_usize, vec![1.0_f32, 0.0, 0.0])];
+        let owned = [(0_usize, vec![1.0_f32, 0.0, 0.0])];
         let refs: Vec<(NodeIndex, &[f32])> =
             owned.iter().map(|(i, v)| (*i, v.as_slice())).collect();
 
@@ -168,7 +168,7 @@ mod tests {
         assert!(empty.search(&[0.0; 4], 5).is_empty());
 
         // Mismatched query dim → empty (treated as no-match rather than panic).
-        let owned = vec![(0_usize, vec![1.0_f32; 4])];
+        let owned = [(0_usize, vec![1.0_f32; 4])];
         let refs: Vec<(NodeIndex, &[f32])> =
             owned.iter().map(|(i, v)| (*i, v.as_slice())).collect();
         let idx = HnswIndex::build(&refs, 4).unwrap();

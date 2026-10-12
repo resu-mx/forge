@@ -40,7 +40,7 @@ async fn list_credentials(
 ) -> Result<Json<ApiData<Vec<Credential>>>, ApiError> {
     let data = match q.credential_type {
         Some(t) => with_conn(&state, move |conn| CredentialStore::find_by_type(conn, &t)).await?,
-        None => with_conn(&state, move |conn| CredentialStore::list(conn)).await?,
+        None => with_conn(&state, CredentialStore::list).await?,
     };
     Ok(Json(ApiData { data }))
 }

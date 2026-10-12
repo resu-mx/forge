@@ -12,6 +12,9 @@ use forge_core::{
     Pagination, UpdateContact,
 };
 
+/// A job description linked to a contact: `(jd_id, jd_title, org_name, relationship)`.
+pub type ContactJdLink = (String, String, Option<String>, ContactJDRelationship);
+
 /// Data-access repository for contacts and their junction tables.
 pub struct ContactStore;
 
@@ -340,7 +343,7 @@ impl ContactStore {
     pub fn list_job_descriptions(
         conn: &Connection,
         contact_id: &str,
-    ) -> Result<Vec<(String, String, Option<String>, ContactJDRelationship)>, ForgeError> {
+    ) -> Result<Vec<ContactJdLink>, ForgeError> {
         let mut stmt = conn.prepare(
             "SELECT cjd.job_description_id, jd.title, o.name, cjd.relationship
              FROM contact_job_descriptions cjd
@@ -350,7 +353,7 @@ impl ContactStore {
              ORDER BY jd.title ASC",
         )?;
 
-        let rows: Vec<(String, String, Option<String>, ContactJDRelationship)> = stmt
+        let rows: Vec<ContactJdLink> = stmt
             .query_map(params![contact_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,

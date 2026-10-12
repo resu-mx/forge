@@ -20,7 +20,7 @@ use crate::state::SharedState;
 async fn list_answers(
     State(state): State<SharedState>,
 ) -> Result<Json<ApiData<Vec<AnswerBankEntry>>>, ApiError> {
-    let data = with_conn(&state, move |conn| AnswerBankStore::list(conn)).await?;
+    let data = with_conn(&state, AnswerBankStore::list).await?;
     Ok(Json(ApiData { data }))
 }
 
