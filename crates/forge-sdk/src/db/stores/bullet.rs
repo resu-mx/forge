@@ -448,13 +448,18 @@ impl BulletStore {
     }
 
     fn require_bullet(conn: &Connection, bullet_id: &str) -> Result<(), ForgeError> {
-        match Self::get_hydrated(conn, bullet_id)? {
-            Some(_) => Ok(()),
-            None => Err(ForgeError::NotFound {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM bullets WHERE id = ?1)",
+            params![bullet_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(ForgeError::NotFound {
                 entity_type: "Bullet".into(),
                 id: bullet_id.into(),
-            }),
+            });
         }
+        Ok(())
     }
 
     // ── Source links ─────────────────────────────────────────────────
@@ -878,6 +883,50 @@ mod tests {
         let r = BulletStore::link_skill_by_name(forge.conn(), &bid, "   ", None);
         assert!(matches!(r, Err(ForgeError::Validation { .. })));
         assert_eq!(skill_count(&forge), before);
+    }
+
+    fn assert_bullet_not_found(r: Result<SkillRow, ForgeError>, id: &str) {
+        match r {
+            Err(ForgeError::NotFound {
+                entity_type,
+                id: got,
+            }) => {
+                assert_eq!(entity_type, "Bullet");
+                assert_eq!(got, id);
+            }
+            other => panic!("expected NotFound for Bullet, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn require_bullet_unknown_id_link_skill_writes_nothing() {
+        let forge = setup();
+        let c = forge.conn();
+        let skill = SkillStore::create(c, "Elixir", None).unwrap();
+        let skills_before = skill_count(&forge);
+        let links_before = link_count(&forge);
+        let r = BulletStore::link_skill(c, "no-such-bullet", &skill.id);
+        assert_bullet_not_found(r, "no-such-bullet");
+        assert_eq!(skill_count(&forge), skills_before);
+        assert_eq!(link_count(&forge), links_before);
+    }
+
+    #[test]
+    fn require_bullet_unknown_id_link_by_name_writes_nothing() {
+        let forge = setup();
+        let skills_before = skill_count(&forge);
+        let links_before = link_count(&forge);
+        let r = BulletStore::link_skill_by_name(forge.conn(), "no-such-bullet", "Elixir", None);
+        assert_bullet_not_found(r, "no-such-bullet");
+        assert_eq!(skill_count(&forge), skills_before);
+        assert_eq!(link_count(&forge), links_before);
+    }
+
+    #[test]
+    fn require_bullet_existing_bullet_passes() {
+        let forge = setup();
+        let bid = new_bullet(&forge);
+        assert!(BulletStore::require_bullet(forge.conn(), &bid).is_ok());
     }
 
     #[test]
