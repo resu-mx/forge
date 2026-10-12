@@ -7,9 +7,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use forge_core::{
     new_id, now_iso, Bullet, BulletFilter, BulletStatus, ForgeError, Pagination, PaginationParams,
-    Skill, SkillCategory, Source, UpdateBulletInput,
+    SkillRow, Source, UpdateBulletInput,
 };
 
+use super::skill::SkillStore;
 use super::source::SourceStore;
 
 /// Valid status transitions for bullets.
@@ -361,84 +362,59 @@ impl BulletStore {
 
     // ── Skill links ──────────────────────────────────────────────────
 
-    /// Skills linked to a bullet, by name.
-    pub fn list_skills(conn: &Connection, bullet_id: &str) -> Result<Vec<Skill>, ForgeError> {
+    /// Skills linked to a bullet as full rows (with `created_at`), by name.
+    /// An unknown bullet yields an empty list (no existence check, like TS).
+    pub fn list_skills(conn: &Connection, bullet_id: &str) -> Result<Vec<SkillRow>, ForgeError> {
         let mut stmt = conn.prepare(
-            "SELECT s.id, s.name, s.category FROM skills s
+            "SELECT s.id, s.name, s.category, s.created_at FROM skills s
              JOIN bullet_skills bs ON bs.skill_id = s.id
              WHERE bs.bullet_id = ?1
              ORDER BY s.name ASC",
         )?;
         let rows = stmt
-            .query_map(params![bullet_id], Self::map_skill)?
+            .query_map(params![bullet_id], SkillStore::map_skill_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
-    /// Link an existing skill. Linking twice is a no-op.
+    /// Link an existing skill. `NotFound` for an unknown bullet or skill (the
+    /// generic FK mapping would answer 400). Linking twice is a no-op.
     pub fn link_skill(
         conn: &Connection,
         bullet_id: &str,
         skill_id: &str,
-    ) -> Result<Skill, ForgeError> {
-        // A dangling bullet or skill is an FK failure: the generic mapping answers 400.
-        // (The arm that used to turn `ForeignKey` into NotFound never fired.)
+    ) -> Result<SkillRow, ForgeError> {
+        Self::require_bullet(conn, bullet_id)?;
+        let skill = SkillStore::get_row(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "Skill".into(),
+            id: skill_id.into(),
+        })?;
         conn.execute(
             "INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?1, ?2)",
             params![bullet_id, skill_id],
         )?;
-        Self::skill_by_id(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
-            entity_type: "skill".into(),
-            id: skill_id.into(),
-        })
+        Ok(skill)
     }
 
-    /// Link a skill by name, creating it if needed. The first letter is upper-cased
-    /// (rest preserved: `foo` -> `Foo`, `SAFe` stays `SAFe`) and the lookup is
-    /// case-insensitive, so `python` links an existing `Python`. An unknown or
-    /// absent category falls back to `other`.
+    /// Find-or-create a skill by name (TS rules, see
+    /// [`SkillStore::get_or_create_for_link`]) and link it. The bullet is
+    /// checked first so an unknown bullet never leaves an orphan skill, and the
+    /// create + link run in one transaction. Idempotent.
     pub fn link_skill_by_name(
         conn: &Connection,
         bullet_id: &str,
         name: &str,
         category: Option<&str>,
-    ) -> Result<Skill, ForgeError> {
-        let raw = name.trim();
-        let mut chars = raw.chars();
-        let name: String = match chars.next() {
-            Some(first) => first.to_uppercase().chain(chars).collect(),
-            None => {
-                return Err(ForgeError::Validation {
-                    message: "skill_id or name is required".into(),
-                    field: None,
-                })
-            }
-        };
-
-        let existing = conn
-            .query_row(
-                "SELECT id, name, category FROM skills WHERE name = ?1 COLLATE NOCASE",
-                params![name],
-                Self::map_skill,
-            )
-            .optional()?;
-        let skill = match existing {
-            Some(skill) => skill,
-            None => {
-                let category = category
-                    .and_then(|c| c.parse::<SkillCategory>().ok())
-                    .unwrap_or(SkillCategory::Other);
-                let id = new_id();
-                conn.execute(
-                    "INSERT INTO skills (id, name, category) VALUES (?1, ?2, ?3)",
-                    params![id, name, category.as_ref()],
-                )?;
-                Self::skill_by_id(conn, &id)?
-                    .ok_or_else(|| ForgeError::Internal("Skill created but not found".into()))?
-            }
-        };
-
-        Self::link_skill(conn, bullet_id, &skill.id)
+    ) -> Result<SkillRow, ForgeError> {
+        Self::require_bullet(conn, bullet_id)?;
+        let tx = conn.unchecked_transaction()?;
+        let skill = SkillStore::get_or_create_for_link(&tx, name, category)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?1, ?2)",
+            params![bullet_id, skill.base.id],
+        )?;
+        tx.commit()?;
+        Ok(skill)
     }
 
     /// Remove a skill link. 404 if the link does not exist.
@@ -460,25 +436,14 @@ impl BulletStore {
         Ok(())
     }
 
-    fn skill_by_id(conn: &Connection, id: &str) -> Result<Option<Skill>, ForgeError> {
-        Ok(conn
-            .query_row(
-                "SELECT id, name, category FROM skills WHERE id = ?1",
-                params![id],
-                Self::map_skill,
-            )
-            .optional()?)
-    }
-
-    fn map_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
-        Ok(Skill {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            category: row
-                .get::<_, String>(2)?
-                .parse()
-                .unwrap_or(SkillCategory::Other),
-        })
+    fn require_bullet(conn: &Connection, bullet_id: &str) -> Result<(), ForgeError> {
+        match Self::get_hydrated(conn, bullet_id)? {
+            Some(_) => Ok(()),
+            None => Err(ForgeError::NotFound {
+                entity_type: "Bullet".into(),
+                id: bullet_id.into(),
+            }),
+        }
     }
 
     // ── Source links ─────────────────────────────────────────────────
@@ -772,5 +737,148 @@ mod tests {
         assert!(BulletStore::get_hydrated(forge.conn(), &bullet.id)
             .unwrap()
             .is_none());
+    }
+
+    fn new_bullet(forge: &Forge) -> String {
+        let source_id = create_source(forge.conn());
+        BulletStore::create(
+            forge.conn(),
+            "A bullet",
+            None,
+            None,
+            None,
+            &[(source_id, true)],
+            &[],
+        )
+        .unwrap()
+        .id
+    }
+
+    fn skill_count(forge: &Forge) -> i64 {
+        forge
+            .conn()
+            .query_row("SELECT COUNT(*) FROM skills", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn link_count(forge: &Forge) -> i64 {
+        forge
+            .conn()
+            .query_row("SELECT COUNT(*) FROM bullet_skills", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn bullet_skills_list_is_ordered_by_name_with_created_at() {
+        let forge = setup();
+        let c = forge.conn();
+        let bid = new_bullet(&forge);
+        let zig = SkillStore::create(c, "Zig", None).unwrap();
+        let ada = SkillStore::create(c, "Ada", None).unwrap();
+        BulletStore::link_skill(c, &bid, &zig.id).unwrap();
+        BulletStore::link_skill(c, &bid, &ada.id).unwrap();
+        let rows = BulletStore::list_skills(c, &bid).unwrap();
+        let names: Vec<_> = rows.iter().map(|r| r.base.name.as_str()).collect();
+        assert_eq!(names, ["Ada", "Zig"]);
+        assert!(rows.iter().all(|r| !r.created_at.is_empty()));
+    }
+
+    #[test]
+    fn bullet_skills_list_unknown_bullet_is_empty() {
+        let forge = setup();
+        assert!(BulletStore::list_skills(forge.conn(), "missing")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn bullet_skills_link_is_idempotent() {
+        let forge = setup();
+        let c = forge.conn();
+        let bid = new_bullet(&forge);
+        let skill = SkillStore::create(c, "Zig", None).unwrap();
+        BulletStore::link_skill(c, &bid, &skill.id).unwrap();
+        let again = BulletStore::link_skill(c, &bid, &skill.id).unwrap();
+        assert_eq!(again.base.id, skill.id);
+        assert!(!again.created_at.is_empty());
+        assert_eq!(link_count(&forge), 1);
+    }
+
+    #[test]
+    fn bullet_skills_link_unknown_bullet_or_skill_is_not_found() {
+        let forge = setup();
+        let c = forge.conn();
+        let bid = new_bullet(&forge);
+        let skill = SkillStore::create(c, "Zig", None).unwrap();
+        assert!(matches!(
+            BulletStore::link_skill(c, "missing", &skill.id),
+            Err(ForgeError::NotFound { .. })
+        ));
+        assert!(matches!(
+            BulletStore::link_skill(c, &bid, "missing"),
+            Err(ForgeError::NotFound { .. })
+        ));
+        assert_eq!(link_count(&forge), 0);
+    }
+
+    #[test]
+    fn bullet_skills_link_by_name_unknown_bullet_creates_nothing() {
+        let forge = setup();
+        let before = skill_count(&forge);
+        let r = BulletStore::link_skill_by_name(forge.conn(), "missing", "Orphan check", None);
+        assert!(matches!(r, Err(ForgeError::NotFound { .. })));
+        assert_eq!(skill_count(&forge), before);
+        assert_eq!(link_count(&forge), 0);
+    }
+
+    #[test]
+    fn bullet_skills_link_by_name_reuses_case_insensitive_match() {
+        let forge = setup();
+        let c = forge.conn();
+        let bid = new_bullet(&forge);
+        let py = SkillStore::get_or_create(c, "Python", None).unwrap();
+        let before = skill_count(&forge);
+        let row = BulletStore::link_skill_by_name(c, &bid, "python", None).unwrap();
+        assert_eq!(row.base.id, py.id);
+        assert_eq!(skill_count(&forge), before);
+        assert_eq!(BulletStore::list_skills(c, &bid).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn bullet_skills_link_by_name_category_outside_link_list_becomes_other() {
+        let forge = setup();
+        let c = forge.conn();
+        let bid = new_bullet(&forge);
+        let row = BulletStore::link_skill_by_name(c, &bid, "PyTorch", Some("ai_ml")).unwrap();
+        assert_eq!(row.base.name, "PyTorch");
+        assert_eq!(row.base.category, forge_core::SkillCategory::Other);
+        let kept = BulletStore::link_skill_by_name(c, &bid, "Haskell", Some("language")).unwrap();
+        assert_eq!(kept.base.category, forge_core::SkillCategory::Language);
+    }
+
+    #[test]
+    fn bullet_skills_link_by_name_blank_is_validation_error() {
+        let forge = setup();
+        let bid = new_bullet(&forge);
+        let before = skill_count(&forge);
+        let r = BulletStore::link_skill_by_name(forge.conn(), &bid, "   ", None);
+        assert!(matches!(r, Err(ForgeError::Validation { .. })));
+        assert_eq!(skill_count(&forge), before);
+    }
+
+    #[test]
+    fn bullet_skills_unlink_removes_link_only() {
+        let forge = setup();
+        let c = forge.conn();
+        let bid = new_bullet(&forge);
+        let skill = SkillStore::create(c, "Zig", None).unwrap();
+        BulletStore::link_skill(c, &bid, &skill.id).unwrap();
+        BulletStore::unlink_skill(c, &bid, &skill.id).unwrap();
+        assert!(BulletStore::list_skills(c, &bid).unwrap().is_empty());
+        assert!(SkillStore::get_row(c, &skill.id).unwrap().is_some());
+        assert!(matches!(
+            BulletStore::unlink_skill(c, &bid, &skill.id),
+            Err(ForgeError::NotFound { .. })
+        ));
     }
 }

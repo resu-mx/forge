@@ -371,6 +371,80 @@ describe('Bullet Routes', () => {
     expect(body.error.code).toBe('VALIDATION_ERROR')
   })
 
+  test('POST /bullets/:id/skills with skill_id for an unknown bullet returns 404', async () => {
+    const skillId = crypto.randomUUID()
+    ctx.db.run('INSERT INTO skills (id, name, category) VALUES (?, ?, ?)', [skillId, 'Go', 'language'])
+
+    const res = await apiRequest(ctx.app, 'POST', `/bullets/${crypto.randomUUID()}/skills`, { skill_id: skillId })
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
+
+  test('POST /bullets/:id/skills with name for an unknown bullet returns 404 and creates no skill', async () => {
+    const res = await apiRequest(ctx.app, 'POST', `/bullets/${crypto.randomUUID()}/skills`, { name: 'Zebra Mesh' })
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+
+    const list = await apiRequest(ctx.app, 'GET', '/skills')
+    expect(list.status).toBe(200)
+    const names = (await list.json()).data.map((s: { name: string }) => s.name)
+    expect(names).not.toContain('Zebra Mesh')
+  })
+
+  test('POST /bullets/:id/skills with an unknown skill_id returns 404 and links nothing', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+
+    const res = await apiRequest(ctx.app, 'POST', `/bullets/${bulletId}/skills`, { skill_id: crypto.randomUUID() })
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error.code).toBe('NOT_FOUND')
+
+    const getBody = await (await apiRequest(ctx.app, 'GET', `/bullets/${bulletId}/skills`)).json()
+    expect(getBody.data.length).toBe(0)
+  })
+
+  test('POST /bullets/:id/skills with name stores a category outside the link list as other', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+
+    // ai_ml is a valid skill category elsewhere but is not one of the 10 link categories.
+    const res = await apiRequest(ctx.app, 'POST', `/bullets/${bulletId}/skills`, { name: 'PyTorch', category: 'ai_ml' })
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.data.name).toBe('PyTorch')
+    expect(body.data.category).toBe('other')
+
+    const kept = await apiRequest(ctx.app, 'POST', `/bullets/${bulletId}/skills`, { name: 'Haskell', category: 'language' })
+    expect((await kept.json()).data.category).toBe('language')
+  })
+
+  test('POST and GET /bullets/:id/skills return the whole skills row including created_at', async () => {
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+
+    const skillId = crypto.randomUUID()
+    ctx.db.run('INSERT INTO skills (id, name, category) VALUES (?, ?, ?)', [skillId, 'Go', 'language'])
+
+    const linked = await apiRequest(ctx.app, 'POST', `/bullets/${bulletId}/skills`, { skill_id: skillId })
+    expect(linked.status).toBe(201)
+    const linkedBody = await linked.json()
+    expect(typeof linkedBody.data.created_at).toBe('string')
+    expect(linkedBody.data.created_at.length).toBeGreaterThan(0)
+
+    const byName = await apiRequest(ctx.app, 'POST', `/bullets/${bulletId}/skills`, { name: 'Ada' })
+    expect(typeof (await byName.json()).data.created_at).toBe('string')
+
+    const list = await (await apiRequest(ctx.app, 'GET', `/bullets/${bulletId}/skills`)).json()
+    expect(list.data.map((s: { name: string }) => s.name)).toEqual(['Ada', 'Go'])
+    for (const row of list.data) {
+      expect(Object.keys(row).sort()).toEqual(['category', 'created_at', 'id', 'name'])
+      expect(row.created_at.length).toBeGreaterThan(0)
+    }
+  })
+
   test('DELETE /bullets/:bulletId/skills/:skillId returns 204', async () => {
     const sourceId = seedSource(ctx.db)
     const bulletId = seedBullet(ctx.db, [{ id: sourceId }])

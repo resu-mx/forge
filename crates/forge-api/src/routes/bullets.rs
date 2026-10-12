@@ -7,7 +7,9 @@ use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use forge_core::{Bullet, BulletFilter, BulletStatus, PaginationParams, Skill, UpdateBulletInput};
+use forge_core::{
+    Bullet, BulletFilter, BulletStatus, PaginationParams, SkillRow, UpdateBulletInput,
+};
 use forge_sdk::db::BulletStore;
 
 use crate::db::with_conn;
@@ -204,7 +206,7 @@ async fn unarchive_bullet(
 async fn list_bullet_skills(
     State(state): State<SharedState>,
     Path(id): Path<String>,
-) -> Result<Json<ApiData<Vec<Skill>>>, ApiError> {
+) -> Result<Json<ApiData<Vec<SkillRow>>>, ApiError> {
     let data = with_conn(&state, move |conn| BulletStore::list_skills(conn, &id)).await?;
     Ok(Json(ApiData { data }))
 }
@@ -221,7 +223,7 @@ async fn link_bullet_skill(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     Json(body): Json<LinkSkillBody>,
-) -> Result<Created<Skill>, ApiError> {
+) -> Result<Created<SkillRow>, ApiError> {
     let skill = with_conn(&state, move |conn| {
         if let Some(skill_id) = body.skill_id.as_deref().filter(|s| !s.is_empty()) {
             BulletStore::link_skill(conn, &id, skill_id)
