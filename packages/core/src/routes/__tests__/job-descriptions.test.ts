@@ -6,8 +6,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTestApp, apiRequest, type TestContext } from './helpers'
 import { seedOrganization, seedJobDescription } from '../../db/__tests__/helpers'
 
-// Spelled out on purpose: this pins the wording both runtimes must produce. The Rust envelope
-// prefixes validation messages with "validation error: ", so tests match with toContain.
+// Spelled out on purpose: this pins the wording both runtimes must produce.
 const INVALID_STATUS_MESSAGE = (s: string) =>
   `Invalid status: ${s}. Must be one of: discovered, analyzing, applying, applied, interviewing, offered, rejected, withdrawn, closed`
 
@@ -76,8 +75,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    // toContain: the Rust envelope prefixes every validation message with "validation error: ".
-    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+    expect(body.error.message).toBe('salary_min must not exceed salary_max')
   })
 
   test('POST accepts equal salary bounds', async () => {
@@ -263,7 +261,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain(INVALID_STATUS_MESSAGE('invalid'))
+    expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('invalid'))
   })
 
   test('POST rejects invalid status with the TS message', async () => {
@@ -275,7 +273,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain(INVALID_STATUS_MESSAGE('bogus'))
+    expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('bogus'))
   })
 
   test('PATCH rejects salary_min greater than salary_max in one request with 400', async () => {
@@ -290,7 +288,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+    expect(body.error.message).toBe('salary_min must not exceed salary_max')
   })
 
   test('PATCH accepts equal bounds, one bound alone, and clearing a bound', async () => {

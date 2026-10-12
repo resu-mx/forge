@@ -127,7 +127,7 @@ describe('Domain routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain('Name must not be empty')
+    expect(body.error.message).toBe('Name must not be empty')
   })
 
   test('PATCH /domains/:id with invalid format returns 400 and changes nothing', async () => {

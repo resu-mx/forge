@@ -88,7 +88,7 @@ describe('Role type routes: PATCH /role-types/:id', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain('Name must not be empty')
+    expect(body.error.message).toBe('Name must not be empty')
 
     const stored = await read(id)
     expect(stored.name).toBe('Director')
