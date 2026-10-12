@@ -1,4 +1,12 @@
-//! Data access stores for Forge entities.
+//! One store per entity. The stores are the service layer of `forge-sdk`.
+//!
+//! Routes call them directly. Each store enforces its entity's validation and business rules,
+//! in both runtimes, so a caller never repeats them. The TypeScript services in
+//! `packages/core/src/services/` remain the reference for those rules. A rule a store does not
+//! enforce yet is marked `TODO(resu-mx/forge#240)` on the method that should carry it, so
+//! `grep -rn 'TODO(resu-mx/forge#240)' crates/forge-sdk/src/db/stores` lists them.
+//!
+//! Work that spans entities (compiling, exporting, auditing) lives in [`crate::services`].
 
 pub mod address;
 pub mod answer_bank;

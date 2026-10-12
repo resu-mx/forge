@@ -127,10 +127,11 @@ jobs:
             packages/webui/test-results
           retention-days: 7
 
-  # Advisory until the codebase is formatted and the todo!() stubs are gone:
-  # the repo has never been through rustfmt (~10k diff lines) and clippy reports
-  # ~200 warnings, mostly unused variables in stub services. Promote to blocking
-  # (drop continue-on-error) once those are cleared.
+  # Advisory until the codebase is formatted and clippy-clean: the repo has never
+  # been through rustfmt (~10k diff lines) and clippy still reports about ten
+  # warnings (forge-sdk, forge-api, forge-wasm). The ~200 that came from the dead
+  # todo!() service stubs went with them (#118). Promote to blocking (drop
+  # continue-on-error) once those are cleared.
   lint:
     name: fmt + clippy (advisory)
     runs-on: ubuntu-latest
