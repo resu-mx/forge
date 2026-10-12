@@ -15,7 +15,14 @@ pub struct CreateJobDescription {
     pub organization_id: Option<String>,
     pub url: Option<String>,
     pub raw_text: String,
-    pub status: Option<String>,
+    /// Absent is `None` (defaults to `discovered`); an explicit `null` is `Some(None)`, which the
+    /// store rejects as the TS API does (resu-mx/forge#246).
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub status: Option<Option<String>>,
     pub salary_range: Option<String>,
     pub salary_min: Option<f64>,
     pub salary_max: Option<f64>,
@@ -43,7 +50,14 @@ pub struct UpdateJobDescription {
     )]
     pub url: Option<Option<String>>,
     pub raw_text: Option<String>,
-    pub status: Option<String>,
+    /// Absent is `None` (no change); an explicit `null` is `Some(None)`, which the store rejects
+    /// as the TS API does (resu-mx/forge#246).
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub status: Option<Option<String>>,
     #[serde(
         default,
         deserialize_with = "crate::serde_util::double_option",

@@ -319,6 +319,67 @@ describe('Job Description Routes', () => {
     expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('bogus'))
   })
 
+  test('POST rejects status: null with the TS message and writes nothing', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'Null status',
+      raw_text: 'text',
+      status: null,
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('null'))
+
+    const list = await (await apiRequest(ctx.app, 'GET', '/job-descriptions')).json()
+    expect(list.pagination.total).toBe(0)
+  })
+
+  test('POST without status still defaults to discovered', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'No status',
+      raw_text: 'text',
+    })
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.data.status).toBe('discovered')
+  })
+
+  test('PATCH rejects status: null with the TS message and writes nothing', async () => {
+    const jdId = seedJobDescription(ctx.db, { title: 'Keep me' })
+    await apiRequest(ctx.app, 'PATCH', `/job-descriptions/${jdId}`, { status: 'applied' })
+
+    const res = await apiRequest(
+      ctx.app,
+      'PATCH',
+      `/job-descriptions/${jdId}`,
+      { title: 'Changed', status: null },
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('null'))
+
+    const after = await (await apiRequest(ctx.app, 'GET', `/job-descriptions/${jdId}`)).json()
+    expect(after.data.title).toBe('Keep me')
+    expect(after.data.status).toBe('applied')
+  })
+
+  test('PATCH without status leaves the status alone', async () => {
+    const jdId = seedJobDescription(ctx.db, { title: 'Before' })
+    await apiRequest(ctx.app, 'PATCH', `/job-descriptions/${jdId}`, { status: 'applied' })
+
+    const res = await apiRequest(
+      ctx.app,
+      'PATCH',
+      `/job-descriptions/${jdId}`,
+      { title: 'After' },
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.title).toBe('After')
+    expect(body.data.status).toBe('applied')
+  })
+
   test('PATCH rejects salary_min greater than salary_max in one request with 400', async () => {
     const jdId = seedJobDescription(ctx.db)
 
