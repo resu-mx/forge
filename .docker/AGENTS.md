@@ -20,7 +20,10 @@ Routes under each host:
 - `/api/v1` goes to core.
 - `/mcp` goes to the MCP server.
 - `/mcp-dbg` goes to the MCP inspector (dev only).
-- `/ui/` goes to the web UI. Prod has no web UI container; the API serves the built UI.
+- `/ui/` goes to the web UI. Prod has no web UI container, and the API does not serve the built
+  UI either: the `prod` image copies `packages/webui/build/`, but nothing in it serves those files
+  (core has no static serving), so `GET /` on a prod container is a 404. Verified when
+  `.github/workflows/docker.yml` was added.
 
 Other recipes:
 

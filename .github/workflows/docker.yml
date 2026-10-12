@@ -1,0 +1,62 @@
+name: Docker
+
+# Builds the production image on every PR. Nothing built it before, so adding a workspace without
+# its manifest line in the Dockerfile's `deps` stage broke every target (resu-mx/forge#122) and
+# nobody noticed until someone ran `just docker dev`.
+#
+# No `paths:` filter, on purpose: a required check that a path filter skips never reports, and that
+# blocks the PR (the same rule as rust.yml).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: docker image (prod)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Dockerfile's default has to equal the repo pin that CI reads (`.bun-version`), so the
+      # image and CI never drift apart. Build below uses the default, so this is what it runs on.
+      - name: The Dockerfile's Bun version equals .bun-version
+        run: |
+          pinned=$(tr -d '[:space:]' < .bun-version)
+          default=$(sed -n 's/^ARG BUN_VERSION=//p' .docker/Dockerfile)
+          echo ".bun-version: $pinned; Dockerfile default: $default"
+          [ -n "$default" ] && [ "$pinned" = "$default" ] || {
+            echo "Set ARG BUN_VERSION in .docker/Dockerfile to the version in .bun-version"
+            exit 1
+          }
+
+      # `prod` builds on `deps` and `build`, so this exercises the manifest copies, the frozen
+      # install, and the core, MCP and api-mode web UI builds.
+      - name: Build the prod image
+        run: docker build --target prod -t forge:ci -f .docker/Dockerfile .
+
+      # Health only. The image copies the built web UI but nothing in it serves that UI today
+      # (core has no static serving and the prod compose profile has no UI service), so a check that
+      # the UI loads would fail for a reason this job is not about. Add one when the UI is served.
+      - name: Smoke test the prod image
+        run: |
+          docker run -d --name forge -p 3000:3000 forge:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then
+            echo "the API did not answer /api/health"
+            docker logs forge
+            exit 1
+          fi
+          echo
+          echo "the API answers /api/health"

@@ -43,7 +43,7 @@ jobs:
           shared-key: app-build
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
       - uses: extractions/setup-just@v2
 
       # SQLite is compiled from C for wasm32, so the C compiler needs the WebAssembly backend.
@@ -51,32 +51,9 @@ jobs:
       - name: Assert the runner clang has a wasm32 backend
         run: clang -print-targets | grep -q wasm32 || { echo "clang has no wasm32 backend"; exit 1; }
 
-      # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock exactly.
-      - name: Read the wasm-bindgen version from Cargo.lock
-        id: wbg
-        run: |
-          v=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)
-          [ -n "$v" ] || { echo "could not read wasm-bindgen version from Cargo.lock"; exit 1; }
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "wasm-bindgen $v"
-      - uses: actions/cache@v4
-        id: wbg-cache
-        with:
-          path: ~/.cargo/bin/wasm-bindgen
-          key: wasm-bindgen-cli-${{ steps.wbg.outputs.version }}
-      - name: Install wasm-bindgen-cli (prebuilt binary, source build as fallback)
-        if: steps.wbg-cache.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          v="${{ steps.wbg.outputs.version }}"
-          tarball="wasm-bindgen-$v-x86_64-unknown-linux-musl"
-          if curl -fsSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$v/$tarball.tar.gz" | tar -xz -C /tmp; then
-            install -m 0755 "/tmp/$tarball/wasm-bindgen" "$HOME/.cargo/bin/wasm-bindgen"
-          else
-            echo "prebuilt binary unavailable; building from source (slow)"
-            cargo install wasm-bindgen-cli --version "$v" --locked
-          fi
-      - run: wasm-bindgen --version
+      # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock exactly. The action reads
+      # the version from Cargo.lock; no version is written in this workflow.
+      - uses: ./.github/actions/setup-wasm-bindgen
 
       - uses: actions/cache@v4
         with:
@@ -113,7 +90,7 @@ jobs:
     steps:
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
       - uses: actions/download-artifact@v4
         with:
           name: app-static
