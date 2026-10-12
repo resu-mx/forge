@@ -14,7 +14,7 @@
 
 import { resolve, dirname } from 'path'
 import { mkdirSync } from 'fs'
-import { getDatabase } from './db/connection'
+import { getDatabase, DB_PATH_REQUIRED_MESSAGE } from './db/connection'
 import { runMigrations } from './db/migrate'
 import { createServices } from './services'
 import { DerivationService } from './services/derivation-service'
@@ -27,7 +27,7 @@ const PORT = parseInt(process.env.FORGE_PORT ?? '3000', 10)
 const DB_PATH = process.env.FORGE_DB_PATH
 
 if (!DB_PATH) {
-  console.error('FORGE_DB_PATH is required. Set it to a path for the SQLite database file.')
+  console.error(DB_PATH_REQUIRED_MESSAGE)
   process.exit(1)
 }
 

@@ -10,6 +10,13 @@
 import { Database } from "bun:sqlite";
 
 /**
+ * What the server and the `migrate` script print when `FORGE_DB_PATH` is unset. One string, so
+ * the two entry points cannot drift apart.
+ */
+export const DB_PATH_REQUIRED_MESSAGE =
+  "FORGE_DB_PATH is required. Set it to a path for the SQLite database file.";
+
+/**
  * Open (or create) a SQLite database at `dbPath` and apply connection-level
  * PRAGMAs before returning it.
  *
