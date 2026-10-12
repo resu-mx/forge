@@ -149,8 +149,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    // toContain: the Rust envelope prefixes validation messages until #231 lands.
-    expect(body.error.message).toContain(INVALID_FILTER_MESSAGE('bogus'))
+    expect(body.error.message).toBe(INVALID_FILTER_MESSAGE('bogus'))
     expect(body.data).toBeUndefined()
     expect(JSON.stringify(body)).not.toContain('Existing')
   })

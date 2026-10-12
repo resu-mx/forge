@@ -5,8 +5,8 @@
 //! # Input rules enforced here
 //!
 //! The store carries the TS `JobDescriptionService` validation, so every in-process caller
-//! (HTTP routes, the wasm runtime, tests) gets it. This is the record that replaces the dead
-//! `services/jd_service.rs`:
+//! (HTTP routes, the wasm runtime, tests) gets it. This is the record that replaced the
+//! `services/jd_service.rs` stub, which #242 deleted:
 //!
 //! - `title` must not be blank: `Title must not be empty`.
 //! - `raw_text` must not be blank: `Job description text (raw_text) must not be empty`.
@@ -18,7 +18,9 @@
 //! - `salary_min` must not exceed `salary_max`: `salary_min must not exceed salary_max`.
 //!   On update only values sent in the same request are compared.
 //!
-//! Not enforced here: the list route's `status` query filter, which ignores an invalid value.
+//! The list route's `status` query filter is validated by [`parse_status_filter`]
+//! (`Invalid status filter: <s>. ...`). The route skips an empty `?status=` first, as the TS route
+//! does, so an empty value means no filter.
 //!
 //! TODO(resu-mx/forge#240): TS embeds a job description after create and re-embeds it when
 //! `raw_text` changes (`job-description-service.ts:137-147`, `:285-293`). Nothing here does.
