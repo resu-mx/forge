@@ -6,7 +6,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::lookup::{self, LookupTable};
-use forge_core::{new_id, now_iso, CreateIndustryInput, ForgeError, Industry};
+use forge_core::{new_id, now_iso, CreateIndustryInput, ForgeError, Industry, UpdateIndustryInput};
 
 /// Data-access store for the `industries` table.
 pub struct IndustryStore;
@@ -59,6 +59,41 @@ impl IndustryStore {
             .query_map([], Self::map_industry)?
             .collect::<Result<_, _>>()?;
         Ok(rows)
+    }
+
+    // ── Update ───────────────────────────────────────────────────────
+
+    /// Apply a partial update and return the row.
+    ///
+    /// TS order (industry-service.ts `update`, then the ELM): a blank name is a 400, an unknown id
+    /// a 404, then the trimmed name must be free of every other row (409). Absent fields are left
+    /// alone and `description: null` clears it (resu-mx/forge#18).
+    pub fn update(
+        conn: &Connection,
+        id: &str,
+        input: &UpdateIndustryInput,
+    ) -> Result<Industry, ForgeError> {
+        let name = input
+            .name
+            .as_deref()
+            .map(lookup::require_name)
+            .transpose()?;
+        Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
+            entity_type: "industry".into(),
+            id: id.into(),
+        })?;
+        if let Some(name) = name {
+            lookup::ensure_name_free(conn, LookupTable::Industries, name, Some(id))?;
+        }
+        lookup::update_name_description(
+            conn,
+            LookupTable::Industries,
+            id,
+            name,
+            input.description.as_ref().map(|d| d.as_deref()),
+        )?;
+        Self::get(conn, id)?
+            .ok_or_else(|| ForgeError::Internal("Industry updated but not found".into()))
     }
 
     // ── Delete ───────────────────────────────────────────────────────
@@ -228,5 +263,150 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ForgeError::Conflict { .. }));
+    }
+
+    fn make(forge: &Forge, name: &str, description: Option<&str>) -> Industry {
+        IndustryStore::create(
+            forge.conn(),
+            &CreateIndustryInput {
+                name: name.into(),
+                description: description.map(Into::into),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn update_renames_with_a_trimmed_name_and_sets_the_description() {
+        let forge = setup();
+        let row = make(&forge, "Fin", None);
+        let updated = IndustryStore::update(
+            forge.conn(),
+            &row.id,
+            &UpdateIndustryInput {
+                name: Some("  FinTech  ".into()),
+                description: Some(Some("Money software".into())),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.name, "FinTech");
+        assert_eq!(updated.description.as_deref(), Some("Money software"));
+        // Stored, not only echoed.
+        let reread = IndustryStore::get(forge.conn(), &row.id).unwrap().unwrap();
+        assert_eq!(reread.name, "FinTech");
+        assert_eq!(reread.created_at, row.created_at);
+    }
+
+    #[test]
+    fn update_null_clears_the_description_and_absent_leaves_it() {
+        let forge = setup();
+        let row = make(&forge, "Health", Some("Care"));
+
+        let untouched = IndustryStore::update(
+            forge.conn(),
+            &row.id,
+            &UpdateIndustryInput {
+                name: Some("Healthcare".into()),
+                description: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(untouched.description.as_deref(), Some("Care"));
+
+        let cleared = IndustryStore::update(
+            forge.conn(),
+            &row.id,
+            &UpdateIndustryInput {
+                name: None,
+                description: Some(None),
+            },
+        )
+        .unwrap();
+        assert_eq!(cleared.description, None);
+        assert_eq!(cleared.name, "Healthcare");
+    }
+
+    #[test]
+    fn update_with_nothing_present_changes_nothing() {
+        let forge = setup();
+        let row = make(&forge, "Defense", Some("d"));
+        let same =
+            IndustryStore::update(forge.conn(), &row.id, &UpdateIndustryInput::default()).unwrap();
+        assert_eq!(
+            (same.name.as_str(), same.description.as_deref()),
+            ("Defense", Some("d"))
+        );
+    }
+
+    #[test]
+    fn update_blank_name_is_a_400_and_changes_nothing() {
+        let forge = setup();
+        let row = make(&forge, "Retail", Some("Shops"));
+        let err = IndustryStore::update(
+            forge.conn(),
+            &row.id,
+            &UpdateIndustryInput {
+                name: Some("   ".into()),
+                description: Some(Some("changed".into())),
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ForgeError::Validation { message, field: Some(f) }
+            if message == lookup::NAME_EMPTY && f == "name")
+        );
+        let after = IndustryStore::get(forge.conn(), &row.id).unwrap().unwrap();
+        assert_eq!(after.description.as_deref(), Some("Shops"));
+    }
+
+    #[test]
+    fn update_unknown_id_is_not_found() {
+        let forge = setup();
+        let err = IndustryStore::update(
+            forge.conn(),
+            "no-such-id",
+            &UpdateIndustryInput {
+                description: Some(Some("x".into())),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::NotFound { .. }));
+    }
+
+    #[test]
+    fn update_to_a_taken_name_is_a_conflict_but_its_own_name_is_fine() {
+        let forge = setup();
+        make(&forge, "Energy", None);
+        let other = make(&forge, "Mining", None);
+
+        let err = IndustryStore::update(
+            forge.conn(),
+            &other.id,
+            &UpdateIndustryInput {
+                name: Some(" Energy ".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ForgeError::Conflict { .. }));
+        assert_eq!(
+            IndustryStore::get(forge.conn(), &other.id)
+                .unwrap()
+                .unwrap()
+                .name,
+            "Mining"
+        );
+
+        let same = IndustryStore::update(
+            forge.conn(),
+            &other.id,
+            &UpdateIndustryInput {
+                name: Some("Mining".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(same.name, "Mining");
     }
 }

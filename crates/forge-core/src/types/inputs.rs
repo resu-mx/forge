@@ -906,6 +906,33 @@ pub struct UpdateDomainInput {
     pub description: Option<Option<String>>,
 }
 
+/// Input for partially updating an Industry (`PATCH /industries/:id`).
+///
+/// Same shape as [`UpdateDomainInput`]: `description` is `Option<Option<_>>`, where absent
+/// leaves it, `null` clears it, and a value sets it. A `null` name reads as absent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateIndustryInput {
+    pub name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+}
+
+/// Input for partially updating a RoleType (`PATCH /role-types/:id`). See [`UpdateIndustryInput`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateRoleTypeInput {
+    pub name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_util::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+}
+
 /// Input for creating an Industry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIndustryInput {
@@ -1028,6 +1055,26 @@ mod tests {
         assert_eq!(
             (set.name.as_deref(), set.description),
             (Some("x"), Some(Some("d".into())))
+        );
+    }
+
+    #[test]
+    fn update_industry_and_role_type_inputs_tell_absent_from_null() {
+        let industry = |j: &str| serde_json::from_str::<UpdateIndustryInput>(j).unwrap();
+        let role_type = |j: &str| serde_json::from_str::<UpdateRoleTypeInput>(j).unwrap();
+
+        assert!(industry("{}").name.is_none() && industry("{}").description.is_none());
+        assert_eq!(industry(r#"{"description":null}"#).description, Some(None));
+        assert_eq!(
+            industry(r#"{"name":"x","description":"d"}"#).description,
+            Some(Some("d".into()))
+        );
+
+        assert!(role_type("{}").name.is_none() && role_type("{}").description.is_none());
+        assert_eq!(role_type(r#"{"description":null}"#).description, Some(None));
+        assert_eq!(
+            role_type(r#"{"name":"x","description":"d"}"#).description,
+            Some(Some("d".into()))
         );
     }
 
