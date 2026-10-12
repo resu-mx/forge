@@ -9,7 +9,10 @@
 # Build a specific target:
 #   docker build --target prod -f .docker/Dockerfile .
 
-FROM oven/bun:1.3-debian AS base
+# The Bun version is the repo's pin (`.bun-version`, which CI also reads). This default must equal
+# it: `.github/workflows/docker.yml` fails the build when they differ.
+ARG BUN_VERSION=1.4.2
+FROM oven/bun:${BUN_VERSION}-debian AS base
 WORKDIR /app
 
 # Install sqlite3 CLI for debugging/inspection inside the container
@@ -21,12 +24,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ───────────── deps stage ─────────────
 FROM base AS deps
 
-# Copy workspace manifests first for better layer caching
+# Copy workspace manifests first for better layer caching. Every workspace in `bun.lock` needs its
+# manifest here, or `bun install --frozen-lockfile` fails; `.github/workflows/docker.yml` builds
+# this image on every PR, so a workspace added without its line is caught there.
 COPY package.json bun.lock ./
 COPY packages/cli/package.json packages/cli/
 COPY packages/core/package.json packages/core/
+COPY packages/demo-data/package.json packages/demo-data/
 COPY packages/extension/package.json packages/extension/
 COPY packages/mcp/package.json packages/mcp/
+COPY packages/runtime/package.json packages/runtime/
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/webui/package.json packages/webui/
 
@@ -122,5 +129,6 @@ ENV FORGE_MCP_TRANSPORT=http
 ENV FORGE_MCP_PORT=5174
 ENV NODE_ENV=production
 
-# Serve compiled API (which also serves static WebUI from packages/webui/build/)
+# Serve the compiled API. The built web UI is copied above, but nothing here serves it: core has
+# no static-file serving, so GET / answers 404.
 CMD ["bun", "run", "packages/core/dist/index.js"]
