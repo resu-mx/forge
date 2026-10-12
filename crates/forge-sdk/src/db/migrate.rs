@@ -822,7 +822,10 @@ mod tests {
 
         // STRICT: a BLOB value is rejected (integers would be coerced to text).
         assert!(conn
-            .execute("INSERT INTO dataset_meta (key, value) VALUES ('n', X'00')", [])
+            .execute(
+                "INSERT INTO dataset_meta (key, value) VALUES ('n', X'00')",
+                []
+            )
             .is_err());
     }
 
@@ -837,7 +840,10 @@ mod tests {
 
     #[test]
     fn migrations_list_matches_sql_files() {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/core/src/db/migrations");
+        let dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/core/src/db/migrations"
+        );
         let mut on_disk: Vec<String> = std::fs::read_dir(dir)
             .expect("migrations directory must be readable")
             .filter_map(|e| e.ok())
@@ -847,8 +853,7 @@ mod tests {
             .collect();
         on_disk.sort();
 
-        let mut registered: Vec<String> =
-            MIGRATIONS.iter().map(|(n, _)| n.to_string()).collect();
+        let mut registered: Vec<String> = MIGRATIONS.iter().map(|(n, _)| n.to_string()).collect();
         registered.sort();
 
         assert_eq!(
