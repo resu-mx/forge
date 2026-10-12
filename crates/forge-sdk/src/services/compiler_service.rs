@@ -631,15 +631,13 @@ impl CompilerService {
                 )
                 .optional()?;
 
-            if let Some((title, description)) = summary {
-                if let Some(desc) = description {
-                    return Ok(Some(ResumeSummary {
-                        summary_id: Some(sid.clone()),
-                        title,
-                        content: desc,
-                        is_override: false,
-                    }));
-                }
+            if let Some((title, Some(desc))) = summary {
+                return Ok(Some(ResumeSummary {
+                    summary_id: Some(sid.clone()),
+                    title,
+                    content: desc,
+                    is_override: false,
+                }));
             }
         }
 
@@ -1795,7 +1793,7 @@ mod tests {
         assert_eq!(skills_section.items.len(), 1);
 
         if let IRSectionItem::SkillGroup(group) = &skills_section.items[0] {
-            assert!(group.categories.len() >= 1);
+            assert!(!group.categories.is_empty());
             // Check that skills are grouped by category
             let total_skills: usize = group.categories.iter().map(|c| c.skills.len()).sum();
             assert_eq!(total_skills, 3);
