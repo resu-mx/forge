@@ -126,25 +126,33 @@ export function bulletRoutes(services: Services, db: Database) {
       return c.json({ data: skill }, 201)
     }
 
-    // If name is provided, create new skill and link it
+    // If name is provided, find or create the skill and link it
     if (body.name?.trim()) {
+      // Check the bullet first so an unknown bullet never leaves an orphan skill behind.
+      if (!db.query('SELECT 1 FROM bullets WHERE id = ?').get(bulletId)) {
+        return c.json({ error: { code: 'NOT_FOUND', message: `Bullet not found: ${bulletId}` } }, 404)
+      }
       // capitalizeFirst: uppercase first character, preserve rest (SAFe stays SAFe, foo->Foo)
       const raw = body.name.trim()
       const name = raw.charAt(0).toUpperCase() + raw.slice(1)
-      // Case-insensitive dedup: check if skill with this name already exists
-      let skill = db.query('SELECT * FROM skills WHERE name = ? COLLATE NOCASE').get(name) as any
-      if (!skill) {
-        const id = crypto.randomUUID()
-        // Category is a CHECK enum (Phase 89) — only allow valid values; fall back to 'other'.
-        const validCategories = ['language', 'framework', 'platform', 'tool', 'library',
-          'methodology', 'protocol', 'concept', 'soft_skill', 'other']
-        const category = validCategories.includes(body.category) ? body.category : 'other'
-        skill = db.query(
-          `INSERT INTO skills (id, name, category) VALUES (?, ?, ?) RETURNING *`
-        ).get(id, name, category)
-      }
-      db.run('INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?, ?)',
-        [bulletId, skill.id])
+      // Skill create and link share one transaction, so a failed link leaves no skill.
+      const skill = db.transaction(() => {
+        // Case-insensitive dedup: check if skill with this name already exists
+        let found = db.query('SELECT * FROM skills WHERE name = ? COLLATE NOCASE').get(name) as any
+        if (!found) {
+          const id = crypto.randomUUID()
+          // Category is a CHECK enum (Phase 89) — only allow valid values; fall back to 'other'.
+          const validCategories = ['language', 'framework', 'platform', 'tool', 'library',
+            'methodology', 'protocol', 'concept', 'soft_skill', 'other']
+          const category = validCategories.includes(body.category) ? body.category : 'other'
+          found = db.query(
+            `INSERT INTO skills (id, name, category) VALUES (?, ?, ?) RETURNING *`
+          ).get(id, name, category)
+        }
+        db.run('INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?, ?)',
+          [bulletId, found.id])
+        return found
+      })()
       return c.json({ data: skill }, 201)
     }
 
