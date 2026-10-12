@@ -58,9 +58,15 @@ async fn list_job_descriptions(
     State(state): State<SharedState>,
     Query(q): Query<JdListQuery>,
 ) -> Result<Json<ApiList<JobDescriptionWithOrg>>, ApiError> {
-    // Validate before any query: an unknown (or empty) value is a 400, as TS, not "no filter".
+    // Validate before any query: an unknown value is a 400, as TS. An empty value means no
+    // filter, as TS (its route drops `?status=` before the service sees it).
     let filter = JobDescriptionFilter {
-        status: q.status.as_deref().map(parse_status_filter).transpose()?,
+        status: q
+            .status
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(parse_status_filter)
+            .transpose()?,
         organization_id: q.organization_id,
     };
     let offset = q.offset.unwrap_or(0).max(0);

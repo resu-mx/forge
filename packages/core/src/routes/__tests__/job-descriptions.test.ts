@@ -157,16 +157,17 @@ describe('Job Description Routes', () => {
     expect(JSON.stringify(body)).not.toContain('Existing')
   })
 
-  test('GET list rejects an empty status filter with 400', async () => {
-    seedJobDescription(ctx.db, { title: 'Existing' })
+  // The route drops an empty value, so `?status=` is "no filter", not a rejection.
+  test('GET list treats an empty status filter as no filter', async () => {
+    seedJobDescription(ctx.db, { title: 'Existing', status: 'applied' })
+    seedJobDescription(ctx.db, { title: 'Other', status: 'discovered' })
 
     const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=')
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain(INVALID_FILTER_MESSAGE(''))
-    expect(body.data).toBeUndefined()
-    expect(JSON.stringify(body)).not.toContain('Existing')
+    expect(body.data).toHaveLength(2)
+    expect(body.data.map((jd: { title: string }) => jd.title)).toContain('Existing')
+    expect(body.pagination.total).toBe(2)
   })
 
   test('GET list still filters by a valid status after the rejection cases', async () => {

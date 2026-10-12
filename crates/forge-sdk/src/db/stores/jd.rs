@@ -472,8 +472,9 @@ fn parse_status(raw: &str) -> Result<JobDescriptionStatus, ForgeError> {
     })
 }
 
-/// Parse a `status` list filter, with the TS `Invalid status filter: ...` message on failure. An
-/// empty string is rejected like any other unknown value (TS checks `!== undefined`).
+/// Parse a `status` list filter, with the TS `Invalid status filter: ...` message on failure. This
+/// is strict: an empty string is rejected like any other unknown value. The HTTP route skips an
+/// empty `?status=` before calling it, as the TS route does.
 pub fn parse_status_filter(raw: &str) -> Result<JobDescriptionStatus, ForgeError> {
     raw.parse().map_err(|_| ForgeError::Validation {
         message: format!(

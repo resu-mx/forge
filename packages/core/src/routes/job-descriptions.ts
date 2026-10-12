@@ -30,9 +30,7 @@ export function jobDescriptionRoutes(services: Services, db: Database) {
       Math.max(1, parseInt(c.req.query('limit') ?? '50', 10) || 50),
     )
     const filter: Record<string, string> = {}
-    // `!== undefined`, not truthiness: `?status=` reaches the service and is rejected there,
-    // instead of being dropped and answering 200 with the unfiltered list.
-    if (c.req.query('status') !== undefined) filter.status = c.req.query('status')!
+    if (c.req.query('status')) filter.status = c.req.query('status')!
     if (c.req.query('organization_id'))
       filter.organization_id = c.req.query('organization_id')!
 
