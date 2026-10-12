@@ -39,7 +39,7 @@ pub use derivation::DerivationStore;
 pub use domain::DomainStore;
 pub use extension::{ExtensionConfigStore, ExtensionLogStore};
 pub use industry::IndustryStore;
-pub use jd::JdStore;
+pub use jd::{parse_status_filter, JdStore};
 pub use jd_resume::JdResumeStore;
 pub use note::NoteStore;
 pub use organization::OrganizationStore;

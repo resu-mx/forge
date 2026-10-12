@@ -137,6 +137,49 @@ describe('Job Description Routes', () => {
     expect(body.data[0].title).toBe('A')
   })
 
+  // An unknown filter is a 400, not "ignore it and return everything": the kanban and the JD
+  // list both pass this value, so a typo must not silently show the wrong data.
+  const INVALID_FILTER_MESSAGE = (s: string) =>
+    `Invalid status filter: ${s}. Must be one of: discovered, analyzing, applying, applied, interviewing, offered, rejected, withdrawn, closed`
+
+  test('GET list rejects an unknown status filter with 400', async () => {
+    seedJobDescription(ctx.db, { title: 'Existing', status: 'applied' })
+
+    const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=bogus')
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    // toContain: the Rust envelope prefixes validation messages until #231 lands.
+    expect(body.error.message).toContain(INVALID_FILTER_MESSAGE('bogus'))
+    expect(body.data).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain('Existing')
+  })
+
+  // The route drops an empty value, so `?status=` is "no filter", not a rejection.
+  test('GET list treats an empty status filter as no filter', async () => {
+    seedJobDescription(ctx.db, { title: 'Existing', status: 'applied' })
+    seedJobDescription(ctx.db, { title: 'Other', status: 'discovered' })
+
+    const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data).toHaveLength(2)
+    expect(body.data.map((jd: { title: string }) => jd.title)).toContain('Existing')
+    expect(body.pagination.total).toBe(2)
+  })
+
+  test('GET list still filters by a valid status after the rejection cases', async () => {
+    seedJobDescription(ctx.db, { title: 'A', status: 'applied' })
+    seedJobDescription(ctx.db, { title: 'B', status: 'discovered' })
+
+    const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=discovered')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0].title).toBe('B')
+    expect(body.pagination.total).toBe(1)
+  })
+
   test('GET list filters by organization_id', async () => {
     const orgId = seedOrganization(ctx.db, { name: 'FilterOrg' })
     seedJobDescription(ctx.db, {
