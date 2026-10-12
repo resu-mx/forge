@@ -30,4 +30,11 @@ describe('taglineView', () => {
   test('an empty generated tagline is not AUTO', () => {
     expect(taglineView(state({ generated_tagline: '' }), null).badge).toBeNull()
   })
+
+  // resu-mx/forge#72: a blank override is no override. The server's `resolved` and `has_override`
+  // already say so; the edit box must not open on the whitespace either.
+  test('a whitespace-only override: AUTO, no reset, and the edit box opens on the generated tagline', () => {
+    const s = state({ generated_tagline: 'SRE · Kubernetes', tagline_override: '   ', resolved: 'SRE · Kubernetes', has_override: false })
+    expect(taglineView(s, 'x')).toEqual({ display: 'SRE · Kubernetes', badge: 'auto', canReset: false, editSeed: 'SRE · Kubernetes' })
+  })
 })

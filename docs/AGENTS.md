@@ -12,6 +12,7 @@ starts describing how things are, move it here and rewrite it in the present ten
 | `src/architecture/legacy/` | superseded notes, kept for history |
 | `src/dev/adrs/<topic>/NNNN-<slug>.md` | Architecture Decision Records (so far only `rust-wasm/`) |
 | `src/dev/demo-datasets.md` | generated demo datasets: the `dataset_meta` marker, R2 key layout, push guards, operator flow |
+| `src/dev/tagline.md` | the resume tagline: what regenerates it, what counts as a blank override, and why |
 | `src/migrations/` | guides for migrations still in progress |
 
 ## Conventions

@@ -33,21 +33,30 @@ pub fn js_trim(s: &str) -> &str {
     s.trim_matches(is_js_whitespace)
 }
 
-/// TS `!!(override && override.trim().length > 0)`
-/// (`routes/resumes.ts:239`, `:296`; `services/tagline-service.ts:356`).
-pub fn has_override(tagline_override: Option<&str>) -> bool {
-    tagline_override.is_some_and(|s| !js_trim(s).is_empty())
+/// The one rule for a tagline column that may hold text: an empty or whitespace-only string is
+/// absent (resu-mx/forge#72). TS `nonBlank` (`services/tagline-service.ts`). The writers already
+/// store blank as NULL, so this only matters for a row written another way. The text is returned
+/// as stored, never trimmed. `resolved`, `has_override` and the resume header all use it.
+pub fn non_blank(value: Option<&str>) -> Option<&str> {
+    value.filter(|s| !js_trim(s).is_empty())
 }
 
-/// The wire state for the two stored columns (`routes/resumes.ts:239-249`).
+/// TS `nonBlank(override) !== null` (`services/tagline-service.ts`, and the routes in
+/// `routes/resumes.ts`).
+pub fn has_override(tagline_override: Option<&str>) -> bool {
+    non_blank(tagline_override).is_some()
+}
+
+/// The wire state for the two stored columns (TS `resolveTagline`): a real override, else the
+/// generated tagline, else `""`. `has_override` agrees with `resolved` by construction.
 pub fn tagline_state(
     generated_tagline: Option<String>,
     tagline_override: Option<String>,
 ) -> ResumeTaglineState {
-    let has_override = has_override(tagline_override.as_deref());
-    let resolved = tagline_override
-        .as_deref()
-        .or(generated_tagline.as_deref())
+    let real_override = non_blank(tagline_override.as_deref());
+    let has_override = real_override.is_some();
+    let resolved = real_override
+        .or(non_blank(generated_tagline.as_deref()))
         .unwrap_or_default()
         .to_string();
     ResumeTaglineState {
@@ -113,12 +122,31 @@ mod tests {
         assert_eq!((s.resolved.as_str(), s.has_override), ("mine", true));
         let s = tagline_state(None, None);
         assert_eq!((s.resolved.as_str(), s.has_override), ("", false));
-        // TS quirk, kept on purpose (resu-mx/forge#72): a blank override still wins `resolved`.
+        // resu-mx/forge#72: a blank override is no override, so `resolved` and `has_override`
+        // agree. The stored text is not changed (the state still reports it as stored).
         let s = tagline_state(Some("gen".into()), Some("   ".into()));
-        assert_eq!((s.resolved.as_str(), s.has_override), ("   ", false));
+        assert_eq!((s.resolved.as_str(), s.has_override), ("gen", false));
+        assert_eq!(s.tagline_override.as_deref(), Some("   "));
+        let s = tagline_state(Some("gen".into()), Some(String::new()));
+        assert_eq!((s.resolved.as_str(), s.has_override), ("gen", false));
+        let s = tagline_state(None, Some("   ".into()));
+        assert_eq!((s.resolved.as_str(), s.has_override), ("", false));
+        // A blank generated tagline is absent too.
+        let s = tagline_state(Some("  ".into()), None);
+        assert_eq!(s.resolved, "");
         // U+FEFF-only is blank in JS; U+0085-only is not.
         assert!(!has_override(Some("\u{FEFF}")));
         assert!(has_override(Some("\u{0085}")));
+    }
+
+    #[test]
+    fn non_blank_returns_the_text_as_stored() {
+        assert_eq!(non_blank(None), None);
+        assert_eq!(non_blank(Some("")), None);
+        assert_eq!(non_blank(Some(" \t\n")), None);
+        assert_eq!(non_blank(Some("\u{FEFF}")), None);
+        // Never trimmed: only the decision is.
+        assert_eq!(non_blank(Some("  x ")), Some("  x "));
     }
 
     #[test]

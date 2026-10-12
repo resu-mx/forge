@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import type { Database } from 'bun:sqlite'
 import type { Services } from '../services'
 import { mapStatusCode } from './server'
+import { regenerateResumeTagline, resolveTagline } from '../services/tagline-service'
 import type { CreateResume, UpdateResume, AddResumeEntry } from '../types'
 
 export function resumeRoutes(services: Services, db: Database) {
@@ -44,9 +45,21 @@ export function resumeRoutes(services: Services, db: Database) {
   })
 
   app.patch('/resumes/:id', async (c) => {
+    const id = c.req.param('id')
     const body = await c.req.json<UpdateResume>()
-    const result = await services.resumes.updateResume(c.req.param('id'), body)
+    // The generated tagline starts with the resume's target role, so a role that actually
+    // changes regenerates it (resu-mx/forge#72). Read the old role before the update.
+    const before =
+      body.target_role !== undefined
+        ? (db.query('SELECT target_role FROM resumes WHERE id = ?').get(id) as {
+            target_role: string
+          } | null)
+        : null
+    const result = await services.resumes.updateResume(id, body)
     if (!result.ok) return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    if (before && before.target_role !== result.data.target_role) {
+      await regenerateResumeTagline(db, id)
+    }
     return c.json({ data: result.data })
   })
 
@@ -236,8 +249,7 @@ export function resumeRoutes(services: Services, db: Database) {
       )
     }
 
-    const has_override = !!(row.tagline_override && row.tagline_override.trim().length > 0)
-    const resolved = row.tagline_override ?? row.generated_tagline ?? ''
+    const { resolved, has_override } = resolveTagline(row.tagline_override, row.generated_tagline)
 
     return c.json({
       data: {
@@ -251,7 +263,6 @@ export function resumeRoutes(services: Services, db: Database) {
 
   /** Force a tagline regeneration from currently linked JDs. */
   app.post('/resumes/:id/tagline/regenerate', async (c) => {
-    const { regenerateResumeTagline } = await import('../services/tagline-service')
     const result = await regenerateResumeTagline(db, c.req.param('id'))
     if (!result) {
       return c.json(
@@ -293,8 +304,7 @@ export function resumeRoutes(services: Services, db: Database) {
       .query('SELECT generated_tagline, tagline_override FROM resumes WHERE id = ?')
       .get(resumeId) as { generated_tagline: string | null; tagline_override: string | null }
 
-    const has_override = !!(row.tagline_override && row.tagline_override.trim().length > 0)
-    const resolved = row.tagline_override ?? row.generated_tagline ?? ''
+    const { resolved, has_override } = resolveTagline(row.tagline_override, row.generated_tagline)
 
     return c.json({
       data: {

@@ -24,6 +24,9 @@ export function taglineView(
     display: state?.resolved || headerTagline || '',
     badge: state?.has_override ? 'override' : state?.generated_tagline ? 'auto' : null,
     canReset: !!state?.has_override,
-    editSeed: state?.tagline_override ?? state?.generated_tagline ?? '',
+    // A blank override is no override (resu-mx/forge#72), so it never seeds the edit box.
+    editSeed: state?.has_override
+      ? (state.tagline_override ?? '')
+      : (state?.generated_tagline ?? ''),
   }
 }

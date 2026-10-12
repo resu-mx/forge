@@ -73,9 +73,19 @@ export function jobDescriptionRoutes(services: Services, db: Database) {
   })
 
   app.delete('/job-descriptions/:id', async (c) => {
-    const result = await services.jobDescriptions.delete(c.req.param('id'))
+    const id = c.req.param('id')
+    // Its links to resumes cascade away with the JD, so read them first. The generated tagline of
+    // each of those resumes was built partly from this JD, and must not keep quoting it
+    // (resu-mx/forge#72).
+    const linked = db
+      .query('SELECT resume_id FROM job_description_resumes WHERE job_description_id = ?')
+      .all(id) as Array<{ resume_id: string }>
+    const result = await services.jobDescriptions.delete(id)
     if (!result.ok)
       return c.json({ error: result.error }, mapStatusCode(result.error.code))
+    for (const { resume_id } of linked) {
+      await regenerateResumeTagline(db, resume_id)
+    }
     return c.body(null, 204)
   })
 
