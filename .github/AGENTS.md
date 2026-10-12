@@ -33,6 +33,23 @@ uploads `packages/webui/build` as the `app-static` artifact.
   longer builds the app: the Git-integrated `resumx-app` project and its `scripts/pages-build.sh`
   build command are gone.
 
+### `docker.yml`
+
+Runs on every PR and on pushes to `main`, with no `paths:` filter. **`docker image (prod)`** checks
+that the Dockerfile's `BUN_VERSION` default equals `.bun-version`, builds the `prod` target of
+`.docker/Dockerfile` (which exercises the `deps` manifest copies, the frozen install and the core,
+MCP and web UI builds), then starts the container and checks `GET /api/health`. A workspace added
+without its `COPY packages/<name>/package.json` line in the `deps` stage fails here. It does not
+check that the web UI loads, because nothing in the image serves it today.
+
+### Shared actions
+
+`.github/actions/setup-wasm-bindgen` installs `wasm-bindgen-cli` at the version of the
+`wasm-bindgen` crate in `Cargo.lock` (read there, cached by version, prebuilt binary with a source
+build as fallback). `rust.yml`'s browser job and `app-build.yml` use it, so a `cargo update` that
+moves `wasm-bindgen` is one lockfile change with no workflow edit. `demo-data.yml` still carries
+its own copy of the same steps.
+
 ### `demo-data.yml`
 
 **Opt-in, never a required check:** it runs only when someone asks. It generates the demo
@@ -78,7 +95,11 @@ inputs. It runs in this order:
   never reports, and that blocks the PR. Do not add one.
 - Lint stays advisory (`continue-on-error`) until the workspace is rustfmt-clean and the
   `todo!()` stubs are gone. Then drop `continue-on-error` to make it blocking.
-- CI pins Bun `1.4.2` and installs with `bun install --frozen-lockfile`. Commit `bun.lock`
+- The Bun version is the repo's pin, `.bun-version`: CI's `setup-bun` steps read it with
+  `bun-version-file`, and the Dockerfile's `ARG BUN_VERSION` default must equal it (`docker.yml`
+  fails the build when they differ). Bump all of them by editing those two files. (The extension
+  release workflow still installs `latest`.) CI installs with `bun install --frozen-lockfile`.
+  Commit `bun.lock`
   together with any `package.json` change. Cargo runs with `--locked`, so commit `Cargo.lock`
   changes too.
 - Only `runtime`, `sdk` and core's `src/db` tests among the TS packages run in CI (the parity
