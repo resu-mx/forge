@@ -6,6 +6,11 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTestApp, apiRequest, type TestContext } from './helpers'
 import { seedOrganization, seedJobDescription } from '../../db/__tests__/helpers'
 
+// Spelled out on purpose: this pins the wording both runtimes must produce. The Rust envelope
+// prefixes validation messages with "validation error: ", so tests match with toContain.
+const INVALID_STATUS_MESSAGE = (s: string) =>
+  `Invalid status: ${s}. Must be one of: discovered, analyzing, applying, applied, interviewing, offered, rejected, withdrawn, closed`
+
 let ctx: TestContext
 
 beforeEach(() => {
@@ -59,6 +64,30 @@ describe('Job Description Routes', () => {
       raw_text: '',
     })
     expect(res.status).toBe(400)
+  })
+
+  test('POST rejects salary_min greater than salary_max with 400', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'Valid',
+      raw_text: 'text',
+      salary_min: 200000,
+      salary_max: 150000,
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    // toContain: the Rust envelope prefixes every validation message with "validation error: ".
+    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+  })
+
+  test('POST accepts equal salary bounds', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'Valid',
+      raw_text: 'text',
+      salary_min: 150000,
+      salary_max: 150000,
+    })
+    expect(res.status).toBe(201)
   })
 
   // ── GET /job-descriptions ───────────────────────────────────────────
@@ -232,6 +261,47 @@ describe('Job Description Routes', () => {
       { status: 'invalid' },
     )
     expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain(INVALID_STATUS_MESSAGE('invalid'))
+  })
+
+  test('POST rejects invalid status with the TS message', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'Valid',
+      raw_text: 'text',
+      status: 'bogus',
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain(INVALID_STATUS_MESSAGE('bogus'))
+  })
+
+  test('PATCH rejects salary_min greater than salary_max in one request with 400', async () => {
+    const jdId = seedJobDescription(ctx.db)
+
+    const res = await apiRequest(
+      ctx.app,
+      'PATCH',
+      `/job-descriptions/${jdId}`,
+      { salary_min: 200000, salary_max: 150000 },
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+  })
+
+  test('PATCH accepts equal bounds, one bound alone, and clearing a bound', async () => {
+    const jdId = seedJobDescription(ctx.db)
+    const patch = (payload: Record<string, unknown>) =>
+      apiRequest(ctx.app, 'PATCH', `/job-descriptions/${jdId}`, payload)
+
+    expect((await patch({ salary_min: 100000, salary_max: 100000 })).status).toBe(200)
+    // Only values sent in the same request are compared; the stored max is not consulted.
+    expect((await patch({ salary_min: 500000 })).status).toBe(200)
+    expect((await patch({ salary_min: null, salary_max: 90000 })).status).toBe(200)
   })
 
   // ── DELETE /job-descriptions/:id ────────────────────────────────────

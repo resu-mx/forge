@@ -15,7 +15,7 @@ pub struct CreateJobDescription {
     pub organization_id: Option<String>,
     pub url: Option<String>,
     pub raw_text: String,
-    pub status: Option<JobDescriptionStatus>,
+    pub status: Option<String>,
     pub salary_range: Option<String>,
     pub salary_min: Option<f64>,
     pub salary_max: Option<f64>,
@@ -43,7 +43,7 @@ pub struct UpdateJobDescription {
     )]
     pub url: Option<Option<String>>,
     pub raw_text: Option<String>,
-    pub status: Option<JobDescriptionStatus>,
+    pub status: Option<String>,
     #[serde(
         default,
         deserialize_with = "crate::serde_util::double_option",
