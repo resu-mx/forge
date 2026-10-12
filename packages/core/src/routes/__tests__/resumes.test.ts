@@ -106,6 +106,151 @@ describe('Resume Routes', () => {
     expect(body.error.message).toContain('approved')
   })
 
+  test('POST /resumes/:id/entries with a draft perspective gives the approved-only message', async () => {
+    const resumeId = seedResume(ctx.db)
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'draft' })
+    const secId = seedResumeSection(ctx.db, resumeId, 'Experience', 'experience')
+
+    const res = await apiRequest(ctx.app, 'POST', `/resumes/${resumeId}/entries`, {
+      perspective_id: perspId,
+      section_id: secId,
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    // toContain, not toBe: forge-server renders ForgeError's Display
+    // ("validation error: <msg>"), a prefix gap that is not part of this case.
+    expect(body.error.message).toContain('Only approved perspectives can be added to resumes')
+  })
+
+  test('POST /resumes/:id/entries with an archived perspective says to unarchive it', async () => {
+    const resumeId = seedResume(ctx.db)
+    const sourceId = seedSource(ctx.db)
+    const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+    const perspId = seedPerspective(ctx.db, bulletId, { status: 'archived' })
+    const secId = seedResumeSection(ctx.db, resumeId, 'Experience', 'experience')
+
+    const res = await apiRequest(ctx.app, 'POST', `/resumes/${resumeId}/entries`, {
+      perspective_id: perspId,
+      section_id: secId,
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('Cannot add archived perspective to resume. Unarchive it first.')
+  })
+
+  // ── perspective_content_snapshot on add / update ──────────────────
+
+  describe('perspective_content_snapshot', () => {
+    const PERSPECTIVE_TEXT = 'Perspective text frozen at add time'
+    let resumeId: string
+    let secId: string
+    let perspId: string
+
+    beforeEach(() => {
+      resumeId = seedResume(ctx.db)
+      const sourceId = seedSource(ctx.db)
+      const bulletId = seedBullet(ctx.db, [{ id: sourceId }])
+      perspId = seedPerspective(ctx.db, bulletId, { status: 'approved', content: PERSPECTIVE_TEXT })
+      secId = seedResumeSection(ctx.db, resumeId, 'Experience', 'experience')
+    })
+
+    async function addEntry(extra: Record<string, unknown>) {
+      const res = await apiRequest(ctx.app, 'POST', `/resumes/${resumeId}/entries`, {
+        section_id: secId,
+        perspective_id: perspId,
+        ...extra,
+      })
+      expect(res.status).toBe(201)
+      return (await res.json()).data
+    }
+
+    test('perspective plus non-empty content stores no snapshot', async () => {
+      const entry = await addEntry({ content: 'Rewritten for this resume' })
+      expect(entry.content).toBe('Rewritten for this resume')
+      expect(entry.perspective_content_snapshot).toBeNull()
+    })
+
+    test('whitespace-only content counts as content, so no snapshot', async () => {
+      const entry = await addEntry({ content: '  ' })
+      expect(entry.content).toBe('  ')
+      expect(entry.perspective_content_snapshot).toBeNull()
+    })
+
+    test('perspective only captures the perspective content, frozen against later edits', async () => {
+      const entry = await addEntry({})
+      expect(entry.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+
+      ctx.db.run('UPDATE perspectives SET content = ? WHERE id = ?', ['Edited after the fact', perspId])
+
+      const res = await apiRequest(ctx.app, 'GET', `/resumes/${resumeId}`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      const stored = body.data.sections[0].entries.find((e: any) => e.id === entry.id)
+      expect(stored.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+    })
+
+    test('perspective plus content: null captures the snapshot', async () => {
+      const entry = await addEntry({ content: null })
+      expect(entry.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+    })
+
+    test('perspective plus content: "" captures the snapshot', async () => {
+      const entry = await addEntry({ content: '' })
+      expect(entry.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+    })
+
+    test('freeform entry without a perspective has no snapshot', async () => {
+      const res = await apiRequest(ctx.app, 'POST', `/resumes/${resumeId}/entries`, {
+        section_id: secId,
+        content: 'Freeform text',
+      })
+      expect(res.status).toBe(201)
+      const body = await res.json()
+      expect(body.data.perspective_content_snapshot).toBeNull()
+    })
+
+    test('PATCH content: null clears the snapshot', async () => {
+      const entry = await addEntry({})
+      expect(entry.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+
+      const res = await apiRequest(ctx.app, 'PATCH', `/resumes/${resumeId}/entries/${entry.id}`, {
+        content: null,
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.data.content).toBeNull()
+      expect(body.data.perspective_content_snapshot).toBeNull()
+    })
+
+    test('PATCH position only leaves the snapshot unchanged', async () => {
+      const entry = await addEntry({})
+
+      const res = await apiRequest(ctx.app, 'PATCH', `/resumes/${resumeId}/entries/${entry.id}`, {
+        position: 5,
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.data.position).toBe(5)
+      expect(body.data.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+    })
+
+    test('PATCH content to a non-null value leaves the snapshot unchanged', async () => {
+      const entry = await addEntry({})
+
+      const res = await apiRequest(ctx.app, 'PATCH', `/resumes/${resumeId}/entries/${entry.id}`, {
+        content: 'Now with its own text',
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.data.content).toBe('Now with its own text')
+      expect(body.data.perspective_content_snapshot).toBe(PERSPECTIVE_TEXT)
+    })
+  })
+
   // ── GET /resumes/:id/gaps ─────────────────────────────────────────
 
   test('GET /resumes/:id/gaps returns 200 with gap analysis', async () => {

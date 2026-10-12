@@ -331,11 +331,17 @@ impl ResumeStore {
                     id: pid.clone(),
                 })?;
 
+            // Two messages, as in TS `ResumeService.addEntry`.
+            if status == "archived" {
+                return Err(ForgeError::Validation {
+                    message: "Cannot add archived perspective to resume. Unarchive it first."
+                        .into(),
+                    field: Some("perspective_id".into()),
+                });
+            }
             if status != "approved" {
                 return Err(ForgeError::Validation {
-                    message: format!(
-                        "Perspective {pid} has status '{status}', expected 'approved'"
-                    ),
+                    message: "Only approved perspectives can be added to resumes".into(),
                     field: Some("perspective_id".into()),
                 });
             }
@@ -359,16 +365,19 @@ impl ResumeStore {
             }
         };
 
-        // Snapshot perspective content if perspective_id provided
-        let snapshot: Option<String> = if let Some(ref pid) = input.perspective_id {
-            conn.query_row(
-                "SELECT content FROM perspectives WHERE id = ?1",
-                params![pid],
-                |row| row.get(0),
-            )
-            .optional()?
-        } else {
-            None
+        // Snapshot the perspective's content only in reference mode, as TS
+        // `captureSnapshotHook` does: a perspective is set and `content` is
+        // absent or `""`. The check is exact (TS truthiness), never trimmed,
+        // so `"  "` counts as content and captures nothing.
+        let snapshot: Option<String> = match input.perspective_id {
+            Some(ref pid) if input.content.as_deref().is_none_or(|c| c.is_empty()) => conn
+                .query_row(
+                    "SELECT content FROM perspectives WHERE id = ?1",
+                    params![pid],
+                    |row| row.get(0),
+                )
+                .optional()?,
+            _ => None,
         };
 
         conn.execute(
@@ -1710,6 +1719,51 @@ mod tests {
     }
 
     #[test]
+    fn add_entry_snapshot_follows_ts_truthiness_of_content() {
+        let forge = setup();
+        let resume = create_resume(forge.conn());
+        let section =
+            ResumeStore::create_section(forge.conn(), &resume.id, "Experience", "experience", None)
+                .unwrap();
+        let (perspective_id, _) = create_approved_perspective(forge.conn());
+        let perspective_content: String = forge
+            .conn()
+            .query_row(
+                "SELECT content FROM perspectives WHERE id = ?1",
+                params![perspective_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        // (content, expect a snapshot). Exact check: "" captures, "  " is content.
+        let cases: [(Option<&str>, bool); 4] = [
+            (None, true),
+            (Some(""), true),
+            (Some("  "), false),
+            (Some("Own text"), false),
+        ];
+        for (content, expect_snapshot) in cases {
+            let entry = ResumeStore::add_entry(
+                forge.conn(),
+                &resume.id,
+                &AddResumeEntry {
+                    section_id: section.id.clone(),
+                    perspective_id: Some(perspective_id.clone()),
+                    source_id: None,
+                    position: None,
+                    content: content.map(String::from),
+                },
+            )
+            .unwrap();
+            let expected = expect_snapshot.then(|| perspective_content.clone());
+            assert_eq!(
+                entry.perspective_content_snapshot, expected,
+                "content {content:?}"
+            );
+        }
+    }
+
+    #[test]
     fn add_entry_rejects_unapproved_perspective() {
         let forge = setup();
         let resume = create_resume(forge.conn());
@@ -1755,7 +1809,15 @@ mod tests {
                 content: None,
             },
         );
-        assert!(matches!(result, Err(ForgeError::Validation { .. })));
+        match result {
+            Err(ForgeError::Validation { message, .. }) => {
+                assert_eq!(
+                    message,
+                    "Only approved perspectives can be added to resumes"
+                );
+            }
+            other => panic!("expected a validation error, got {other:?}"),
+        }
     }
 
     #[test]

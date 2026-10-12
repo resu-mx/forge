@@ -192,23 +192,24 @@ impl ProfileStore {
             bind_values.push(Box::new(*v));
         }
 
-        if !sets.is_empty() {
-            let now = now_iso();
-            sets.push(format!("updated_at = ?{}", bind_values.len() + 1));
-            bind_values.push(Box::new(now));
+        // Always refresh `updated_at`, even when no scalar column changed: TS
+        // `ProfileService.update` calls `elm.update('user_profile', ...)` on
+        // every PATCH (address-only, urls-only and empty bodies included), and
+        // the beforeUpdate hook sets `updated_at`.
+        sets.push(format!("updated_at = ?{}", bind_values.len() + 1));
+        bind_values.push(Box::new(now_iso()));
 
-            let sql = format!(
-                "UPDATE user_profile SET {} WHERE id = ?{}",
-                sets.join(", "),
-                bind_values.len() + 1
-            );
-            bind_values.push(Box::new(profile_id.clone()));
+        let sql = format!(
+            "UPDATE user_profile SET {} WHERE id = ?{}",
+            sets.join(", "),
+            bind_values.len() + 1
+        );
+        bind_values.push(Box::new(profile_id.clone()));
 
-            conn.execute(
-                &sql,
-                rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
-            )?;
-        }
+        conn.execute(
+            &sql,
+            rusqlite::params_from_iter(bind_values.iter().map(|b| b.as_ref())),
+        )?;
 
         Self::get_profile(conn)?
             .ok_or_else(|| ForgeError::Internal("Profile updated but not found".into()))
@@ -518,6 +519,52 @@ mod tests {
         let addr = profile.address.unwrap();
         assert_eq!(addr.name, "Home");
         assert_eq!(addr.city, Some("Springfield".into()));
+    }
+
+    #[test]
+    fn update_profile_without_scalar_fields_still_bumps_updated_at() {
+        let forge = setup();
+        let _ = forge.conn().execute("DELETE FROM user_profile", []);
+        ProfileStore::update_profile(
+            forge.conn(),
+            &UpdateProfile {
+                name: Some("Test".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let old = "2020-01-01T00:00:00Z";
+        let patches = [
+            UpdateProfile {
+                urls: Some(vec![ProfileUrlInput {
+                    key: "github".into(),
+                    url: "https://github.com/test".into(),
+                }]),
+                ..Default::default()
+            },
+            UpdateProfile {
+                address: Some(CreateAddress {
+                    name: "Home".into(),
+                    street_1: None,
+                    street_2: None,
+                    city: Some("Springfield".into()),
+                    state: None,
+                    zip: None,
+                    country_code: None,
+                }),
+                ..Default::default()
+            },
+            UpdateProfile::default(),
+        ];
+        for patch in patches {
+            forge
+                .conn()
+                .execute("UPDATE user_profile SET updated_at = ?1", params![old])
+                .unwrap();
+            let profile = ProfileStore::update_profile(forge.conn(), &patch).unwrap();
+            assert!(profile.updated_at.as_str() > old, "{patch:?}");
+        }
     }
 
     #[test]
