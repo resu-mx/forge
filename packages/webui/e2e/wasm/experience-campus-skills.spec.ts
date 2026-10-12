@@ -114,15 +114,13 @@ test('experience: campus picker, new campus and source skills, in the browser', 
   await expect(chips(page)).toHaveText([/Terraform/])
   const linked = await inPage<{ id: string; name: string }[]>(
     page,
-    `const r = await fetch('/api/sources/${seed.source}/skills')
-     if (!r.ok) throw new Error('HTTP ' + r.status)
-     return (await r.json()).data`,
+    `return ok(await forge.sources.listSkills('${seed.source}'))`,
   )
   expect(linked.map((s) => s.name)).toEqual(['Terraform'])
 
   // ── A failed call is an error, not a silent no-op ───────────────────────────────────────
   // Unlink behind the UI's back; the UI's own unlink then gets 404 "Skill link not found".
-  await inPage(page, `await fetch('/api/sources/${seed.source}/skills/${linked[0].id}', { method: 'DELETE' })`)
+  await inPage(page, `ok(await forge.sources.removeSkill('${seed.source}', '${linked[0].id}'))`)
   await page.getByRole('button', { name: 'Remove Terraform' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Failed to remove skill' })).toBeVisible()
 

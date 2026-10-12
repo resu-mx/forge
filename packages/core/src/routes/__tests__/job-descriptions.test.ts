@@ -6,8 +6,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTestApp, apiRequest, type TestContext } from './helpers'
 import { seedOrganization, seedJobDescription } from '../../db/__tests__/helpers'
 
-// Spelled out on purpose: this pins the wording both runtimes must produce. The Rust envelope
-// prefixes validation messages with "validation error: ", so tests match with toContain.
+// Spelled out on purpose: this pins the wording both runtimes must produce.
 const INVALID_STATUS_MESSAGE = (s: string) =>
   `Invalid status: ${s}. Must be one of: discovered, analyzing, applying, applied, interviewing, offered, rejected, withdrawn, closed`
 
@@ -76,8 +75,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    // toContain: the Rust envelope prefixes every validation message with "validation error: ".
-    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+    expect(body.error.message).toBe('salary_min must not exceed salary_max')
   })
 
   test('POST accepts equal salary bounds', async () => {
@@ -137,6 +135,49 @@ describe('Job Description Routes', () => {
     const body = await res.json()
     expect(body.data).toHaveLength(1)
     expect(body.data[0].title).toBe('A')
+  })
+
+  // An unknown filter is a 400, not "ignore it and return everything": the kanban and the JD
+  // list both pass this value, so a typo must not silently show the wrong data.
+  const INVALID_FILTER_MESSAGE = (s: string) =>
+    `Invalid status filter: ${s}. Must be one of: discovered, analyzing, applying, applied, interviewing, offered, rejected, withdrawn, closed`
+
+  test('GET list rejects an unknown status filter with 400', async () => {
+    seedJobDescription(ctx.db, { title: 'Existing', status: 'applied' })
+
+    const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=bogus')
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    // toContain: the Rust envelope prefixes validation messages until #231 lands.
+    expect(body.error.message).toContain(INVALID_FILTER_MESSAGE('bogus'))
+    expect(body.data).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain('Existing')
+  })
+
+  // The route drops an empty value, so `?status=` is "no filter", not a rejection.
+  test('GET list treats an empty status filter as no filter', async () => {
+    seedJobDescription(ctx.db, { title: 'Existing', status: 'applied' })
+    seedJobDescription(ctx.db, { title: 'Other', status: 'discovered' })
+
+    const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data).toHaveLength(2)
+    expect(body.data.map((jd: { title: string }) => jd.title)).toContain('Existing')
+    expect(body.pagination.total).toBe(2)
+  })
+
+  test('GET list still filters by a valid status after the rejection cases', async () => {
+    seedJobDescription(ctx.db, { title: 'A', status: 'applied' })
+    seedJobDescription(ctx.db, { title: 'B', status: 'discovered' })
+
+    const res = await apiRequest(ctx.app, 'GET', '/job-descriptions?status=discovered')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0].title).toBe('B')
+    expect(body.pagination.total).toBe(1)
   })
 
   test('GET list filters by organization_id', async () => {
@@ -263,7 +304,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain(INVALID_STATUS_MESSAGE('invalid'))
+    expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('invalid'))
   })
 
   test('POST rejects invalid status with the TS message', async () => {
@@ -275,7 +316,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain(INVALID_STATUS_MESSAGE('bogus'))
+    expect(body.error.message).toBe(INVALID_STATUS_MESSAGE('bogus'))
   })
 
   test('PATCH rejects salary_min greater than salary_max in one request with 400', async () => {
@@ -290,7 +331,7 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+    expect(body.error.message).toBe('salary_min must not exceed salary_max')
   })
 
   test('PATCH accepts equal bounds, one bound alone, and clearing a bound', async () => {

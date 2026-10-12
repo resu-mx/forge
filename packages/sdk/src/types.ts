@@ -148,6 +148,13 @@ export interface OrgLocation {
 /** @deprecated Use OrgLocation */
 export type OrgCampus = OrgLocation
 
+/** An alternative name an organization goes by (`org_aliases`). */
+export interface OrgAlias {
+  id: string
+  organization_id: string
+  alias: string
+}
+
 export interface SourceEducation {
   education_type: EducationType
   // Shared

@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import type { Database } from 'bun:sqlite'
 import type { Services } from '../services'
 import { logger } from '../lib/logger'
+import { parseCorsOrigins } from './cors-origins'
 import { sourceRoutes } from './sources'
 import { bulletRoutes } from './bullets'
 import { perspectiveRoutes } from './perspectives'
@@ -66,6 +67,12 @@ export function createApp(services: Services, db: Database) {
     '*',
     cors({
       origin: (origin) => {
+        // An operator's list replaces the built-in policy below, in dev and in production alike
+        // (resu-mx/forge#126). Unset or blank keeps the defaults.
+        const configured = parseCorsOrigins(process.env.FORGE_CORS_ORIGINS)
+        if (configured === '*') return '*'
+        if (configured) return origin && configured.includes(origin) ? origin : undefined
+
         // Production: same-origin (served from same server)
         if (process.env.NODE_ENV === 'production') {
           return '*'

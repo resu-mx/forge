@@ -84,6 +84,19 @@ impl ForgeError {
             Self::Internal(_) => "INTERNAL_ERROR",
         }
     }
+
+    /// The message a client sees: the bare text for the variants whose `Display` adds a
+    /// label (`validation error: `, `conflict: `, `foreign key violation: `, `gone: `),
+    /// and `Display` for the rest. `Display` itself keeps the label for logs and `Debug`.
+    pub fn client_message(&self) -> String {
+        match self {
+            Self::Validation { message, .. }
+            | Self::Conflict { message }
+            | Self::ForeignKey { message }
+            | Self::Gone { message } => message.clone(),
+            other => other.to_string(),
+        }
+    }
 }
 
 impl Serialize for ForgeError {
@@ -91,7 +104,7 @@ impl Serialize for ForgeError {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("ForgeError", 2)?;
         s.serialize_field("code", self.code())?;
-        s.serialize_field("message", &self.to_string())?;
+        s.serialize_field("message", &self.client_message())?;
         s.end()
     }
 }

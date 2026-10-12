@@ -2,6 +2,7 @@
 //! the `tokio` (blocking-pool) flavour of `with_conn`.
 
 use forge_sdk::Forge;
+use forge_server::CorsOrigins;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -12,6 +13,23 @@ async fn spawn(production: bool) -> u16 {
     let app = forge_server::build_app(Forge::open_memory().unwrap(), production);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     port
+}
+
+/// [`spawn`] with an explicit `FORGE_CORS_ORIGINS` policy.
+async fn spawn_with_cors(production: bool, cors_origins: Option<CorsOrigins>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app =
+        forge_server::build_app_with_cors(Forge::open_memory().unwrap(), production, cors_origins);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    port
+}
+
+/// The `access-control-allow-origin` value in a lowercased header block, if any.
+fn allow_origin(head: &str) -> Option<String> {
+    head.lines()
+        .find_map(|l| l.strip_prefix("access-control-allow-origin: "))
+        .map(str::to_string)
 }
 
 /// Minimal HTTP/1.1 client: returns (status, lowercased headers block, body).
@@ -148,4 +166,81 @@ async fn preflight_is_answered() {
     assert!(status == 200 || status == 204, "preflight status {status}");
     assert!(head.contains("access-control-allow-methods:"), "{head}");
     assert!(head.contains("patch"), "{head}");
+}
+
+// ── FORGE_CORS_ORIGINS (resu-mx/forge#126) ──────────────────────────────────────────────────
+
+/// `GET /api/health` from `origin`: the `access-control-allow-origin` it gets back.
+async fn acao_for(port: u16, origin: &str) -> Option<String> {
+    let hdrs = format!("Origin: {origin}\r\n");
+    let (status, head, _) = request(port, "GET", "/api/health", &hdrs, "").await;
+    assert_eq!(status, 200, "the request itself is served either way");
+    allow_origin(&head)
+}
+
+#[tokio::test]
+async fn configured_origins_replace_the_built_in_list() {
+    let list = CorsOrigins::parse(Some("http://localhost:4173,chrome-extension://abc"));
+    let port = spawn_with_cors(false, list).await;
+
+    assert_eq!(
+        acao_for(port, "http://localhost:4173").await.as_deref(),
+        Some("http://localhost:4173")
+    );
+    assert_eq!(
+        acao_for(port, "chrome-extension://abc").await.as_deref(),
+        Some("chrome-extension://abc")
+    );
+    // The built-in dev origins are gone: the operator's list replaced them.
+    assert_eq!(acao_for(port, "http://localhost:5173").await, None);
+    assert_eq!(acao_for(port, "chrome-extension://other").await, None);
+    assert_eq!(acao_for(port, "https://evil.example").await, None);
+
+    // A preflight from an allowed origin is answered with a 204 and the allow header.
+    let hdrs = "Origin: http://localhost:4173\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: content-type\r\n";
+    let (status, head, _) = request(port, "OPTIONS", "/api/sources", hdrs, "").await;
+    assert_eq!(status, 204);
+    assert_eq!(
+        allow_origin(&head).as_deref(),
+        Some("http://localhost:4173")
+    );
+    // ...and from a refused one, with no allow header, so the browser blocks it.
+    let hdrs = "Origin: https://evil.example\r\nAccess-Control-Request-Method: POST\r\n";
+    let (_, head, _) = request(port, "OPTIONS", "/api/sources", hdrs, "").await;
+    assert_eq!(allow_origin(&head), None);
+}
+
+#[tokio::test]
+async fn a_configured_star_allows_every_origin() {
+    for production in [false, true] {
+        let port = spawn_with_cors(production, CorsOrigins::parse(Some("*"))).await;
+        assert_eq!(
+            acao_for(port, "https://anything.example").await.as_deref(),
+            Some("*"),
+            "production={production}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_configured_list_narrows_production_too() {
+    // Production without the variable is `*` (see production_cors_allows_any_origin); with it,
+    // only the listed origins.
+    let port = spawn_with_cors(true, CorsOrigins::parse(Some("https://app.example"))).await;
+    assert_eq!(
+        acao_for(port, "https://app.example").await.as_deref(),
+        Some("https://app.example")
+    );
+    assert_eq!(acao_for(port, "https://other.example").await, None);
+}
+
+#[tokio::test]
+async fn a_blank_variable_keeps_the_defaults() {
+    // Blank parses to "not configured", so the dev defaults are untouched.
+    let port = spawn_with_cors(false, CorsOrigins::parse(Some(" , "))).await;
+    assert_eq!(
+        acao_for(port, "http://localhost:5173").await.as_deref(),
+        Some("http://localhost:5173")
+    );
+    assert_eq!(acao_for(port, "https://evil.example").await, None);
 }

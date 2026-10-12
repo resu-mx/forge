@@ -475,6 +475,19 @@ fn parse_status(raw: &str) -> Result<JobDescriptionStatus, ForgeError> {
     })
 }
 
+/// Parse a `status` list filter, with the TS `Invalid status filter: ...` message on failure. This
+/// is strict: an empty string is rejected like any other unknown value. The HTTP route skips an
+/// empty `?status=` before calling it, as the TS route does.
+pub fn parse_status_filter(raw: &str) -> Result<JobDescriptionStatus, ForgeError> {
+    raw.parse().map_err(|_| ForgeError::Validation {
+        message: format!(
+            "Invalid status filter: {raw}. Must be one of: {}",
+            JobDescriptionStatus::names().join(", ")
+        ),
+        field: Some("status".into()),
+    })
+}
+
 /// Reject `salary_min > salary_max` when both are present, mirroring the TS `JobDescriptionService`.
 fn require_salary_bounds(min: Option<f64>, max: Option<f64>) -> Result<(), ForgeError> {
     if let (Some(lo), Some(hi)) = (min, max) {
@@ -905,6 +918,29 @@ mod tests {
         .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "Python Dev");
+    }
+
+    const FILTER_MESSAGE: &str = "Invalid status filter: {}. Must be one of: discovered, analyzing, applying, applied, interviewing, offered, rejected, withdrawn, closed";
+
+    #[test]
+    fn parse_status_filter_rejects_unknown_and_empty_with_the_ts_message() {
+        for raw in ["bogus", "", "Applied", "aplied"] {
+            match parse_status_filter(raw) {
+                Err(ForgeError::Validation { message, field }) => {
+                    assert_eq!(message, FILTER_MESSAGE.replace("{}", raw));
+                    assert_eq!(field.as_deref(), Some("status"));
+                }
+                other => panic!("expected a validation error for {raw:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_status_filter_accepts_every_status() {
+        for name in JobDescriptionStatus::names() {
+            let parsed = parse_status_filter(name).unwrap();
+            assert_eq!(parsed.to_string(), *name);
+        }
     }
 
     #[test]

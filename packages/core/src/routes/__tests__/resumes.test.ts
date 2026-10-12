@@ -120,9 +120,7 @@ describe('Resume Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    // toContain, not toBe: forge-server renders ForgeError's Display
-    // ("validation error: <msg>"), a prefix gap that is not part of this case.
-    expect(body.error.message).toContain('Only approved perspectives can be added to resumes')
+    expect(body.error.message).toBe('Only approved perspectives can be added to resumes')
   })
 
   test('POST /resumes/:id/entries with an archived perspective says to unarchive it', async () => {
@@ -139,7 +137,7 @@ describe('Resume Routes', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.error.message).toContain('Cannot add archived perspective to resume. Unarchive it first.')
+    expect(body.error.message).toBe('Cannot add archived perspective to resume. Unarchive it first.')
   })
 
   // ── perspective_content_snapshot on add / update ──────────────────

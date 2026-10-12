@@ -1,6 +1,5 @@
 <script lang="ts">
   import { forge, friendlyError } from '$lib/sdk'
-  import { responseError } from '$lib/api-error'
   import {
     createLocationWithAddress,
     listLocationsWithAddress,
@@ -734,15 +733,13 @@
 
   async function loadSourceSkills(sourceId: string) {
     skillsError = null
-    const res = await fetch(`/api/sources/${sourceId}/skills`)
+    const result = await forge.sources.listSkills(sourceId)
     if (selectedId !== sourceId) return // another source was selected while this loaded
-    if (res.ok) {
-      const body = await res.json()
-      sourceSkills = body.data ?? []
+    if (result.ok) {
+      sourceSkills = result.data ?? []
     } else {
       sourceSkills = []
-      const message = friendlyError(await responseError(res), 'Failed to load skills')
-      if (selectedId !== sourceId) return
+      const message = friendlyError(result.error, 'Failed to load skills')
       skillsError = message
       addToast({ message, type: 'error' })
     }
@@ -767,21 +764,14 @@
     if (!selectedId) return
     addingSkill = true
     try {
-      const res = await fetch(`/api/sources/${selectedId}/skills`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skill_id: skillId }),
-      })
-      if (res.ok) {
-        const body = await res.json()
-        sourceSkills = [...sourceSkills, body.data]
+      const result = await forge.sources.addSkill(selectedId, { skill_id: skillId })
+      if (result.ok) {
+        sourceSkills = [...sourceSkills, result.data]
         skillSearchQuery = ''
         showSkillDropdown = false
       } else {
-        addToast({ message: friendlyError(await responseError(res), 'Failed to add skill'), type: 'error' })
+        addToast({ message: friendlyError(result.error, 'Failed to add skill'), type: 'error' })
       }
-    } catch (e) {
-      addToast({ message: friendlyError({ code: 'NETWORK_ERROR', message: String(e) }, 'Failed to add skill'), type: 'error' })
     } finally {
       addingSkill = false
     }
@@ -791,26 +781,19 @@
     if (!selectedId || !skillSearchQuery.trim()) return
     addingSkill = true
     try {
-      const res = await fetch(`/api/sources/${selectedId}/skills`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: skillSearchQuery.trim() }),
-      })
-      if (res.ok) {
-        const body = await res.json()
-        sourceSkills = [...sourceSkills, body.data]
+      const result = await forge.sources.addSkill(selectedId, { name: skillSearchQuery.trim() })
+      if (result.ok) {
+        sourceSkills = [...sourceSkills, result.data]
         // Also add to allSkills so it appears in future searches
-        if (!allSkills.some(s => s.id === body.data.id)) {
-          allSkills = [...allSkills, body.data]
+        if (!allSkills.some(s => s.id === result.data.id)) {
+          allSkills = [...allSkills, result.data]
         }
         skillSearchQuery = ''
         showSkillDropdown = false
-        addToast({ message: `Skill "${body.data.name}" created and linked.`, type: 'success' })
+        addToast({ message: `Skill "${result.data.name}" created and linked.`, type: 'success' })
       } else {
-        addToast({ message: friendlyError(await responseError(res), 'Failed to create skill'), type: 'error' })
+        addToast({ message: friendlyError(result.error, 'Failed to create skill'), type: 'error' })
       }
-    } catch (e) {
-      addToast({ message: friendlyError({ code: 'NETWORK_ERROR', message: String(e) }, 'Failed to create skill'), type: 'error' })
     } finally {
       addingSkill = false
     }
@@ -818,15 +801,11 @@
 
   async function removeSkillFromSource(skillId: string) {
     if (!selectedId) return
-    try {
-      const res = await fetch(`/api/sources/${selectedId}/skills/${skillId}`, { method: 'DELETE' })
-      if (res.ok) {
-        sourceSkills = sourceSkills.filter(s => s.id !== skillId)
-      } else {
-        addToast({ message: friendlyError(await responseError(res), 'Failed to remove skill'), type: 'error' })
-      }
-    } catch (e) {
-      addToast({ message: friendlyError({ code: 'NETWORK_ERROR', message: String(e) }, 'Failed to remove skill'), type: 'error' })
+    const result = await forge.sources.removeSkill(selectedId, skillId)
+    if (result.ok) {
+      sourceSkills = sourceSkills.filter(s => s.id !== skillId)
+    } else {
+      addToast({ message: friendlyError(result.error, 'Failed to remove skill'), type: 'error' })
     }
   }
 

@@ -5,6 +5,7 @@ import type {
   RequestFn,
   RequestListFn,
   Result,
+  Skill,
   Source,
   SourceFilter,
   SourceWithBullets,
@@ -52,5 +53,20 @@ export class SourcesResource {
 
   delete(id: string): Promise<Result<void>> {
     return this.request<void>('DELETE', `/api/sources/${id}`)
+  }
+
+  // ── Source skills ─────────────────────────────────────────────────
+
+  listSkills(id: string): Promise<Result<Skill[]>> {
+    return this.request<Skill[]>('GET', `/api/sources/${id}/skills`)
+  }
+
+  /** Link an existing skill (`{ skill_id }`) or find-or-create one by name (`{ name }`). */
+  addSkill(id: string, input: { skill_id: string } | { name: string }): Promise<Result<Skill>> {
+    return this.request<Skill>('POST', `/api/sources/${id}/skills`, input)
+  }
+
+  removeSkill(id: string, skillId: string): Promise<Result<void>> {
+    return this.request<void>('DELETE', `/api/sources/${id}/skills/${skillId}`)
   }
 }

@@ -144,15 +144,11 @@
     const promises = orgs.map(async (org) => {
       try {
         const [aliasRes, hq] = await Promise.all([
-          fetch(`/api/organizations/${org.id}/aliases`), // raw until resu-mx/forge#127
+          forge.organizations.listAliases(org.id),
           hqLocationLabel(forge, org.id),
         ])
-        if (aliasRes.ok) {
-          const aliasBody = await aliasRes.json()
-          const aliases = aliasBody.data ?? []
-          if (aliases.length > 0) {
-            aliasMap.set(org.id, aliases.length)
-          }
+        if (aliasRes.ok && aliasRes.data.length > 0) {
+          aliasMap.set(org.id, aliasRes.data.length)
         }
         if (hq.ok && hq.data) hqMap.set(org.id, hq.data)
       } catch {
@@ -403,42 +399,36 @@
   // ── Alias functions ───────────────────────────────────────────────
 
   async function loadAliases(orgId: string) {
-    const res = await fetch(`/api/organizations/${orgId}/aliases`)
-    if (res.ok) {
-      const body = await res.json()
-      orgAliases = body.data ?? []
+    const result = await forge.organizations.listAliases(orgId)
+    if (result.ok) {
+      orgAliases = result.data
     } else {
       orgAliases = []
+      addToast({ message: friendlyError(result.error, 'Failed to load aliases'), type: 'error' })
     }
   }
 
   async function addAlias() {
     if (!newAlias.trim() || !selectedId) return
     savingAlias = true
-    const res = await fetch(`/api/organizations/${selectedId}/aliases`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alias: newAlias.trim() }),
-    })
-    if (res.ok) {
-      const body = await res.json()
-      orgAliases = [...orgAliases, body.data]
+    const result = await forge.organizations.createAlias(selectedId, newAlias.trim())
+    if (result.ok) {
+      orgAliases = [...orgAliases, result.data]
       newAlias = ''
-      addToast({ message: `Alias "${body.data.alias}" added.`, type: 'success' })
+      addToast({ message: `Alias "${result.data.alias}" added.`, type: 'success' })
     } else {
-      const body = await res.json().catch(() => ({}))
-      addToast({ message: body.error?.message ?? 'Failed to add alias.', type: 'error' })
+      addToast({ message: friendlyError(result.error, 'Failed to add alias'), type: 'error' })
     }
     savingAlias = false
   }
 
   async function deleteAlias(aliasId: string) {
-    const res = await fetch(`/api/aliases/${aliasId}`, { method: 'DELETE' })
-    if (res.ok) {
+    const result = await forge.organizations.deleteAlias(aliasId)
+    if (result.ok) {
       orgAliases = orgAliases.filter(a => a.id !== aliasId)
       addToast({ message: 'Alias removed.', type: 'success' })
     } else {
-      addToast({ message: 'Failed to remove alias.', type: 'error' })
+      addToast({ message: friendlyError(result.error, 'Failed to remove alias'), type: 'error' })
     }
   }
 </script>

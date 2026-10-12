@@ -256,6 +256,30 @@ async fn patch_errors_use_the_envelope() {
     assert_eq!(err["error"]["code"], "NOT_FOUND");
 }
 
+/// resu-mx/forge#231: the envelope carries the bare message, as the TS API does.
+#[tokio::test]
+async fn error_messages_have_no_variant_prefix() {
+    let r = router();
+    let (status, err) = call(&r, "POST", "/api/domains", Some(json!({ "name": "" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(err["error"]["message"], "Name must not be empty");
+
+    let (status, err) = call(
+        &r,
+        "POST",
+        "/api/domains",
+        Some(json!({ "name": "security" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(err["error"]["code"], "CONFLICT");
+    assert_eq!(
+        err["error"]["message"],
+        "domains.name must be unique: \"security\" already exists"
+    );
+}
+
 #[tokio::test]
 async fn post_validates_the_name_and_rejects_duplicates() {
     let r = router();
