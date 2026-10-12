@@ -61,6 +61,30 @@ describe('Job Description Routes', () => {
     expect(res.status).toBe(400)
   })
 
+  test('POST rejects salary_min greater than salary_max with 400', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'Valid',
+      raw_text: 'text',
+      salary_min: 200000,
+      salary_max: 150000,
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    // toContain: the Rust envelope prefixes every validation message with "validation error: ".
+    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+  })
+
+  test('POST accepts equal salary bounds', async () => {
+    const res = await apiRequest(ctx.app, 'POST', '/job-descriptions', {
+      title: 'Valid',
+      raw_text: 'text',
+      salary_min: 150000,
+      salary_max: 150000,
+    })
+    expect(res.status).toBe(201)
+  })
+
   // ── GET /job-descriptions ───────────────────────────────────────────
 
   test('GET list returns paginated envelope', async () => {
@@ -232,6 +256,32 @@ describe('Job Description Routes', () => {
       { status: 'invalid' },
     )
     expect(res.status).toBe(400)
+  })
+
+  test('PATCH rejects salary_min greater than salary_max in one request with 400', async () => {
+    const jdId = seedJobDescription(ctx.db)
+
+    const res = await apiRequest(
+      ctx.app,
+      'PATCH',
+      `/job-descriptions/${jdId}`,
+      { salary_min: 200000, salary_max: 150000 },
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('salary_min must not exceed salary_max')
+  })
+
+  test('PATCH accepts equal bounds, one bound alone, and clearing a bound', async () => {
+    const jdId = seedJobDescription(ctx.db)
+    const patch = (payload: Record<string, unknown>) =>
+      apiRequest(ctx.app, 'PATCH', `/job-descriptions/${jdId}`, payload)
+
+    expect((await patch({ salary_min: 100000, salary_max: 100000 })).status).toBe(200)
+    // Only values sent in the same request are compared; the stored max is not consulted.
+    expect((await patch({ salary_min: 500000 })).status).toBe(200)
+    expect((await patch({ salary_min: null, salary_max: 90000 })).status).toBe(200)
   })
 
   // ── DELETE /job-descriptions/:id ────────────────────────────────────

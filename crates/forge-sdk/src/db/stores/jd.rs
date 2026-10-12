@@ -24,6 +24,7 @@ impl JdStore {
     ) -> Result<JobDescription, ForgeError> {
         require_non_blank(&input.title, "title", TITLE_EMPTY)?;
         require_non_blank(&input.raw_text, "raw_text", RAW_TEXT_EMPTY)?;
+        require_salary_bounds(input.salary_min, input.salary_max)?;
         let id = new_id();
         let now = now_iso();
         let status = input.status.unwrap_or(JobDescriptionStatus::Discovered);
@@ -185,6 +186,9 @@ impl JdStore {
         if let Some(ref v) = input.raw_text {
             require_non_blank(v, "raw_text", RAW_TEXT_EMPTY)?;
         }
+        // Only values sent in this request are compared, as TS: a clear (`Some(None)`) or an
+        // absent bound never triggers the rule, and the stored value is not consulted.
+        require_salary_bounds(input.salary_min.flatten(), input.salary_max.flatten())?;
         // Verify existence
         Self::get(conn, id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "job_description".into(),
@@ -436,6 +440,20 @@ fn require_non_blank(value: &str, field: &str, message: &str) -> Result<(), Forg
     Ok(())
 }
 
+/// Reject `salary_min > salary_max` when both are present, mirroring the TS `JobDescriptionService`.
+fn require_salary_bounds(min: Option<f64>, max: Option<f64>) -> Result<(), ForgeError> {
+    if let (Some(lo), Some(hi)) = (min, max) {
+        if lo > hi {
+            return Err(ForgeError::Validation {
+                message: SALARY_BOUNDS.into(),
+                field: Some("salary_min".into()),
+            });
+        }
+    }
+    Ok(())
+}
+
+const SALARY_BOUNDS: &str = "salary_min must not exceed salary_max";
 const TITLE_EMPTY: &str = "Title must not be empty";
 const RAW_TEXT_EMPTY: &str = "Job description text (raw_text) must not be empty";
 
@@ -516,6 +534,97 @@ mod tests {
             JdStore::update(forge.conn(), &jd.id, &blank_text),
             "raw_text",
         );
+    }
+
+    fn count_jds(forge: &Forge) -> i64 {
+        forge
+            .conn()
+            .query_row("SELECT COUNT(*) FROM job_descriptions", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn create_rejects_min_above_max_and_writes_nothing() {
+        let forge = setup();
+        let mut input = sample_input();
+        input.salary_min = Some(200_000.0);
+        input.salary_max = Some(150_000.0);
+        let err = JdStore::create(forge.conn(), &input).unwrap_err();
+        match err {
+            ForgeError::Validation { message, field } => {
+                assert_eq!(message, "salary_min must not exceed salary_max");
+                assert_eq!(field.as_deref(), Some("salary_min"));
+            }
+            other => panic!("expected validation error, got {other:?}"),
+        }
+        assert_eq!(count_jds(&forge), 0);
+    }
+
+    #[test]
+    fn create_accepts_equal_or_single_salary_bounds() {
+        let forge = setup();
+        let mut input = sample_input();
+        input.salary_min = Some(150_000.0);
+        input.salary_max = Some(150_000.0);
+        JdStore::create(forge.conn(), &input).unwrap();
+
+        input.salary_min = Some(500_000.0);
+        input.salary_max = None;
+        JdStore::create(forge.conn(), &input).unwrap();
+
+        input.salary_min = None;
+        input.salary_max = Some(1.0);
+        JdStore::create(forge.conn(), &input).unwrap();
+    }
+
+    #[test]
+    fn update_rejects_min_above_max_and_writes_nothing() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+        let bad = UpdateJobDescription {
+            title: Some("Changed".into()),
+            salary_min: Some(Some(200_000.0)),
+            salary_max: Some(Some(150_000.0)),
+            ..Default::default()
+        };
+        assert_validation_field(JdStore::update(forge.conn(), &jd.id, &bad), "salary_min");
+        let after = JdStore::get(forge.conn(), &jd.id).unwrap().unwrap();
+        assert_eq!(after.title, jd.title);
+        assert_eq!(after.salary_min, jd.salary_min);
+        assert_eq!(after.salary_max, jd.salary_max);
+    }
+
+    #[test]
+    fn update_salary_rule_compares_only_values_sent_together() {
+        let forge = setup();
+        let jd = JdStore::create(forge.conn(), &sample_input()).unwrap();
+
+        // Equal bounds pass.
+        let equal = UpdateJobDescription {
+            salary_min: Some(Some(100_000.0)),
+            salary_max: Some(Some(100_000.0)),
+            ..Default::default()
+        };
+        JdStore::update(forge.conn(), &jd.id, &equal).unwrap();
+
+        // One bound alone passes even when it exceeds the stored other bound.
+        let min_only = UpdateJobDescription {
+            salary_min: Some(Some(900_000.0)),
+            ..Default::default()
+        };
+        let updated = JdStore::update(forge.conn(), &jd.id, &min_only).unwrap();
+        assert_eq!(updated.salary_min, Some(900_000.0));
+        assert_eq!(updated.salary_max, Some(100_000.0));
+
+        // Clearing one bound while setting the other passes.
+        let clear_min = UpdateJobDescription {
+            salary_min: Some(None),
+            salary_max: Some(Some(50.0)),
+            ..Default::default()
+        };
+        let cleared = JdStore::update(forge.conn(), &jd.id, &clear_min).unwrap();
+        assert_eq!(cleared.salary_min, None);
+        assert_eq!(cleared.salary_max, Some(50.0));
     }
 
     #[test]
