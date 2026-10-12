@@ -106,3 +106,67 @@ test('domains: edit saves', async ({ page }) => {
   expect(pageErrors).toEqual([])
   // TODO: also clear the description and expect '--' after reload, once PATCH /domains/:id supports null.
 })
+
+/**
+ * resu-mx/forge#226: a rejected write shows the server's own message, not a generic failure.
+ * The UI prefixes its action ("Failed to create domain: "); what follows must be exactly what
+ * the API sent, with no variant label in front of it (#231).
+ */
+async function createRefused(page: Page, name: string) {
+  return inPage<{ ok: boolean; error?: { code: string; message: string } }>(
+    page,
+    `return await forge.domains.create(${JSON.stringify({ name })})`,
+  )
+}
+
+async function submitCreateForm(page: Page, name: string) {
+  await page.getByRole('button', { name: '+ Add Domain' }).click()
+  await page.getByPlaceholder('e.g. cloud_engineering').fill(name)
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+}
+
+test('domains: a duplicate name (409) shows the conflict message', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (e) => pageErrors.push(e.message))
+
+  await openApp(page)
+  await inPage(page, `ok(await forge.domains.create({ name: 'e2e_dupe' }))`)
+
+  // What the API says for the same request.
+  const refused = await createRefused(page, 'e2e_dupe')
+  expect(refused.ok).toBe(false)
+  expect(refused.error?.code).toBe('CONFLICT')
+  const message = refused.error!.message
+  expect(message).toContain('e2e_dupe')
+  expect(message).not.toMatch(/^(conflict|validation error): /)
+
+  await openApp(page, '/data/domains')
+  await submitCreateForm(page, 'e2e_dupe')
+
+  await expect(page.locator('.toast', { hasText: `Failed to create domain: ${message}` })).toBeVisible()
+  await expect(page.locator('.toast', { hasText: "created" })).toHaveCount(0)
+  await expect(row(page, 'e2e_dupe')).toHaveCount(1)
+
+  expect(pageErrors).toEqual([])
+})
+
+test('domains: an invalid name (400) shows the validation message', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (e) => pageErrors.push(e.message))
+
+  await openApp(page)
+  const refused = await createRefused(page, 'Bad Name')
+  expect(refused.ok).toBe(false)
+  expect(refused.error?.code).toBe('VALIDATION_ERROR')
+  const message = refused.error!.message
+  expect(message).toMatch(/lowercase/i)
+  expect(message).not.toMatch(/^(conflict|validation error): /)
+
+  await openApp(page, '/data/domains')
+  await submitCreateForm(page, 'Bad Name')
+
+  await expect(page.locator('.toast', { hasText: `Failed to create domain: ${message}` })).toBeVisible()
+  await expect(row(page, 'Bad Name')).toHaveCount(0)
+
+  expect(pageErrors).toEqual([])
+})
