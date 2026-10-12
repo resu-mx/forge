@@ -6,7 +6,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::lookup::{self, LookupTable};
-use forge_core::{new_id, now_iso, CreateIndustryInput, ForgeError, Industry, UpdateIndustryInput};
+use forge_core::{
+    new_id, now_iso, CreateIndustryInput, ForgeError, Industry, Pagination, UpdateIndustryInput,
+};
 
 /// Data-access store for the `industries` table.
 pub struct IndustryStore;
@@ -47,18 +49,32 @@ impl IndustryStore {
         Ok(result)
     }
 
-    /// List all industries, sorted by name.
-    pub fn list(conn: &Connection) -> Result<Vec<Industry>, ForgeError> {
+    /// List industries with pagination, sorted by name (TS `IndustryService.list`).
+    pub fn list(
+        conn: &Connection,
+        offset: i64,
+        limit: i64,
+    ) -> Result<(Vec<Industry>, Pagination), ForgeError> {
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM industries", [], |row| row.get(0))?;
+
         let mut stmt = conn.prepare(
             "SELECT id, name, description, created_at
              FROM industries
-             ORDER BY name ASC",
+             ORDER BY name ASC
+             LIMIT ?1 OFFSET ?2",
         )?;
 
         let rows: Vec<Industry> = stmt
-            .query_map([], Self::map_industry)?
+            .query_map(params![limit, offset], Self::map_industry)?
             .collect::<Result<_, _>>()?;
-        Ok(rows)
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
@@ -172,11 +188,29 @@ mod tests {
         )
         .unwrap();
 
-        let rows = IndustryStore::list(forge.conn()).unwrap();
+        let (rows, page) = IndustryStore::list(forge.conn(), 0, 50).unwrap();
         assert_eq!(rows.len(), 2);
         // Sorted by name ASC
         assert_eq!(rows[0].name, "Defense");
         assert_eq!(rows[1].name, "Healthcare");
+        assert_eq!((page.total, page.offset, page.limit), (2, 0, 50));
+    }
+
+    #[test]
+    fn list_pages_by_name_and_reports_the_full_total() {
+        let forge = setup();
+        for i in (0..5).rev() {
+            make(&forge, &format!("Industry {i}"), None);
+        }
+
+        let (rows, page) = IndustryStore::list(forge.conn(), 1, 2).unwrap();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["Industry 1", "Industry 2"]);
+        assert_eq!((page.total, page.offset, page.limit), (5, 1, 2));
+
+        let (rows, page) = IndustryStore::list(forge.conn(), 10, 2).unwrap();
+        assert!(rows.is_empty());
+        assert_eq!((page.total, page.offset, page.limit), (5, 10, 2));
     }
 
     #[test]
@@ -227,7 +261,7 @@ mod tests {
     #[test]
     fn create_rejects_a_blank_name() {
         let forge = setup();
-        let before = IndustryStore::list(forge.conn()).unwrap().len();
+        let before = IndustryStore::list(forge.conn(), 0, 200).unwrap().1.total;
         for name in ["", "   "] {
             let err = IndustryStore::create(
                 forge.conn(),
@@ -240,7 +274,10 @@ mod tests {
             assert!(matches!(&err, ForgeError::Validation { message, .. }
                 if message == lookup::NAME_EMPTY));
         }
-        assert_eq!(IndustryStore::list(forge.conn()).unwrap().len(), before);
+        assert_eq!(
+            IndustryStore::list(forge.conn(), 0, 200).unwrap().1.total,
+            before
+        );
     }
 
     #[test]

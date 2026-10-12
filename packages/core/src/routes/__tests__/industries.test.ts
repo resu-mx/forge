@@ -1,9 +1,9 @@
 /**
- * Route-level tests for PATCH /api/industries/:id (resu-mx/forge#18).
+ * Route-level tests for PATCH /api/industries/:id (resu-mx/forge#18) and the paginated
+ * GET /api/industries list (resu-mx/forge#141).
  *
  * This is the contract the Rust server is held to in `just parity-tier0`. Setup goes through
- * POST and reads back through GET, so both runtimes run the same calls. (List pagination is
- * tracked in #141 and is not asserted here.)
+ * POST and reads back through GET, so both runtimes run the same calls.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
@@ -110,5 +110,89 @@ describe('Industry routes: PATCH /industries/:id', () => {
     expect(res.status).toBe(409)
     expect((await res.json()).error.code).toBe('CONFLICT')
     expect((await read(id)).name).toBe('Logistics')
+  })
+})
+
+describe('Industry routes: GET /industries pagination', () => {
+  let ctx: TestContext
+
+  beforeEach(() => {
+    ctx = createTestApp()
+  })
+
+  afterEach(() => {
+    ctx.db.close()
+  })
+
+  async function create(name: string): Promise<void> {
+    const res = await apiRequest(ctx.app, 'POST', '/industries', { name })
+    expect(res.status).toBe(201)
+  }
+
+  // Zero-padded, so name order is numeric order. Created out of order, so the order the page
+  // comes back in is the sort, not insertion.
+  const nameOf = (i: number) => `Industry ${String(i).padStart(3, '0')}`
+
+  async function seed(count: number): Promise<void> {
+    for (let i = count - 1; i >= 0; i--) await create(nameOf(i))
+  }
+
+  async function list(query = '') {
+    const res = await apiRequest(ctx.app, 'GET', `/industries${query}`)
+    expect(res.status).toBe(200)
+    return res.json()
+  }
+
+  test('an empty list has the data and pagination shape', async () => {
+    const body = await list()
+    expect(body.data).toEqual([])
+    expect(body.pagination).toEqual({ total: 0, offset: 0, limit: 50 })
+  })
+
+  test('returns the default page of 50, ordered by name, with the full total', async () => {
+    await seed(60)
+    const body = await list()
+    expect(body.data).toHaveLength(50)
+    expect(body.data.map((r: { name: string }) => r.name)).toEqual(
+      Array.from({ length: 50 }, (_, i) => nameOf(i)),
+    )
+    expect(body.pagination).toEqual({ total: 60, offset: 0, limit: 50 })
+  })
+
+  test('offset and limit select a window and are echoed back', async () => {
+    await seed(10)
+    const body = await list('?offset=3&limit=4')
+    expect(body.data.map((r: { name: string }) => r.name)).toEqual([3, 4, 5, 6].map(nameOf))
+    expect(body.pagination).toEqual({ total: 10, offset: 3, limit: 4 })
+  })
+
+  test('an offset past the end returns no rows and the full total', async () => {
+    await seed(3)
+    const body = await list('?offset=10')
+    expect(body.data).toEqual([])
+    expect(body.pagination).toEqual({ total: 3, offset: 10, limit: 50 })
+  })
+
+  test('a negative offset is clamped to 0', async () => {
+    await seed(3)
+    const body = await list('?offset=-3')
+    expect(body.data).toHaveLength(3)
+    expect(body.pagination).toEqual({ total: 3, offset: 0, limit: 50 })
+  })
+
+  test('limit=500 is clamped to 200, reports the full total, and pages to it', async () => {
+    await seed(250)
+
+    const first = await list('?limit=500')
+    expect(first.data).toHaveLength(200)
+    expect(first.pagination).toEqual({ total: 250, offset: 0, limit: 200 })
+
+    const second = await list('?limit=200&offset=200')
+    expect(second.data).toHaveLength(50)
+    expect(second.pagination).toEqual({ total: 250, offset: 200, limit: 200 })
+
+    const names = [...first.data, ...second.data].map((r: { name: string }) => r.name)
+    expect(new Set(names).size).toBe(250)
+    expect(names).toEqual(Array.from({ length: 250 }, (_, i) => nameOf(i)))
   })
 })

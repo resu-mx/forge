@@ -4,7 +4,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::lookup::{self, LookupTable};
-use forge_core::{new_id, now_iso, CreateRoleTypeInput, ForgeError, RoleType, UpdateRoleTypeInput};
+use forge_core::{
+    new_id, now_iso, CreateRoleTypeInput, ForgeError, Pagination, RoleType, UpdateRoleTypeInput,
+};
 
 /// Data access for the `role_types` table.
 pub struct RoleTypeStore;
@@ -44,15 +46,30 @@ impl RoleTypeStore {
         Ok(result)
     }
 
-    /// List all role types, sorted by name.
-    pub fn list(conn: &Connection) -> Result<Vec<RoleType>, ForgeError> {
+    /// List role types with pagination, sorted by name (TS `RoleTypeService.list`).
+    pub fn list(
+        conn: &Connection,
+        offset: i64,
+        limit: i64,
+    ) -> Result<(Vec<RoleType>, Pagination), ForgeError> {
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM role_types", [], |row| row.get(0))?;
+
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at FROM role_types ORDER BY name ASC",
+            "SELECT id, name, description, created_at FROM role_types
+             ORDER BY name ASC
+             LIMIT ?1 OFFSET ?2",
         )?;
         let rows: Vec<RoleType> = stmt
-            .query_map([], Self::map_role_type)?
+            .query_map(params![limit, offset], Self::map_role_type)?
             .collect::<Result<_, _>>()?;
-        Ok(rows)
+        Ok((
+            rows,
+            Pagination {
+                total,
+                offset,
+                limit,
+            },
+        ))
     }
 
     // ── Update ───────────────────────────────────────────────────────
@@ -168,11 +185,36 @@ mod tests {
         )
         .unwrap();
 
-        let list = RoleTypeStore::list(forge.conn()).unwrap();
+        let (list, page) = RoleTypeStore::list(forge.conn(), 0, 50).unwrap();
         assert_eq!(list.len(), 2);
         // Sorted by name ASC
         assert_eq!(list[0].name, "Architect");
         assert_eq!(list[1].name, "Manager");
+        assert_eq!((page.total, page.offset, page.limit), (2, 0, 50));
+    }
+
+    #[test]
+    fn list_pages_by_name_and_reports_the_full_total() {
+        let forge = setup();
+        for i in (0..5).rev() {
+            RoleTypeStore::create(
+                forge.conn(),
+                &CreateRoleTypeInput {
+                    name: format!("Role {i}"),
+                    description: None,
+                },
+            )
+            .unwrap();
+        }
+
+        let (rows, page) = RoleTypeStore::list(forge.conn(), 1, 2).unwrap();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["Role 1", "Role 2"]);
+        assert_eq!((page.total, page.offset, page.limit), (5, 1, 2));
+
+        let (rows, page) = RoleTypeStore::list(forge.conn(), 10, 2).unwrap();
+        assert!(rows.is_empty());
+        assert_eq!((page.total, page.offset, page.limit), (5, 10, 2));
     }
 
     #[test]
@@ -215,7 +257,7 @@ mod tests {
     #[test]
     fn create_rejects_a_blank_name() {
         let forge = setup();
-        let before = RoleTypeStore::list(forge.conn()).unwrap().len();
+        let before = RoleTypeStore::list(forge.conn(), 0, 200).unwrap().1.total;
         for name in ["", "   "] {
             let err = RoleTypeStore::create(
                 forge.conn(),
@@ -228,7 +270,10 @@ mod tests {
             assert!(matches!(&err, ForgeError::Validation { message, .. }
                 if message == lookup::NAME_EMPTY));
         }
-        assert_eq!(RoleTypeStore::list(forge.conn()).unwrap().len(), before);
+        assert_eq!(
+            RoleTypeStore::list(forge.conn(), 0, 200).unwrap().1.total,
+            before
+        );
     }
 
     #[test]

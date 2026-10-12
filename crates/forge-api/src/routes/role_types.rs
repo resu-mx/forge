@@ -1,18 +1,28 @@
 //! RoleType CRUD routes.
 //!
-//! Simple lookup table — no pagination (resu-mx/forge#141).
+//! Simple lookup table. The list is paginated like TS (`offset` default 0, `limit` default 50
+//! clamped to 1..=200; resu-mx/forge#141).
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Deserialize;
 
 use forge_core::{CreateRoleTypeInput, RoleType, UpdateRoleTypeInput};
 use forge_sdk::db::RoleTypeStore;
 
 use crate::db::with_conn;
 use crate::error::ApiError;
-use crate::response::{ApiData, Created, NoContent};
+use crate::response::{ApiData, ApiList, Created, NoContent};
 use crate::state::SharedState;
+
+// -- Query params ────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Default)]
+pub struct RoleTypeListQuery {
+    pub offset: Option<i64>,
+    pub limit: Option<i64>,
+}
 
 // -- Handlers ────────────────────────────────────────────────────────
 
@@ -26,9 +36,15 @@ async fn create_role_type(
 
 async fn list_role_types(
     State(state): State<SharedState>,
-) -> Result<Json<ApiData<Vec<RoleType>>>, ApiError> {
-    let data = with_conn(&state, move |conn| RoleTypeStore::list(conn)).await?;
-    Ok(Json(ApiData { data }))
+    Query(q): Query<RoleTypeListQuery>,
+) -> Result<Json<ApiList<RoleType>>, ApiError> {
+    let offset = q.offset.unwrap_or(0).max(0);
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+
+    let (data, pagination) =
+        with_conn(&state, move |conn| RoleTypeStore::list(conn, offset, limit)).await?;
+
+    Ok(Json(ApiList { data, pagination }))
 }
 
 async fn get_role_type(
