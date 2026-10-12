@@ -103,11 +103,29 @@ async fn update_job_description(
     Ok(Json(ApiData { data: result }))
 }
 
+/// `DELETE /job-descriptions/:id` (TS job-descriptions.ts:75-93). Its links to resumes cascade
+/// away with the JD, so they are read first. Each of those resumes had its generated tagline built
+/// partly from this JD, and it must not keep quoting it, so it is regenerated from what remains
+/// (resu-mx/forge#72). One transaction: a failure leaves the JD and every tagline as they were. An
+/// unknown JD is a 404 and regenerates nothing.
 async fn delete_job_description(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Result<NoContent, ApiError> {
-    with_conn(&state, move |conn| JdStore::delete(conn, &id)).await?;
+    with_conn(&state, move |conn| {
+        let tx = conn.unchecked_transaction()?;
+        let linked: Vec<String> = JdResumeStore::list_by_jd(&tx, &id)?
+            .into_iter()
+            .map(|link| link.resume_id)
+            .collect();
+        JdStore::delete(&tx, &id)?;
+        for resume_id in &linked {
+            tagline::regenerate(&tx, resume_id)?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
+    .await?;
     Ok(NoContent)
 }
 

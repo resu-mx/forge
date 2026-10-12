@@ -64,12 +64,30 @@ describe('GET /resumes/:id/tagline', () => {
     expect(data).toEqual({ generated_tagline: null, tagline_override: null, resolved: '', has_override: false })
   })
 
-  // Pins today's TS behaviour; resu-mx/forge#72 decides whether resolved should trim.
-  test('a whitespace-only override is resolved as-is but has_override is false', async () => {
+  // resu-mx/forge#72: a blank override (empty or whitespace-only, only possible for a row written
+  // directly) is no override. `resolved` and `has_override` agree, and the stored text is untouched.
+  test('a whitespace-only override is no override: resolved is the generated tagline', async () => {
     const id = seedResume(ctx.db)
     setTaglines(id, GENERATED, '   ')
     const { data } = await (await apiRequest(ctx.app, 'GET', `/resumes/${id}/tagline`)).json()
-    expect(data.resolved).toBe('   ')
+    expect(data).toEqual({
+      generated_tagline: GENERATED, tagline_override: '   ', resolved: GENERATED, has_override: false,
+    })
+  })
+
+  test('an empty-string override is no override either', async () => {
+    const id = seedResume(ctx.db)
+    setTaglines(id, GENERATED, '')
+    const { data } = await (await apiRequest(ctx.app, 'GET', `/resumes/${id}/tagline`)).json()
+    expect(data.resolved).toBe(GENERATED)
+    expect(data.has_override).toBe(false)
+  })
+
+  test('a blank override with nothing generated resolves to an empty string, not the whitespace', async () => {
+    const id = seedResume(ctx.db)
+    setTaglines(id, null, '   ')
+    const { data } = await (await apiRequest(ctx.app, 'GET', `/resumes/${id}/tagline`)).json()
+    expect(data.resolved).toBe('')
     expect(data.has_override).toBe(false)
   })
 
@@ -232,5 +250,146 @@ describe('POST /resumes/:id/tagline/regenerate', () => {
 
   test('unknown resume answers 404 NOT_FOUND', async () => {
     await expectResumeNotFound(await regenerate(MISSING))
+  })
+})
+
+// resu-mx/forge#72: one rule for blank tagline text. The header the compilers build agrees with
+// `resolved` and `has_override`: a blank value is absent, at every step of the fallback chain.
+describe('a blank tagline column in the rendered header', () => {
+  const headerTagline = async (id: string): Promise<string> => {
+    const ir = await (await apiRequest(ctx.app, 'GET', `/export/resume/${id}?format=json`)).json()
+    return ir.data.header.tagline
+  }
+
+  test('a whitespace-only override falls back to the generated tagline', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    seedResumeSection(ctx.db, id, 'Experience', 'experience')
+    setTaglines(id, GENERATED, '   ')
+    expect(await headerTagline(id)).toBe(GENERATED)
+    const md = await (await apiRequest(ctx.app, 'GET', `/export/resume/${id}?format=markdown`)).text()
+    expect(md).toContain(GENERATED)
+  })
+
+  test('an empty-string override falls back to the generated tagline', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    seedResumeSection(ctx.db, id, 'Experience', 'experience')
+    setTaglines(id, GENERATED, '')
+    expect(await headerTagline(id)).toBe(GENERATED)
+  })
+
+  test('a blank generated tagline falls back to the target role', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    seedResumeSection(ctx.db, id, 'Experience', 'experience')
+    setTaglines(id, '   ', null)
+    expect(await headerTagline(id)).toBe('Cloud Engineer')
+  })
+
+  test('a real override still wins over the generated tagline', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    seedResumeSection(ctx.db, id, 'Experience', 'experience')
+    setTaglines(id, GENERATED, OVERRIDE)
+    expect(await headerTagline(id)).toBe(OVERRIDE)
+  })
+})
+
+describe('PATCH /resumes/:id regenerates the tagline when target_role changes', () => {
+  /** Link a JD by SQL, so this block doesn't depend on POST /job-descriptions/:id/resumes. */
+  function linkJd(resumeId: string, rawText: string): string {
+    const jdId = seedJobDescription(ctx.db, { rawText })
+    ctx.db.run('INSERT INTO job_description_resumes (job_description_id, resume_id) VALUES (?, ?)', [jdId, resumeId])
+    return jdId
+  }
+  const patchResume = (id: string, body: unknown) => apiRequest(ctx.app, 'PATCH', `/resumes/${id}`, body)
+
+  test('a changed role rebuilds the generated tagline with the new prefix', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    linkJd(id, 'Kubernetes Terraform Python')
+    await apiRequest(ctx.app, 'POST', `/resumes/${id}/tagline/regenerate`)
+    expect(row(id).generated_tagline!.startsWith('Cloud Engineer -- ')).toBe(true)
+    ctx.db.run('UPDATE resumes SET tagline_override = ? WHERE id = ?', [OVERRIDE, id])
+
+    const res = await patchResume(id, { target_role: 'Staff SRE' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.target_role).toBe('Staff SRE')
+
+    // (The Resume the route answers with has no tagline columns; read them from the store.)
+    const stored = row(id)
+    expect(stored.generated_tagline!.startsWith('Staff SRE -- ')).toBe(true)
+    // The override is never written by regeneration.
+    expect(stored.tagline_override).toBe(OVERRIDE)
+  })
+
+  test('the same role, or a different field, leaves the generated tagline alone', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    linkJd(id, 'Kubernetes Terraform Python')
+    setTaglines(id, 'seeded', null)
+
+    expect((await patchResume(id, { target_role: 'Cloud Engineer' })).status).toBe(200)
+    expect(row(id).generated_tagline).toBe('seeded')
+    expect((await patchResume(id, { name: 'Renamed' })).status).toBe(200)
+    expect(row(id).generated_tagline).toBe('seeded')
+  })
+
+  test('a changed role with no linked JD leaves the generated tagline empty', async () => {
+    const id = seedResume(ctx.db, { targetRole: 'Cloud Engineer' })
+    const res = await patchResume(id, { target_role: 'Staff SRE' })
+    expect(res.status).toBe(200)
+    expect(row(id).generated_tagline).toBeNull()
+  })
+
+  test('an unknown resume answers 404 and writes nothing', async () => {
+    const res = await patchResume(MISSING, { target_role: 'Staff SRE' })
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('DELETE /job-descriptions/:id regenerates the taglines of its linked resumes', () => {
+  function linkJd(resumeId: string, rawText: string): string {
+    const jdId = seedJobDescription(ctx.db, { rawText })
+    ctx.db.run('INSERT INTO job_description_resumes (job_description_id, resume_id) VALUES (?, ?)', [jdId, resumeId])
+    return jdId
+  }
+  const regenerate = (id: string) => apiRequest(ctx.app, 'POST', `/resumes/${id}/tagline/regenerate`)
+
+  test('each linked resume is rebuilt from the JDs it still has, and cleared when none remain', async () => {
+    const both = seedResume(ctx.db, { targetRole: 'SRE' })
+    const only = seedResume(ctx.db, { targetRole: 'SRE' })
+    const doomed = linkJd(both, 'kafka kubernetes terraform')
+    linkJd(both, 'python django postgres')
+    ctx.db.run('INSERT INTO job_description_resumes (job_description_id, resume_id) VALUES (?, ?)', [doomed, only])
+    await regenerate(both)
+    await regenerate(only)
+    const before = row(both).generated_tagline
+    expect(before).toContain('kafka')
+    expect(row(only).generated_tagline).toContain('kafka')
+    ctx.db.run('UPDATE resumes SET tagline_override = ? WHERE id = ?', [OVERRIDE, both])
+
+    const res = await apiRequest(ctx.app, 'DELETE', `/job-descriptions/${doomed}`)
+    expect(res.status).toBe(204)
+
+    // `both` still has the second JD: rebuilt from it alone, so it no longer quotes the deleted one.
+    const after = row(both)
+    expect(after.generated_tagline).not.toContain('kafka')
+    expect(after.generated_tagline).toContain('python')
+    expect(after.tagline_override).toBe(OVERRIDE)
+    // `only` had nothing else: cleared.
+    expect(row(only).generated_tagline).toBeNull()
+  })
+
+  test('a resume the JD was not linked to is untouched', async () => {
+    const linked = seedResume(ctx.db)
+    const other = seedResume(ctx.db)
+    const jd = linkJd(linked, 'kafka kubernetes')
+    setTaglines(other, 'seeded', null)
+
+    expect((await apiRequest(ctx.app, 'DELETE', `/job-descriptions/${jd}`)).status).toBe(204)
+    expect(row(other)).toEqual({ generated_tagline: 'seeded', tagline_override: null, updated_at: OLD })
+  })
+
+  test('an unknown JD answers 404 and regenerates nothing', async () => {
+    const id = seedResume(ctx.db)
+    setTaglines(id, 'seeded', null)
+    expect((await apiRequest(ctx.app, 'DELETE', `/job-descriptions/${MISSING}`)).status).toBe(404)
+    expect(row(id).generated_tagline).toBe('seeded')
   })
 })
