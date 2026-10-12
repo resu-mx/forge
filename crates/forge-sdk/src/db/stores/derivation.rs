@@ -42,9 +42,7 @@ impl DerivationStore {
             ],
         ) {
             Ok(_) => {}
-            Err(rusqlite::Error::SqliteFailure(err, _))
-                if err.code == rusqlite::ErrorCode::ConstraintViolation =>
-            {
+            Err(e) if forge_core::is_unique(&e) => {
                 return Err(ForgeError::Conflict {
                     message: format!(
                         "A derivation is already in progress for {} {}",

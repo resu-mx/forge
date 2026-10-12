@@ -12,24 +12,6 @@ use forge_core::{
     Pagination, UpdateContact,
 };
 
-/// A link to a missing contact or target breaks the junction's FOREIGN KEY, and
-/// `INSERT OR IGNORE` does not cover foreign keys. TS answers 400 VALIDATION_ERROR
-/// (packages/core/src/storage/error-mapper.ts:17). Fold into resu-mx/forge#98's
-/// central mapping when that lands.
-fn link_error(e: rusqlite::Error, junction: &str) -> ForgeError {
-    if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
-        if err.code == rusqlite::ErrorCode::ConstraintViolation
-            && msg.as_deref().unwrap_or("").contains("FOREIGN KEY")
-        {
-            return ForgeError::Validation {
-                message: format!("{junction}: the contact or the linked record does not exist"),
-                field: None,
-            };
-        }
-    }
-    e.into()
-}
-
 /// Data-access repository for contacts and their junction tables.
 pub struct ContactStore;
 
@@ -264,7 +246,7 @@ impl ContactStore {
              VALUES (?1, ?2, ?3)",
             params![contact_id, org_id, relationship.as_ref()],
         )
-        .map_err(|e| link_error(e, "contact_organizations"))?;
+        ?;
         Ok(())
     }
 
@@ -325,7 +307,7 @@ impl ContactStore {
              VALUES (?1, ?2, ?3)",
             params![contact_id, jd_id, relationship.as_ref()],
         )
-        .map_err(|e| link_error(e, "contact_job_descriptions"))?;
+        ?;
         Ok(())
     }
 
@@ -387,8 +369,7 @@ impl ContactStore {
             "INSERT OR IGNORE INTO contact_resumes (contact_id, resume_id, relationship)
              VALUES (?1, ?2, ?3)",
             params![contact_id, resume_id, relationship.as_ref()],
-        )
-        .map_err(|e| link_error(e, "contact_resumes"))?;
+        )?;
         Ok(())
     }
 

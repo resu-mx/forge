@@ -353,7 +353,9 @@ impl SourceStore {
 
     /// Delete a source and its extension row (cascade via FK).
     pub fn delete(conn: &Connection, id: &str) -> Result<(), ForgeError> {
-        let deleted = conn.execute("DELETE FROM sources WHERE id = ?1", params![id])?;
+        let deleted = conn
+            .execute("DELETE FROM sources WHERE id = ?1", params![id])
+            .map_err(|e| ForgeError::from_sqlite_delete(e, "source"))?;
         if deleted == 0 {
             return Err(ForgeError::NotFound {
                 entity_type: "source".into(),

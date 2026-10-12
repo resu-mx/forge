@@ -347,7 +347,9 @@ impl BulletStore {
                 message: "Cannot delete bullet with existing perspectives".into(),
             });
         }
-        let deleted = conn.execute("DELETE FROM bullets WHERE id = ?1", params![id])?;
+        let deleted = conn
+            .execute("DELETE FROM bullets WHERE id = ?1", params![id])
+            .map_err(|e| ForgeError::from_sqlite_delete(e, "bullet"))?;
         if deleted == 0 {
             return Err(ForgeError::NotFound {
                 entity_type: "bullet".into(),
@@ -379,21 +381,12 @@ impl BulletStore {
         bullet_id: &str,
         skill_id: &str,
     ) -> Result<Skill, ForgeError> {
-        match conn.execute(
+        // A dangling bullet or skill is an FK failure: the generic mapping answers 400.
+        // (The arm that used to turn `ForeignKey` into NotFound never fired.)
+        conn.execute(
             "INSERT OR IGNORE INTO bullet_skills (bullet_id, skill_id) VALUES (?1, ?2)",
             params![bullet_id, skill_id],
-        ) {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(match ForgeError::from(e) {
-                    ForgeError::ForeignKey { .. } => ForgeError::NotFound {
-                        entity_type: "bullet or skill".into(),
-                        id: format!("{bullet_id}/{skill_id}"),
-                    },
-                    other => other,
-                })
-            }
-        }
+        )?;
         Self::skill_by_id(conn, skill_id)?.ok_or_else(|| ForgeError::NotFound {
             entity_type: "skill".into(),
             id: skill_id.into(),

@@ -286,17 +286,13 @@ impl SummaryStore {
             params![summary_id, skill_id],
         )
         .map_err(|e| {
-            if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
-                if err.code == rusqlite::ErrorCode::ConstraintViolation {
-                    if msg.as_deref().unwrap_or("").contains("FOREIGN KEY") {
-                        return ForgeError::NotFound {
-                            entity_type: "skill or summary".into(),
-                            id: format!("summary={}, skill={}", summary_id, skill_id),
-                        };
-                    }
-                }
+            if forge_core::is_foreign_key(&e) {
+                return ForgeError::NotFound {
+                    entity_type: "skill or summary".into(),
+                    id: format!("summary={}, skill={}", summary_id, skill_id),
+                };
             }
-            ForgeError::Database { source: e }
+            e.into()
         })?;
         Ok(())
     }

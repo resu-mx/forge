@@ -38,11 +38,11 @@ pub enum ForgeError {
     /// feature is enabled (default for native targets; disabled for wasm32
     /// builds via `default-features = false` in dependents like forge-wasm).
     #[cfg(feature = "rusqlite")]
+    ///
+    /// `From<rusqlite::Error>` (in `sqlite_error`) turns constraint failures into
+    /// `Validation`/`Conflict`; only genuine database faults land here.
     #[error("database error: {source}")]
-    Database {
-        #[from]
-        source: rusqlite::Error,
-    },
+    Database { source: rusqlite::Error },
 
     /// Database error sourced from the wa-sqlite JS binding in the WASM
     /// browser runtime. Carries the JS-side message as a `String` because
@@ -75,7 +75,8 @@ impl ForgeError {
             Self::NotFound { .. } => "NOT_FOUND",
             Self::Validation { .. } => "VALIDATION_ERROR",
             Self::Conflict { .. } => "CONFLICT",
-            Self::ForeignKey { .. } => "FK_VIOLATION",
+            // TS maps FK_VIOLATION to VALIDATION_ERROR and never sends the former.
+            Self::ForeignKey { .. } => "VALIDATION_ERROR",
             #[cfg(feature = "rusqlite")]
             Self::Database { .. } => "DATABASE_ERROR",
             Self::WasmDatabase(_) => "DATABASE_ERROR",

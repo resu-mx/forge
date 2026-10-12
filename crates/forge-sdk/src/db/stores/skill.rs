@@ -40,17 +40,13 @@ impl SkillStore {
             params![id, capitalized, cat.as_ref()],
         )
         .map_err(|e| {
-            if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
-                if err.code == rusqlite::ErrorCode::ConstraintViolation {
-                    // UNIQUE constraint on skills.name
-                    if msg.as_deref().unwrap_or("").contains("UNIQUE") {
-                        return ForgeError::Conflict {
-                            message: format!("Skill with name '{}' already exists", capitalized),
-                        };
-                    }
-                }
+            // UNIQUE constraint on skills.name; anything else gets the generic mapping.
+            if forge_core::is_unique(&e) {
+                return ForgeError::Conflict {
+                    message: format!("Skill with name '{}' already exists", capitalized),
+                };
             }
-            ForgeError::Database { source: e }
+            e.into()
         })?;
 
         Self::get(conn, &id)?
@@ -308,17 +304,13 @@ impl SkillStore {
             params![skill_id, domain_id],
         )
         .map_err(|e| {
-            if let rusqlite::Error::SqliteFailure(ref err, ref msg) = e {
-                if err.code == rusqlite::ErrorCode::ConstraintViolation {
-                    if msg.as_deref().unwrap_or("").contains("FOREIGN KEY") {
-                        return ForgeError::NotFound {
-                            entity_type: "domain".into(),
-                            id: domain_id.into(),
-                        };
-                    }
-                }
+            if forge_core::is_foreign_key(&e) {
+                return ForgeError::NotFound {
+                    entity_type: "domain".into(),
+                    id: domain_id.into(),
+                };
             }
-            ForgeError::Database { source: e }
+            e.into()
         })?;
 
         Ok(())

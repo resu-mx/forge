@@ -12,7 +12,7 @@ still the primary runtime.
 
 | Crate | Owns | Forge deps |
 |---|---|---|
-| `forge-core` | types, enums, shapes. **No logic, no I/O** | none |
+| `forge-core` | types, enums, shapes. **No logic, no I/O** (one exception: `From<rusqlite::Error> for ForgeError`, which must sit beside the type) | none |
 | `forge-sdk` | stores (repositories), services, the migration runner, the IR compiler | core |
 | `forge-ai` | LLM prompts, response validation, text analysis. **Never calls an LLM API** | none |
 | `forge-typst` | Typst → PDF in-process: no subprocess, no system fonts (bundled in `fonts/`) | core, sdk |
