@@ -31,7 +31,8 @@ pub mod summaries;
 pub mod supporting;
 pub mod templates;
 
-use axum::http::StatusCode;
+use axum::extract::OriginalUri;
+use axum::http::{Method, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::Json;
 use axum::Router;
@@ -70,12 +71,15 @@ pub fn api_router() -> Router<SharedState> {
         .merge(integrity::router())
         .merge(export::router())
         .merge(extension::router())
-        .merge(templates::router());
+        .merge(templates::router())
+        // Must come after every route is added: it covers the routes that exist when it is set.
+        .method_not_allowed_fallback(method_not_allowed);
 
     Router::new().nest("/api", api).fallback(fallback)
 }
 
-async fn fallback(method: axum::http::Method, uri: axum::http::Uri) -> impl IntoResponse {
+/// The TS server's answer for a route it doesn't have: 404, `Route not found: <METHOD> <path>`.
+fn route_not_found(method: &Method, uri: &Uri) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
         Json(json!({
@@ -85,4 +89,20 @@ async fn fallback(method: axum::http::Method, uri: axum::http::Uri) -> impl Into
             }
         })),
     )
+}
+
+/// A path nothing serves.
+async fn fallback(method: Method, uri: Uri) -> impl IntoResponse {
+    route_not_found(&method, &uri)
+}
+
+/// A path the API serves, hit with a method it doesn't (a `PATCH` on a route that has only `GET`
+/// and `DELETE`). axum answers that with a bare 405 by default; the TS server answers it exactly
+/// like an unknown path, because Hono sends a method mismatch to `notFound`
+/// (`packages/core/src/routes/server.ts`). Rust does the same, so the two runtimes agree and the
+/// browser dispatcher's existing 404-to-501 rewrite covers "this endpoint is not ported yet" for
+/// methods as well as paths (resu-mx/forge#124). `OriginalUri`, because the nested router has
+/// stripped the `/api` prefix from `Uri` and the message must show the full path.
+async fn method_not_allowed(method: Method, OriginalUri(uri): OriginalUri) -> impl IntoResponse {
+    route_not_found(&method, &uri)
 }

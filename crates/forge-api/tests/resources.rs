@@ -205,15 +205,46 @@ async fn entry_reorder_is_a_patch_that_answers_data_null() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"data": null}));
-    // The old method is gone.
-    let (status, _) = call(
+    // The old method is gone. The path exists but not for POST, and the API answers that like the
+    // TS server does for any route it doesn't have: 404 "Route not found", not a bare 405.
+    let (status, body) = call(
         &r,
         "POST",
         &format!("/api/resumes/{id}/entries/reorder"),
         Some(json!({"entries": []})),
     )
     .await;
-    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
+    assert_eq!(
+        body["error"]["message"],
+        format!("Route not found: POST /api/resumes/{id}/entries/reorder")
+    );
+}
+
+/// resu-mx/forge#124: a path the API serves, hit with a method it doesn't, is answered exactly
+/// like a path it doesn't serve (the TS server sends both to `notFound`). The message names the
+/// full path, `/api` prefix included.
+#[tokio::test]
+async fn a_known_path_with_an_unserved_method_is_a_404_like_an_unknown_path() {
+    let r = router();
+    // `GET /api/health` exists; nothing else does.
+    for method in ["POST", "PATCH", "PUT", "DELETE"] {
+        let (status, body) = call(&r, method, "/api/health", None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method}");
+        assert_eq!(body["error"]["code"], "NOT_FOUND", "{method}");
+        assert_eq!(
+            body["error"]["message"],
+            format!("Route not found: {method} /api/health"),
+            "{method}"
+        );
+    }
+    // The served method still works, and an unknown path keeps its own 404.
+    let (status, _) = call(&r, "GET", "/api/health", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = call(&r, "GET", "/api/nope", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["message"], "Route not found: GET /api/nope");
 }
 
 #[tokio::test]
