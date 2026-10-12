@@ -11,8 +11,9 @@
  */
 
 import { Database } from "bun:sqlite";
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { DB_PATH_REQUIRED_MESSAGE, getDatabase } from "./connection";
 import { migrateHeadersToSummaries } from './migrations/006_summaries_data'
 
 /**
@@ -129,4 +130,49 @@ export function runMigrations(db: Database, migrationsDir: string): void {
       throw err;
     }
   }
+}
+
+/** Where the migration files live: the same directory the server migrates from at boot. */
+const MIGRATIONS_DIR = resolve(import.meta.dir, "migrations");
+
+/**
+ * The `migrate` script (`bun run --filter @forge/core migrate`, `just migrate`, the Docker test
+ * image). Does what the server does at boot: opens `FORGE_DB_PATH` with the standard pragmas
+ * (creating the file and its directory), applies every pending migration, and reports each one.
+ *
+ * Returns the process exit code: 0 on success (including "already up to date"), 1 when
+ * `FORGE_DB_PATH` is unset or a migration fails. `runMigrations` is unchanged and still rolls
+ * back the failing migration.
+ *
+ * `env` and `migrationsDir` are parameters so the command can be tested without a process.
+ */
+export function runMigrateCommand(
+  env: Record<string, string | undefined> = process.env,
+  migrationsDir: string = MIGRATIONS_DIR,
+): 0 | 1 {
+  const raw = env.FORGE_DB_PATH;
+  if (!raw) {
+    console.error(DB_PATH_REQUIRED_MESSAGE);
+    return 1;
+  }
+
+  const dbPath = resolve(raw);
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const db = getDatabase(dbPath);
+  try {
+    runMigrations(db, migrationsDir);
+    return 0;
+  } catch (err) {
+    // `runMigrations` already printed which file failed; say why.
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  } finally {
+    db.close();
+  }
+}
+
+// Run only when this file is executed directly, never when it is imported (the server and the
+// tests import `runMigrations` from here and must not migrate as a side effect).
+if (import.meta.main) {
+  process.exit(runMigrateCommand());
 }
