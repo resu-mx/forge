@@ -1,68 +1,79 @@
 # forge-core SPEC
 
-> Canonical type definitions for the Forge resume builder.
-> TS source: `packages/core/src/types/index.ts`
+> The shared vocabulary of the Forge workspace: entity structs, enums, input and filter types,
+> the resume IR, the skill-graph contract and `ForgeError`. Read it with `crates/AGENTS.md`.
 
-## Purpose
+## Purpose and dependencies
 
-forge-core is the shared vocabulary crate. It defines all entity structs,
-enums, input/output types, IR shapes, and error types used across the Rust
-workspace. It contains **no business logic and performs no I/O**.
+forge-core defines the types every other crate speaks. It contains **no business logic and
+performs no I/O**. The one piece of logic in it is `From<rusqlite::Error> for ForgeError`, which
+has to sit beside the type (orphan rule).
 
-## Module Structure
+- Forge deps: none.
+- Deps: `serde`, `serde_json`, `chrono`, `thiserror`, `uuid`, `strum`, and `rusqlite` (optional).
+  `chrono` is used only by `util::now_iso`.
 
-```
-src/
-├── lib.rs          # re-exports types::*
-└── types/
-    ├── mod.rs      # submodule declarations + glob re-exports
-    ├── enums.rs    # status unions, category enums, type discriminators
-    ├── entities.rs # database row shapes (entity structs)
-    ├── inputs.rs   # create/update input structs
-    ├── common.rs   # result types, pagination, filters, constants
-    └── ir.rs       # resume intermediate representation
-```
+## Features
+
+`default = []`. Features are opt-in, so no consumer inherits one by accident. The reason is in
+the comment in `Cargo.toml`: cargo's feature unification can switch a default-on feature back on
+for a `default-features = false` consumer.
+
+| Feature | Adds |
+|---|---|
+| `rusqlite` | `types/sqlite_error.rs` (`From<rusqlite::Error> for ForgeError`, `ForgeError::from_sqlite_delete`, `is_foreign_key`, `is_unique`) and `ForgeError::Database` |
+
+The workspace declares forge-core with `default-features = false`. Every consumer enables
+`rusqlite` today, `forge-wasm` included: `rusqlite` reaches the browser through `sqlite-wasm-rs`
+(ADR 0001). `ForgeError::WasmDatabase(String)` is not gated; `forge-wasm` builds it from the
+JS-side message.
+
+## Modules
+
+TS paths are relative to `packages/core/src/`. Each `types/*.rs` header names the section of
+`types/index.ts` it mirrors.
+
+| Module | Owns | TS source |
+|---|---|---|
+| `lib.rs` | module declarations; re-exports `types::*`, `new_id`, `now_iso` | `types/index.ts` |
+| `serde_util.rs` | `double_option` (absent vs `null` on PATCH inputs), `int_or_bool` (a 0/1 column the wire sends as a boolean) | none |
+| `util.rs` | `new_id()` (UUID v4 string), `now_iso()` (UTC, second precision) | none |
+| `types/mod.rs` | submodule declarations and glob re-exports | `types/index.ts` |
+| `types/enums.rs` | status unions, category enums, type discriminators | `types/index.ts` (status unions) |
+| `types/entities.rs` | database row shapes, and the `*WithOrg`-style joined shapes | `types/index.ts` (core entities) |
+| `types/inputs.rs` | create and update input structs | `types/index.ts` (input types) |
+| `types/common.rs` | `ForgeError`, results, pagination, filters, shared constants | `types/index.ts` (result types, filters) |
+| `types/ir.rs` | the resume intermediate representation | `types/index.ts` (Resume IR) |
+| `types/skill_graph.rs` | `skill_graph_*` row shapes, `EdgeType`, `NodeSource`, the `SkillGraphTraversal` trait | none (migration 052; `docs/src/architecture/graphs/skills.md`) |
+| `types/sqlite_error.rs` | SQLite constraint failures to `ForgeError` (feature `rusqlite`) | `storage/error-mapper.ts` |
+| `types/tests.rs` | serde conformance tests against the TS wire format | `types/index.ts` |
+
+`SkillGraphTraversal` is implemented by `SqlSkillGraphStore` (forge-sdk) and by
+`SkillGraphRuntime` (forge-wasm).
 
 ## Conventions
 
-### Serde
+- **Serde.** Types derive `Serialize` and `Deserialize`. Enums use `rename_all = "snake_case"`
+  plus the strum derives (`Display`, `EnumString`, `AsRefStr`) for the SQL text form; the
+  skill-graph enums are kebab-case. Tagged unions use `tag = "kind"` or `tag = "type"` to match
+  the TS discriminated unions. `#[serde(flatten)]` models `extends`.
+- **Nullability.** `T | null | undefined` is `Option<T>`. A PATCH input where "absent" (leave
+  alone) differs from `null` (clear) is `Option<Option<T>>` with `#[serde(default,
+  deserialize_with = "double_option")]`.
+- **IDs and timestamps.** IDs are `String` UUIDs from `forge_core::new_id()`. Timestamps are
+  `String`, ISO 8601, from `now_iso()`; nothing parses them at the type level.
+- **Booleans.** SQLite has no boolean. Entity fields mirror their column: some are `i32`
+  (`worked`), some are `bool` (`is_headquarters`). Read the struct. Computed IR fields are
+  `bool`. `int_or_bool` lets an input accept either on the wire.
+- **`ForgeError`** is an enum, not a struct. `code()` gives the wire code and `client_message()`
+  the text a client sees; `Display` keeps the variant label for logs. `Serialize` is
+  hand-written and emits `{ code, message }`. `forge-api` (`crates/forge-api/src/error.rs`)
+  maps the code to an HTTP status.
 
-All types derive `Serialize, Deserialize`. Enums use `#[serde(rename_all = "snake_case")]`
-to match the TS/JSON wire format. Tagged unions use `#[serde(tag = "kind")]` or
-`#[serde(tag = "type")]` to match TS discriminated unions.
+### SQLite constraint mapping
 
-### Nullability
-
-TS `field?: T | null` maps to Rust `Option<T>`. For update inputs where
-"absent" (don't change) differs from "null" (clear the value), use
-`Option<Option<T>>` — outer None = absent, Some(None) = set null.
-
-### IDs
-
-All entity IDs are `String` (UUIDs stored as TEXT in SQLite). Generated
-via `uuid::Uuid::new_v4().to_string()` at the repository layer.
-
-### Timestamps
-
-Stored as `String` in ISO 8601 format, matching SQLite TEXT columns. No
-chrono parsing at the type level — parsing happens in services if needed.
-
-### Boolean-like integers
-
-SQLite STRICT mode uses INTEGER for booleans. Entity structs use `i32`
-for fields like `is_headquarters`, `worked`, `is_in_progress` to match
-the storage layer. IR types use `bool` for computed fields like
-`is_cloned`, `is_override`.
-
-### Error type
-
-`ForgeError` is a structured error with `code`, `message`, and optional
-`details` (serde_json::Value). All fallible operations across the
-workspace return `Result<T, ForgeError>`.
-
-With the `rusqlite` feature, `From<rusqlite::Error> for ForgeError` (`types/sqlite_error.rs`)
-maps SQLite constraint failures to the TS codes (TS: `storage/error-mapper.ts`), so every
-store's `?` gets it and both hosts (forge-server, forge-wasm) behave alike:
+With the `rusqlite` feature, every store's `?` gets this mapping, so both hosts behave alike
+(TS: `storage/error-mapper.ts`):
 
 | SQLite | Extended code | `ForgeError` | Code / status |
 |---|---|---|---|
@@ -71,33 +82,26 @@ store's `?` gets it and both hosts (forge-server, forge-wasm) behave alike:
 | FOREIGN KEY on delete without RESTRICT | 787 | `Conflict` via `ForgeError::from_sqlite_delete` | `CONFLICT` 409 |
 | UNIQUE / PRIMARY KEY | 2067 / 1555 | `Conflict` | `CONFLICT` 409 |
 | CHECK, NOT NULL | 275, 1299 | `Validation` | `VALIDATION_ERROR` 400 |
-| anything else | n/a | `Database` | `DATABASE_ERROR` 500 |
+| anything else (including a trigger's own `RAISE`) | n/a | `Database` | `DATABASE_ERROR` 500 |
 
-`ForgeError::ForeignKey` serializes as `VALIDATION_ERROR` (TS never sends `FK_VIOLATION`).
-Stores keep a targeted mapping only where TS answers differently (skill name → 409 with its own
-message; org alias duplicate → 400, as `routes/campuses.ts` does).
+`ForgeError::ForeignKey` serializes as `VALIDATION_ERROR`: TS never sends `FK_VIOLATION`. A
+store overrides the mapping only where TS answers differently (a duplicate skill name, in
+`db/stores/skill.rs`; a duplicate org alias, in `db/stores/campus.rs`).
 
-## Rust Divergences from TS
+## Divergences from TS
 
-| TS Pattern | Rust Equivalent |
+| TS | Rust |
 |---|---|
 | `interface Foo extends Bar` | `struct Foo { #[serde(flatten)] base: Bar, ... }` |
-| `type T = 'a' \| 'b'` | `enum T { A, B }` with serde rename |
+| `type T = 'a' \| 'b'` | `enum T { A, B }` with serde and strum renames |
 | `T \| null \| undefined` | `Option<T>` |
-| `field?: T` (update input) | `Option<Option<T>>` for null-clearable |
+| `field?: T` (nullable update input) | `Option<Option<T>>` |
 | `Uint8Array` / `Float32Array` | `Vec<u8>` / `Vec<f32>` |
 | `unknown` | `serde_json::Value` |
-| `Result<T>` | `ForgeResult<T>` (avoids std conflict) |
 
-## Dependencies
+## What does not belong here
 
-- `serde` + `serde_json` — serialization
-- `chrono` — date/time types (used sparingly; timestamps are String)
-
-## What Does NOT Belong Here
-
-- Database access (→ forge-sdk)
-- Business logic (→ forge-sdk)
-- LLM interactions (→ forge-ai)
-- HTTP routing (→ forge-server)
-- Configuration types (→ each binary crate owns its own config)
+- Database access and business rules: the `forge-sdk` stores.
+- LLM prompts and response checks: `forge-ai`.
+- HTTP routing and status codes: `forge-api`.
+- Hosting and configuration: `forge-server`, `forge-wasm`, and each binary crate.

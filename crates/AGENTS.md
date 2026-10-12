@@ -23,7 +23,8 @@ still the primary runtime.
 
 The `SPEC.md` files in `forge-core` and `forge-sdk` map each module to its TypeScript source.
 `forge-sdk` embeds the TS SQL migrations (`packages/core/src/db/migrations/`) with
-`include_str!`, so a new migration there reaches both runtimes.
+`include_str!`, so a migration reaches both runtimes once it has an entry in `MIGRATIONS`
+(`crates/forge-sdk/src/db/migrate.rs`). The list is hand-maintained: add the entry with the file.
 
 ## Invariants
 
