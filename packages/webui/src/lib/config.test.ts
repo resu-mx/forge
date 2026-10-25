@@ -3,7 +3,15 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_DATA_URL, DEFAULT_ID_URL, resolveOrigin } from './config-defaults.js'
-import { dataUrl, hostCanCarrySession, idUrl, signInAvailable, syncAvailable } from './config'
+import { cloudSyncOn, dataUrl, hostCanCarrySession, idUrl, signInAvailable, syncAvailable } from './config'
+
+describe('the cloud sync build switch', () => {
+  test('is on only when the build variable is exactly "on"; unset, it is off', () => {
+    // Off by default, so a build can carry the feature before the snapshot service is deployed.
+    expect(cloudSyncOn).toBe(process.env.VITE_CLOUD_SYNC === 'on')
+    if (process.env.VITE_CLOUD_SYNC === undefined) expect(cloudSyncOn).toBe(false)
+  })
+})
 
 describe('service origins', () => {
   test('default to the production hosts', () => {

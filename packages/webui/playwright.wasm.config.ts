@@ -34,7 +34,8 @@ export default defineConfig({
     // Point the account and snapshot services at hosts that exist only inside the specs
     // (auth.spec.ts stubs them). A dev server you started yourself and reuse here keeps the
     // real defaults, and then that spec cannot see its stubs: start it with these two variables.
-    env: { VITE_ID_URL: E2E_ID_URL, VITE_DATA_URL: E2E_DATA_URL },
+    // Cloud sync is off in a normal build until the snapshot service is live; the specs need it on.
+    env: { VITE_ID_URL: E2E_ID_URL, VITE_DATA_URL: E2E_DATA_URL, VITE_CLOUD_SYNC: 'on' },
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
   },

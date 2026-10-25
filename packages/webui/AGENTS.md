@@ -36,6 +36,34 @@ BetterAuth over Auth0) tells the app who you are; the contract is the snapshot-A
 - The wasm e2e build points both hosts at `*.e2e.test` (`e2e/wasm/e2e-hosts.ts`); `e2e/wasm/auth.spec.ts`
   stubs them with `page.route`. Stub them in any spec that needs the signed-in UI.
 
+## Cloud sync
+
+A signed-in person's database is backed up to the snapshot service and restored on another
+device. It exists only when the build switches it on (`VITE_CLOUD_SYNC=on`, off by default; the
+production build in `app-build.yml` sets it explicitly), in wasm mode, on a host that can carry the
+session cookie (`syncAvailable()`); elsewhere nothing is created, requested or rendered. The e2e
+config turns it on.
+
+- `src/lib/sync/engine.ts` and `decide.ts` are the engine and its decision table (pure, injected
+  dependencies, tested with fakes). `controller.ts` connects it to the session, runtime ownership,
+  `forge:changed`, page hide, toasts and the reload a pull asks for, and exposes one `view`.
+  `stores/sync.svelte.ts` holds that view in `$state.raw` and attaches the DOM listeners. Keep
+  logic in `$lib/sync`, not in the store.
+- `$state.raw`, not `$state`, for the view: the conflict object must keep its identity so a
+  dismissed dialog stays dismissed.
+- Wording lives in `src/lib/sync/copy.ts` as pure functions (status line, conflict dialog text,
+  error messages). Change words there, with its test.
+- `local-data.ts` decides whether this browser "has data". It counts only tables the schema never
+  seeds (sources, bullets, resumes, job descriptions); do not add a seeded table.
+- UI: `SyncIndicator` (sidebar, under the account), `SyncConflictDialog` (mounted once in the
+  layout; opens itself, always offers "Export this browser's data first", can be put away with
+  "Decide later"), and the "Cloud sync" card on Settings, Storage.
+- "Delete cloud copy" deletes the data, turns sync off in this browser and unbinds it; another
+  device that still syncs asks before uploading again. A browser bound to an empty cloud (it never
+  synced a copy) is not asked: its first edits upload as usual.
+- `e2e/wasm/cloud-sync.spec.ts` stubs both services with an in-memory snapshot server that
+  enforces what the real one does, and runs two browser contexts as two devices.
+
 ## Acceptance spec
 
 `e2e/wasm/core-loop.spec.ts` drives the browser-first core loop in Chromium with no server

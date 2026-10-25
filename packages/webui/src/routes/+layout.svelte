@@ -2,9 +2,11 @@
   import '$lib/styles/tokens.css'
   import '$lib/styles/base.css'
   import '$lib/stores/theme.svelte.ts'  // initializes theme on import
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { page } from '$app/state'
   import { ToastContainer } from '$lib/components'
+  import SyncConflictDialog from '$lib/components/SyncConflictDialog.svelte'
+  import SyncIndicator from '$lib/components/SyncIndicator.svelte'
   import { JDOverlayHost } from '$lib/components/overlays'
   import ProfileMenu from '$lib/components/ProfileMenu.svelte'
   import StorageBanner from '$lib/components/StorageBanner.svelte'
@@ -12,6 +14,7 @@
   import ChainViewModal from '$lib/components/ChainViewModal.svelte'
   import { chainViewState, closeChainView } from '$lib/stores/chain-view.svelte'
   import { getSession, refreshSession, signIn, signOut } from '$lib/stores/session.svelte'
+  import { setSyncAccount } from '$lib/stores/sync.svelte'
   import { navigation, isNavGroup } from '$lib/nav'
   import { forge } from '$lib/sdk'
 
@@ -21,6 +24,15 @@
   // account UI renders.
   let session = $derived(getSession())
   let accountLabel = $derived(session.user?.email ?? session.user?.name ?? 'Signed in')
+
+  // Tell cloud sync who is signed in. The session is `unknown` until the account service answers,
+  // and sync waits for that. `untrack`: this effect only reads the session, so it must not re-run
+  // when sync's own state changes. A no-op where cloud sync does not exist.
+  $effect(() => {
+    const { state, storageId } = session
+    if (state === 'in' && storageId) untrack(() => setSyncAccount(storageId))
+    else if (state === 'out') untrack(() => setSyncAccount(null))
+  })
 
   // Profile data for sidebar button and menu
   let profileData = $state<any>(null)
@@ -151,6 +163,7 @@
             <span class="account-email" title={accountLabel} data-testid="account-email">{accountLabel}</span>
             <button class="btn btn-ghost btn-xs" onclick={signOut} disabled={session.busy}>Sign out</button>
           </div>
+          <SyncIndicator />
         {:else if session.state === 'out'}
           <div class="account-row" data-testid="account-signed-out">
             <button class="btn btn-primary btn-sm account-sign-in" onclick={signIn} disabled={session.busy}>
@@ -177,6 +190,9 @@
 />
 
 <ToastContainer />
+
+<!-- Cloud sync: opens itself when this browser and the cloud copy disagree. Renders nothing otherwise. -->
+<SyncConflictDialog />
 
 <!-- JD overlay: singleton mount. Host handles its own open/close state via
      the jdOverlayState store. Any consumer opens it via openJDOverlay(id). -->

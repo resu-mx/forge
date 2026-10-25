@@ -32,6 +32,13 @@ export function signInAvailable(hostname: string | undefined = currentHostname()
   return hostCanCarrySession(hostname)
 }
 
+/**
+ * Whether this build ships cloud sync switched on (`VITE_CLOUD_SYNC=on`). It is off by default, so a
+ * build can carry the feature before the snapshot service is deployed: nothing is shown or requested
+ * until the variable says `on`, and turning it back to anything else removes the feature again.
+ */
+export const cloudSyncOn: boolean = import.meta.env.VITE_CLOUD_SYNC === 'on'
+
 /** Whether cloud sync can run here: it needs the same cookie, so the same hosts. */
 export function syncAvailable(hostname: string | undefined = currentHostname()): boolean {
   return hostCanCarrySession(hostname)
