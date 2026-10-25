@@ -19,6 +19,8 @@ export function parseSyncRecord(raw: unknown): SyncRecord {
     lastSyncedEtag: stringOrNull(r.lastSyncedEtag),
     dirty: r.dirty === true,
     lastSyncAt: typeof r.lastSyncAt === 'number' && Number.isFinite(r.lastSyncAt) ? r.lastSyncAt : null,
+    // Only an explicit false turns sync off; anything else (absent, hand-edited) is on.
+    ...(r.syncEnabled === false ? { syncEnabled: false } : {}),
   }
 }
 

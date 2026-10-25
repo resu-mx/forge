@@ -20,6 +20,11 @@ export interface SyncRecord {
   dirty: boolean
   /** When the last successful sync check finished, in ms since the epoch. */
   lastSyncAt: number | null
+  /**
+   * False once the person turned cloud sync off here (or deleted their cloud copy): the engine then
+   * makes no request at all. Absent means on, so records written before this field existed stay valid.
+   */
+  syncEnabled?: boolean
 }
 
 /** Get and set the record. `localStorage` is synchronous, so this is too. */
@@ -134,6 +139,11 @@ export type ConflictReason =
   | 'account-switch'
   /** The cloud copy changed and so did this browser. */
   | 'diverged'
+  /**
+   * This browser had synced a cloud copy and it is gone (deleted, here or on another device), and this
+   * browser still holds data. Never uploaded again without asking.
+   */
+  | 'cloud-deleted'
 
 export type Decision =
   | { action: 'first-upload' | 'bind' | 'pull' | 'push' | 'noop' }
@@ -148,8 +158,12 @@ export interface DecideInput {
   localHasData: boolean
 }
 
-/** What the user picks at a conflict. */
-export type ConflictChoice = 'use-cloud' | 'replace-cloud'
+/**
+ * What the user picks at a conflict. `turn-off` always applies: stop syncing this browser. At a
+ * `cloud-deleted` conflict `replace-cloud` is "upload this browser's data again" and `use-cloud` does not
+ * apply (there is nothing to use).
+ */
+export type ConflictChoice = 'use-cloud' | 'replace-cloud' | 'turn-off'
 
 export interface SyncConflict {
   reason: ConflictReason
@@ -171,6 +185,8 @@ export type SyncStatus =
   | 'signed-out'
   /** Another tab owns the database; nothing syncs from this one. */
   | 'not-owner'
+  /** Cloud sync is turned off in this browser; no request is made. */
+  | 'off'
   | 'syncing'
   | 'synced'
   | 'conflict'
@@ -214,6 +230,8 @@ export type SyncEvent =
   | { type: 'synced'; action: Exclude<SyncAction, 'prompt'>; etag: string | null; at: number }
   /** A pull replaced the database: the page must reload to drop what it holds from the old one. */
   | { type: 'reload' }
+  /** The cloud copy was deleted on request and sync is now off here. */
+  | { type: 'cloud-deleted' }
   | { type: 'error'; error: SyncError }
   /** The session is gone (a 401). The engine stopped; call `setAccount` again after sign-in. */
   | { type: 'unauthorized' }
@@ -238,8 +256,21 @@ export interface SyncEngine {
   notifyChange(): void
   /** Push now if there is anything to push (the page is being hidden). */
   flush(): Promise<void>
-  /** Settle a conflict. `use-cloud` replaces this browser's data; `replace-cloud` replaces the cloud copy. */
+  /**
+   * Settle a conflict. `use-cloud` replaces this browser's data; `replace-cloud` replaces the cloud copy
+   * (or, at a `cloud-deleted` conflict, uploads this browser's data again); `turn-off` stops syncing here.
+   */
   resolveConflict(choice: ConflictChoice): Promise<void>
+  /**
+   * Delete the cloud copy (everything stored for the account, history included; it cannot be
+   * recovered), then turn sync off here and unbind this browser. Local data is untouched. If the
+   * request fails, sync stays on and the error is reported.
+   */
+  deleteCloudCopy(): Promise<void>
+  /** Turn cloud sync off in this browser: unbind it and make no further requests until `enable()`. */
+  disable(): Promise<void>
+  /** Turn cloud sync back on and check the cloud copy now. */
+  enable(): Promise<void>
   /** Stop timers; the engine does nothing afterwards. */
   dispose(): void
 }

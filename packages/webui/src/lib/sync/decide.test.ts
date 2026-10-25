@@ -90,10 +90,33 @@ describe('decide: the cells the table leaves open', () => {
     }
   })
 
-  test('the cloud copy is gone while bound to this account → decided like never bound', () => {
+  test('the cloud copy is gone while bound to this account and this browser holds data → prompt, never a silent upload', () => {
+    for (const dirty of [true, false]) {
+      const record = { boundStorageId: A, lastSyncedEtag: '"v1"', dirty }
+      expect(decide(input({ remote: none, localHasData: true, record }))).toEqual({
+        action: 'prompt',
+        reason: 'cloud-deleted',
+      })
+    }
+  })
+
+  test('the cloud copy is gone while bound and nothing is held here → bind, nothing to ask about', () => {
     const record = { boundStorageId: A, lastSyncedEtag: '"v1"', dirty: false }
+    expect(decide(input({ remote: none, localHasData: false, record }))).toEqual({ action: 'bind' })
+  })
+
+  test('bound to an empty cloud (no copy was ever synced) is the ordinary first upload, not a deletion', () => {
+    const record = { boundStorageId: A, lastSyncedEtag: null, dirty: true }
     expect(decide(input({ remote: none, localHasData: true, record }))).toEqual({ action: 'first-upload' })
     expect(decide(input({ remote: none, localHasData: false, record }))).toEqual({ action: 'bind' })
+  })
+
+  test('a different account wins over a deleted copy: the account switch is asked first', () => {
+    const record = { boundStorageId: B, lastSyncedEtag: '"v1"', dirty: false }
+    expect(decide(input({ remote: none, localHasData: true, record }))).toEqual({
+      action: 'prompt',
+      reason: 'account-switch',
+    })
   })
 
   test('bound without an ETag (bound to an empty cloud) pulls once a cloud copy appears', () => {

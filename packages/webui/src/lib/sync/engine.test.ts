@@ -133,6 +133,11 @@ class FakeServer {
         },
       })
     }
+    if (method === 'DELETE') {
+      // Everything stored for the account, whether or not anything existed.
+      this.object = null
+      return new Response(null, { status: 204 })
+    }
     const ifMatch = headers['If-Match']
     const ifNoneMatch = headers['If-None-Match']
     if ((ifMatch === undefined) === (ifNoneMatch === undefined)) {
@@ -344,12 +349,16 @@ describe('on start: the table rows', () => {
     expect(h.record()).toEqual(boundToA(true))
   })
 
-  test('a deleted cloud copy while bound: the local data goes up again', async () => {
+  test('a deleted cloud copy while bound: asks the user instead of uploading again', async () => {
     const h = make({ record: boundToA(false), hasData: true })
     await h.engine.setAccount(A)
 
-    expect(h.puts()[0].headers['If-None-Match']).toBe('*')
-    expect(h.record()).toMatchObject({ boundStorageId: A, lastSyncedEtag: h.server.etag, dirty: false })
+    expect(h.server.requests.map((r) => r.method)).toEqual(['HEAD'])
+    expect(h.puts()).toHaveLength(0)
+    expect(h.status()).toBe('conflict')
+    expect(h.engine.state().conflict).toMatchObject({ reason: 'cloud-deleted', storageId: A, boundStorageId: A })
+    expect(h.engine.state().conflict!.remote).toEqual({ kind: 'none' })
+    expect(h.record()).toEqual(boundToA(false))
   })
 })
 
@@ -1266,5 +1275,295 @@ describe('status events', () => {
     await h.engine.sync()
     await h.engine.flush()
     expect(h.server.requests).toEqual([])
+  })
+})
+
+// ── A cloud copy that was deleted ───────────────────────────────────
+
+describe('a cloud copy that is gone while this browser is bound', () => {
+  test('with no data here: binds quietly, nothing to ask about', async () => {
+    const h = make({ record: boundToA(false), hasData: false })
+    await h.engine.setAccount(A)
+
+    expect(h.status()).toBe('synced')
+    expect(h.puts()).toHaveLength(0)
+    expect(h.record()).toMatchObject({ boundStorageId: A, lastSyncedEtag: null })
+  })
+
+  test('bound to an empty cloud (never synced a copy): the first edits upload without asking', async () => {
+    // A new account signed in with an empty browser, then the person added data: the ordinary path.
+    const h = make({ record: { boundStorageId: A, lastSyncedEtag: null, dirty: true }, hasData: true })
+    await h.engine.setAccount(A)
+
+    expect(h.puts()).toHaveLength(1)
+    expect(h.puts()[0].headers['If-None-Match']).toBe('*')
+    expect(h.status()).toBe('synced')
+  })
+
+  test('a push that fails because the copy was deleted lands on the same question, never an upload', async () => {
+    const h = make({ cloud: 'cloud', record: boundToA(false), hasData: true })
+    await h.engine.setAccount(A)
+    h.server.requests.length = 0
+
+    h.engine.notifyChange()
+    h.server.object = null // another device deleted it
+    await h.clock.advance(30_000)
+
+    expect(h.server.requests.map((r) => r.method)).toEqual(['PUT', 'HEAD'])
+    expect(h.puts()[0].headers['If-Match']).toBe('"v1"')
+    expect(h.status()).toBe('conflict')
+    expect(h.engine.state().conflict).toMatchObject({ reason: 'cloud-deleted' })
+    expect(h.errors()).toEqual([])
+    expect(h.server.object).toBeNull()
+  })
+
+  test('upload again: replace-cloud creates the cloud copy and binds', async () => {
+    const h = make({ record: boundToA(false), hasData: true })
+    await h.engine.setAccount(A)
+    h.server.requests.length = 0
+
+    await h.engine.resolveConflict('replace-cloud')
+
+    expect(h.server.requests.map((r) => r.method)).toEqual(['HEAD', 'PUT'])
+    expect(h.puts()[0].headers['If-None-Match']).toBe('*')
+    expect(h.record()).toMatchObject({ boundStorageId: A, lastSyncedEtag: h.server.etag, dirty: false })
+    expect(h.status()).toBe('synced')
+    expect(h.engine.state().conflict).toBeNull()
+  })
+
+  test('use-cloud does not apply: there is no cloud copy to use', async () => {
+    const h = make({ record: boundToA(false), hasData: true })
+    await h.engine.setAccount(A)
+    h.server.requests.length = 0
+
+    await expect(h.engine.resolveConflict('use-cloud')).rejects.toThrow(/no cloud copy/)
+
+    expect(h.server.requests).toEqual([])
+    expect(h.runtime.imported).toEqual([])
+    expect(h.engine.state().conflict).toMatchObject({ reason: 'cloud-deleted' })
+  })
+
+  test('turn sync off: no request, unbound, off, and the conflict is gone', async () => {
+    const h = make({ record: boundToA(false), hasData: true })
+    await h.engine.setAccount(A)
+    h.server.requests.length = 0
+
+    await h.engine.resolveConflict('turn-off')
+
+    expect(h.server.requests).toEqual([])
+    expect(h.status()).toBe('off')
+    expect(h.engine.state().conflict).toBeNull()
+    expect(h.record()).toMatchObject({ boundStorageId: null, lastSyncedEtag: null, dirty: false, syncEnabled: false })
+    expect(h.runtime.exports + h.runtime.imported.length).toBe(0)
+  })
+
+  test('turn-off is also an answer to any other conflict', async () => {
+    const h = make({ cloud: 'cloud', hasData: true })
+    await h.engine.setAccount(A)
+    expect(h.engine.state().conflict).toMatchObject({ reason: 'unbound' })
+
+    await h.engine.resolveConflict('turn-off')
+
+    expect(h.status()).toBe('off')
+    expect(h.puts()).toHaveLength(0)
+    expect(h.runtime.imported).toEqual([])
+  })
+})
+
+describe('deleting the cloud copy', () => {
+  test('deletes, turns sync off here, unbinds, and leaves local data alone', async () => {
+    const h = make({ cloud: 'cloud', record: boundToA(false) })
+    await h.engine.setAccount(A)
+    h.server.requests.length = 0
+
+    await h.engine.deleteCloudCopy()
+
+    expect(h.server.requests.map((r) => r.method)).toEqual(['DELETE'])
+    expect(h.server.requests[0].credentials).toBe('include')
+    expect(h.server.object).toBeNull()
+    expect(h.status()).toBe('off')
+    expect(h.record()).toMatchObject({ boundStorageId: null, lastSyncedEtag: null, dirty: false, syncEnabled: false })
+    expect(h.events).toContainEqual({ type: 'cloud-deleted' })
+    // Nothing happened to this browser's database.
+    expect(h.runtime.exports).toBe(0)
+    expect(h.runtime.imported).toEqual([])
+  })
+
+  test('afterwards nothing is requested: not on start, sync, flush or edits', async () => {
+    const h = make({ cloud: 'cloud', record: boundToA(false), hasData: true })
+    await h.engine.setAccount(A)
+    await h.engine.deleteCloudCopy()
+    h.server.requests.length = 0
+
+    await h.engine.setAccount(A)
+    await h.engine.sync()
+    h.engine.notifyChange()
+    await h.engine.flush()
+    await h.clock.advance(120_000)
+
+    expect(h.server.requests).toEqual([])
+    expect(h.status()).toBe('off')
+    expect(h.clock.pending).toBe(0)
+    // Edits are not tracked while off: there is nothing to push.
+    expect(h.record()!.dirty).toBe(false)
+  })
+
+  test('cancels the debounced push and a pending conflict', async () => {
+    const h = make({ cloud: 'cloud', hasData: true })
+    await h.engine.setAccount(A)
+    expect(h.engine.state().conflict).not.toBeNull()
+    h.engine.notifyChange()
+
+    await h.engine.deleteCloudCopy()
+
+    expect(h.engine.state().conflict).toBeNull()
+    expect(h.clock.pending).toBe(0)
+    expect(h.status()).toBe('off')
+  })
+
+  test('a failed delete keeps sync on, reports the error and does not retry on its own', async () => {
+    const h = make({ cloud: 'cloud', record: boundToA(false) })
+    await h.engine.setAccount(A)
+    h.server.requests.length = 0
+    h.server.script.push(new Response(null, { status: 500 }))
+
+    await h.engine.deleteCloudCopy()
+
+    expect(h.status()).toBe('error')
+    expect(h.errors()).toEqual([expect.objectContaining({ code: 'server', status: 500 })])
+    expect(h.clock.pending).toBe(0)
+    expect(h.server.object).not.toBeNull()
+    expect(h.record()).toMatchObject({ boundStorageId: A, lastSyncedEtag: '"v1"' })
+    expect(h.record()!.syncEnabled).toBeUndefined()
+    expect(h.events).not.toContainEqual({ type: 'cloud-deleted' })
+
+    // The person asks again, or just syncs: the engine still works.
+    await h.engine.sync()
+    expect(h.status()).toBe('synced')
+  })
+
+  test('a signed-out answer stops the engine and changes nothing', async () => {
+    const h = make({ cloud: 'cloud', record: boundToA(false) })
+    await h.engine.setAccount(A)
+    h.server.script.push(new Response(null, { status: 401 }))
+
+    await h.engine.deleteCloudCopy()
+
+    expect(h.status()).toBe('signed-out')
+    expect(h.events).toContainEqual({ type: 'unauthorized' })
+    expect(h.record()!.syncEnabled).toBeUndefined()
+    expect(h.server.object).not.toBeNull()
+  })
+
+  test('still deletes when sync was already off', async () => {
+    const h = make({ cloud: 'cloud', record: { syncEnabled: false } })
+    await h.engine.setAccount(A)
+    expect(h.server.requests).toEqual([])
+    expect(h.status()).toBe('off')
+
+    await h.engine.deleteCloudCopy()
+
+    expect(h.server.requests.map((r) => r.method)).toEqual(['DELETE'])
+    expect(h.server.object).toBeNull()
+    expect(h.record()).toMatchObject({ syncEnabled: false })
+    expect(h.events).toContainEqual({ type: 'cloud-deleted' })
+  })
+
+  test('with no account there is no one to delete for', async () => {
+    const h = make({ cloud: 'cloud' })
+    await h.engine.deleteCloudCopy()
+    expect(h.server.requests).toEqual([])
+    expect(h.server.object).not.toBeNull()
+    expect(h.status()).toBe('idle')
+  })
+
+  test('another device that still syncs asks, rather than putting the copy back', async () => {
+    // Device 1 deletes. Device 2 is bound, clean, and holds the same data.
+    const device1 = make({ cloud: 'cloud', record: boundToA(false), hasData: true })
+    await device1.engine.setAccount(A)
+    await device1.engine.deleteCloudCopy()
+    expect(device1.server.object).toBeNull()
+
+    const device2 = make({ record: boundToA(false), hasData: true })
+    await device2.engine.setAccount(A) // its own fake service starts empty, as the real one now is
+
+    expect(device2.puts()).toHaveLength(0)
+    expect(device2.engine.state().conflict).toMatchObject({ reason: 'cloud-deleted' })
+  })
+})
+
+describe('turning sync off and on', () => {
+  test('disable: unbinds, cancels timers, and makes no request', async () => {
+    const h = make({ cloud: 'cloud', record: boundToA(false) })
+    await h.engine.setAccount(A)
+    h.engine.notifyChange()
+    expect(h.clock.pending).toBe(1)
+    h.server.requests.length = 0
+
+    await h.engine.disable()
+
+    expect(h.status()).toBe('off')
+    expect(h.clock.pending).toBe(0)
+    expect(h.server.requests).toEqual([])
+    expect(h.record()).toMatchObject({ boundStorageId: null, lastSyncedEtag: null, dirty: false, syncEnabled: false })
+    expect(Object.keys(h.record()!).sort()).toEqual([
+      'boundStorageId',
+      'dirty',
+      'lastSyncAt',
+      'lastSyncedEtag',
+      'syncEnabled',
+    ])
+  })
+
+  test('a browser that starts with sync off makes no request and says so', async () => {
+    const h = make({ cloud: 'cloud', record: { syncEnabled: false } })
+    await h.engine.setAccount(A)
+    await h.engine.sync()
+
+    expect(h.server.requests).toEqual([])
+    expect(h.status()).toBe('off')
+  })
+
+  test('signing out still reads as signed out', async () => {
+    const h = make({ record: { syncEnabled: false } })
+    await h.engine.setAccount(A)
+    expect(h.status()).toBe('off')
+    await h.engine.setAccount(null)
+    expect(h.status()).toBe('signed-out')
+  })
+
+  test('enable: with no cloud copy and data here, the first upload runs', async () => {
+    const h = make({ record: { syncEnabled: false }, hasData: true })
+    await h.engine.setAccount(A)
+    expect(h.server.requests).toEqual([])
+
+    await h.engine.enable()
+
+    expect(h.server.requests.map((r) => r.method)).toEqual(['HEAD', 'PUT'])
+    expect(h.puts()[0].headers['If-None-Match']).toBe('*')
+    expect(h.record()).toMatchObject({ boundStorageId: A, syncEnabled: true, dirty: false })
+    expect(h.status()).toBe('synced')
+  })
+
+  test('enable: with a cloud copy and an unbound browser, asks as on a first sign-in', async () => {
+    const h = make({ cloud: 'cloud', record: { syncEnabled: false }, hasData: true })
+    await h.engine.setAccount(A)
+
+    await h.engine.enable()
+
+    expect(h.status()).toBe('conflict')
+    expect(h.engine.state().conflict).toMatchObject({ reason: 'unbound' })
+    expect(h.puts()).toHaveLength(0)
+    expect(h.runtime.imported).toEqual([])
+  })
+
+  test('enable while signed out only switches it on; the next sign-in runs the table', async () => {
+    const h = make({ cloud: 'cloud', record: { syncEnabled: false } })
+    await h.engine.enable()
+    expect(h.server.requests).toEqual([])
+    expect(h.record()).toMatchObject({ syncEnabled: true })
+
+    await h.engine.setAccount(A)
+    expect(h.server.requests.map((r) => r.method)).toEqual(['HEAD'])
   })
 })

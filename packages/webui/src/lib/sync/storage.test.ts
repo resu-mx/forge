@@ -38,6 +38,20 @@ describe('parseSyncRecord', () => {
       'lastSyncedEtag',
     ])
   })
+
+  test('sync is on unless the record says false: absent and malformed values leave no field', () => {
+    // Records written before the field existed stay valid, and a hand edit cannot switch sync off by accident.
+    for (const syncEnabled of [undefined, true, null, 0, 'false', 'no']) {
+      expect('syncEnabled' in parseSyncRecord({ boundStorageId: 'a', syncEnabled })).toBe(false)
+    }
+  })
+
+  test('syncEnabled: false is kept: that is how "off" survives a reload', () => {
+    expect(parseSyncRecord({ boundStorageId: null, syncEnabled: false })).toEqual({
+      ...emptySyncRecord(),
+      syncEnabled: false,
+    })
+  })
 })
 
 describe('createLocalStorageSyncStorage', () => {
@@ -53,6 +67,18 @@ describe('createLocalStorageSyncStorage', () => {
     storage.set(record)
     expect(JSON.parse(backing.data[SYNC_STORAGE_KEY])).toEqual(record)
     expect(storage.get()).toEqual(record)
+  })
+
+  test('an off record round-trips through storage', () => {
+    const storage = createLocalStorageSyncStorage(memoryStorage())
+    storage.set({ boundStorageId: null, lastSyncedEtag: null, dirty: false, lastSyncAt: null, syncEnabled: false })
+    expect(storage.get()).toEqual({
+      boundStorageId: null,
+      lastSyncedEtag: null,
+      dirty: false,
+      lastSyncAt: null,
+      syncEnabled: false,
+    })
   })
 
   test('a corrupt stored value reads as nothing', () => {
