@@ -104,10 +104,15 @@ The R2 recipes run the CLI through a private `_r2` recipe. It loads `R2_ACCOUNT_
 - **Never printed:** credential values never reach argv and are never printed. Error messages
   name variables, not values, and the in-process credentials object redacts itself from logs,
   `JSON.stringify` and `Bun.inspect`.
-- **One token, the two demo buckets only:** a single R2 API token (Object Read & Write) is
-  scoped to `resumx-demo-data` and `resumx-demo-data-preview` and to nothing else. The buckets
-  that hold signed-in users' data have no static credential at all; only the sync service can
-  reach them. The production GitHub Environment adds reviewer protection.
+- **One token per bucket, each scoped to that bucket only:** two R2 API tokens (Object Read &
+  Write), one for `resumx-demo-data` and one for `resumx-demo-data-preview`, each in its own
+  1Password Environment. `r2-prod` loads the production one and `r2-preview` the preview one.
+  The buckets that hold signed-in users' data have no static credential at all; only the sync
+  service can reach them. The production GitHub Environment adds reviewer protection.
+- **Rotation:** a GitHub Environment holds only `OP_ENVIRONMENT_ID` and
+  `OP_SERVICE_ACCOUNT_TOKEN`; the R2 values live only in 1Password, so rotating a token changes
+  nothing in GitHub. Rolling a token keeps its scope, so create a new token to change it. Check
+  new credentials with `just demo-data ls preview` or `just demo-data ls prod`.
 
 ## Push guards
 
