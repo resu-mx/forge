@@ -13,7 +13,7 @@
     if (!runtime) return
     busy = true
     try {
-      const bytes = await runtime.exportDatabase()
+      const { bytes } = await runtime.exportDatabase()
       const blob = new Blob([bytes], { type: 'application/vnd.sqlite3' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

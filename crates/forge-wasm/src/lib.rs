@@ -10,6 +10,8 @@
 //!
 //! - [`dispatch`] — run one HTTP-shaped request through the router. Host-independent,
 //!   tested natively.
+//! - [`snapshot`] — read a database file's schema head and decide whether this bundle may
+//!   open it. Host-independent, tested natively.
 //! - `runtime` (wasm32 only) — OPFS storage, the database, and the wasm-bindgen
 //!   exports a Worker calls: `start`, `request`, `exportDatabase`, `importDatabase`.
 //! - [`skill_graph`], [`alignment`] — the browser-side compute modules (graph traversal,
@@ -30,6 +32,7 @@ pub mod alignment;
 pub mod dispatch;
 pub mod error;
 pub mod skill_graph;
+pub mod snapshot;
 
 #[cfg(target_arch = "wasm32")]
 pub mod runtime;

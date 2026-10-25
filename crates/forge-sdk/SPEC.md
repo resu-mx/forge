@@ -45,7 +45,7 @@ TS paths are relative to `packages/core/src/`. "none" means there is no TS count
 | `lib.rs` | module declarations, re-exports `Forge` | none |
 | `forge.rs` | `Forge`: open, PRAGMAs (WAL, foreign keys, busy timeout), migrations, `conn()` | `db/connection.ts` |
 | `db/mod.rs` | re-exports `stores::*` | none |
-| `db/migrate.rs` | `MIGRATIONS`: the TS `.sql` files embedded with `include_str!`, applied in order, tracked in `_migrations` | `db/migrate.ts` |
+| `db/migrate.rs` | `MIGRATIONS`: the TS `.sql` files embedded with `include_str!`, applied in order, tracked in `_migrations`. `known_head()` is the newest entry, `schema_head(conn)` the newest applied one, and `is_newer_than_known()` tells whether a database was written by a newer build (the list must stay in name order, a test checks it) | `db/migrate.ts` |
 | `db/backends/{mod,sqlite}.rs` | re-exports `rusqlite::Connection`; no backend trait yet | `storage/adapters/` |
 | `db/stores/mod.rs` | store re-exports, and the "stores are the service layer" contract | none |
 | `db/stores/{address,answer_bank,archetype,bullet,certification,contact,credential,derivation,domain,industry,note,organization,perspective,profile,resume,role_type,skill,source,summary,template}.rs` | `<Entity>Store`: SQL and validation for one entity and its junction tables | `services/<entity>-service.ts`, kebab-case (`answer_bank` is `services/answer-bank-service.ts`) |

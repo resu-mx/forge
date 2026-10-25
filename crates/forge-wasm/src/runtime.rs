@@ -15,18 +15,17 @@ use std::rc::Rc;
 
 use axum::Router;
 use forge_api::{app, AppState, SharedState};
+use forge_sdk::db::migrate::schema_head;
 use forge_sdk::Forge;
 use serde_json::json;
 use sqlite_wasm_vfs::sahpool::{install, OpfsSAHPoolCfg, OpfsSAHPoolUtil};
 use wasm_bindgen::prelude::*;
 
 use crate::dispatch::{dispatch, DispatchRequest};
+use crate::snapshot::{check_import, head_of_bytes, schema_report};
 
 /// The database file inside the OPFS pool.
 const DB_NAME: &str = "forge.db";
-
-/// First 16 bytes of every SQLite database file.
-const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
 
 struct Runtime {
     util: OpfsSAHPoolUtil,
@@ -56,15 +55,25 @@ fn migrations_applied(forge: &Forge) -> i64 {
         .unwrap_or(-1)
 }
 
+/// The newest migration applied to the open database, or `None` if it cannot be read.
+fn live_schema_head(forge: &Forge) -> Option<String> {
+    schema_head(forge.conn()).ok().flatten()
+}
+
 /// Install the OPFS VFS, open the database and build the router. Idempotent.
-/// Resolves to a small JSON status report.
+/// Resolves to a small JSON status report: `version` (the bundle version, also reported as
+/// `bundle_version`), `migrations`, the schema heads, and timings. A second call reports
+/// `already_started` and this bundle's own versions; the database's `schema_head` is only
+/// read when the database is opened.
 #[wasm_bindgen]
 pub async fn start() -> Result<String, JsValue> {
     console_error_panic_hook::set_once();
     if RUNTIME.with(|r| r.borrow().is_some()) {
-        return Ok(
-            json!({ "already_started": true, "version": crate::BUNDLE_VERSION }).to_string(),
-        );
+        let mut report = schema_report(None);
+        report.remove("schema_head");
+        report.insert("already_started".into(), json!(true));
+        report.insert("version".into(), json!(crate::BUNDLE_VERSION));
+        return Ok(serde_json::Value::Object(report).to_string());
     }
 
     let t0 = js_sys::Date::now();
@@ -75,6 +84,7 @@ pub async fn start() -> Result<String, JsValue> {
 
     let forge = Forge::open(DB_NAME).map_err(|e| js_err("open database", e))?;
     let migrations = migrations_applied(&forge);
+    let head = live_schema_head(&forge);
     let t_open = js_sys::Date::now();
 
     let state = AppState::new(forge);
@@ -87,13 +97,12 @@ pub async fn start() -> Result<String, JsValue> {
         }))
     });
 
-    Ok(json!({
-        "version": crate::BUNDLE_VERSION,
-        "migrations": migrations,
-        "ms_install_storage": t_vfs - t0,
-        "ms_open_and_migrate": t_open - t_vfs,
-    })
-    .to_string())
+    let mut report = schema_report(head.as_deref());
+    report.insert("version".into(), json!(crate::BUNDLE_VERSION));
+    report.insert("migrations".into(), json!(migrations));
+    report.insert("ms_install_storage".into(), json!(t_vfs - t0));
+    report.insert("ms_open_and_migrate".into(), json!(t_open - t_vfs));
+    Ok(serde_json::Value::Object(report).to_string())
 }
 
 /// Serve one request. `headers_json` is `[["name","value"], …]`. Resolves to
@@ -143,28 +152,73 @@ pub async fn request(
     Ok(out.into())
 }
 
-/// The whole database as a SQLite file, for backup or moving to another browser.
+/// The whole database as a SQLite file, for backup, moving to another browser, or a cloud
+/// snapshot. Resolves to `{ bytes, schema_head, known_head, bundle_version }`: the file plus
+/// what a snapshot upload must declare about it. `schema_head` is read from the exported
+/// bytes themselves and is `null` when they cannot be read as a database (the bytes are
+/// returned regardless, so a damaged database can still be saved).
 #[wasm_bindgen(js_name = exportDatabase)]
-pub fn export_database() -> Result<Vec<u8>, JsValue> {
+pub fn export_database() -> Result<JsValue, JsValue> {
     let rt = runtime()?;
-    rt.util
+    let bytes = rt
+        .util
         .export_db(DB_NAME)
-        .map_err(|e| js_err("export database", e))
+        .map_err(|e| js_err("export database", e))?;
+    let head = head_of_bytes(&bytes).ok().flatten();
+
+    let out = js_sys::Object::new();
+    let set =
+        |key: &str, value: JsValue| js_sys::Reflect::set(&out, &JsValue::from_str(key), &value);
+    set("bytes", js_sys::Uint8Array::from(bytes.as_slice()).into())?;
+    set(
+        "schema_head",
+        head.as_deref().map_or(JsValue::NULL, JsValue::from_str),
+    )?;
+    set(
+        "known_head",
+        JsValue::from_str(forge_sdk::db::migrate::known_head()),
+    )?;
+    set("bundle_version", JsValue::from_str(crate::BUNDLE_VERSION))?;
+    Ok(out.into())
+}
+
+/// Put `previous` back after a failed import and report `cause`. If even that fails the
+/// message says so, because then the data exists only in the caller's copy.
+fn restore_previous(rt: &Runtime, previous: &[u8], cause: impl std::fmt::Display) -> JsValue {
+    let restored = rt
+        .util
+        .delete_db(DB_NAME)
+        .and_then(|_| rt.util.import_db(DB_NAME, previous));
+    let reopened = Forge::open(DB_NAME);
+    match (restored, reopened) {
+        (Ok(_), Ok(forge)) => {
+            let _ = rt.state.replace(forge);
+            js_err("import rejected, current data kept", cause)
+        }
+        (restore, reopen) => JsValue::from_str(&format!(
+            "import failed ({cause}) and the previous data could not be restored (restore: {:?}, reopen: {:?}); the exported copy in memory is lost on reload",
+            restore.err().map(|e| e.to_string()),
+            reopen.err().map(|e| e.to_string()),
+        )),
+    }
 }
 
 /// Replace the database with a SQLite file (for example a TS `forge.db`, checkpointed
 /// first so no `-wal` file is needed). Migrations run on the imported data, so an
 /// older database is brought up to date. On a bad file the current database is kept.
+///
+/// A file written by a newer bundle (its newest migration is past this bundle's) is
+/// refused. That is decided from the file's bytes, in memory, before any storage is
+/// touched. A refusal is thrown as JSON `{ code, message, known_head, schema_head? }` with
+/// `code` one of `not_sqlite`, `invalid_database` or `schema_too_new`. Resolves to
+/// `{ imported_bytes, migrations, schema_head, known_head, bundle_version }`, where
+/// `schema_head` is the database's newest migration once it has been brought up to date.
 #[wasm_bindgen(js_name = importDatabase)]
 pub fn import_database(bytes: Vec<u8>) -> Result<String, JsValue> {
     let rt = runtime()?;
 
-    // Reject the obvious non-databases before touching any storage.
-    if bytes.len() < SQLITE_HEADER.len() || &bytes[..SQLITE_HEADER.len()] != SQLITE_HEADER {
-        return Err(JsValue::from_str(
-            "import rejected, current data kept: not a SQLite database file",
-        ));
-    }
+    // Refuse what this bundle must not open before touching any storage.
+    check_import(&bytes).map_err(|refusal| JsValue::from_str(&refusal.to_json()))?;
 
     // The pool will not import over an existing file, so the old one is deleted first.
     // Keep its bytes so a failure after that point can put everything back.
@@ -186,28 +240,26 @@ pub fn import_database(bytes: Vec<u8>) -> Result<String, JsValue> {
         .delete_db(DB_NAME)
         .and_then(|_| rt.util.import_db(DB_NAME, &bytes));
     if let Err(e) = imported {
-        // Restore what was there, then report the failure.
-        let restored = rt
-            .util
-            .delete_db(DB_NAME)
-            .and_then(|_| rt.util.import_db(DB_NAME, &previous));
-        let reopened = Forge::open(DB_NAME);
-        return match (restored, reopened) {
-            (Ok(_), Ok(forge)) => {
-                let _ = rt.state.replace(forge);
-                Err(js_err("import rejected, current data kept", e))
-            }
-            (restore, reopen) => Err(JsValue::from_str(&format!(
-                "import failed ({e}) and the previous data could not be restored (restore: {:?}, reopen: {:?}); the exported copy in memory is lost on reload",
-                restore.err().map(|e| e.to_string()),
-                reopen.err().map(|e| e.to_string()),
-            ))),
-        };
+        return Err(restore_previous(&rt, &previous, e));
     }
 
-    let forge =
-        Forge::open(DB_NAME).map_err(|e| js_err("could not open the imported database", e))?;
+    // Opening runs the migrations; if they fail on this file, put the old data back too.
+    let forge = match Forge::open(DB_NAME) {
+        Ok(forge) => forge,
+        Err(e) => {
+            return Err(restore_previous(
+                &rt,
+                &previous,
+                format!("could not open the imported database: {e}"),
+            ))
+        }
+    };
     let migrations = migrations_applied(&forge);
+    let head = live_schema_head(&forge);
     let _ = rt.state.replace(forge);
-    Ok(json!({ "imported_bytes": bytes.len(), "migrations": migrations }).to_string())
+
+    let mut report = schema_report(head.as_deref());
+    report.insert("imported_bytes".into(), json!(bytes.len()));
+    report.insert("migrations".into(), json!(migrations));
+    Ok(serde_json::Value::Object(report).to_string())
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createRuntime, installApiFetch, type LockManagerLike, type WorkerLike } from './client'
+import { createRuntime, ImportRefusedError, installApiFetch, type LockManagerLike, type WorkerLike } from './client'
 import type { WorkerRequest } from './protocol'
 
 // ── Fakes ───────────────────────────────────────────────────────────
@@ -57,10 +57,21 @@ class FakeLocks implements LockManagerLike {
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
+/** The newest migration this fake bundle knows, as forge-wasm reports it. */
+const HEAD = '055_dataset_meta'
+
+const START_INFO = {
+  version: '0.1.0',
+  bundle_version: '0.1.0',
+  migrations: 52,
+  schema_head: HEAD,
+  known_head: HEAD,
+}
+
 const okBehaviour = (msg: WorkerRequest): unknown => {
   switch (msg.op) {
     case 'start':
-      return { version: '0.1.0', migrations: 52 }
+      return START_INFO
     case 'request':
       if (msg.path === '/api/nothing') return { status: 204, headers: [], body: new Uint8Array() }
       return {
@@ -69,9 +80,15 @@ const okBehaviour = (msg: WorkerRequest): unknown => {
         body: new TextEncoder().encode(JSON.stringify({ method: msg.method, bytes: msg.body.byteLength })),
       }
     case 'export':
-      return new Uint8Array([1, 2, 3])
+      return { bytes: new Uint8Array([1, 2, 3]), schema_head: HEAD, known_head: HEAD, bundle_version: '0.1.0' }
     case 'import':
-      return { imported_bytes: msg.bytes.byteLength, migrations: 52 }
+      return {
+        imported_bytes: msg.bytes.byteLength,
+        migrations: 52,
+        schema_head: HEAD,
+        known_head: HEAD,
+        bundle_version: '0.1.0',
+      }
   }
 }
 
@@ -108,7 +125,7 @@ describe('createRuntime: owning the database', () => {
     await runtime.ready
     expect(workers).toHaveLength(1)
     expect(workers[0].received[0].op).toBe('start')
-    expect(runtime.status()).toEqual({ state: 'ready', info: { version: '0.1.0', migrations: 52 }, persisted: true })
+    expect(runtime.status()).toEqual({ state: 'ready', info: START_INFO, persisted: true })
   })
 
   test('reports whether persistent storage was granted, and survives persist() throwing', async () => {
@@ -283,14 +300,34 @@ describe('createRuntime: fetch', () => {
 // ── Export / import ─────────────────────────────────────────────────
 
 describe('createRuntime: database export and import', () => {
-  test('exports bytes from the worker', async () => {
+  test('exports the bytes with the schema head and the bundle that wrote them', async () => {
     const { runtime } = runtimeWith(new FakeLocks())
-    expect(Array.from(await runtime.exportDatabase())).toEqual([1, 2, 3])
+    const out = await runtime.exportDatabase()
+    expect(Array.from(out.bytes)).toEqual([1, 2, 3])
+    expect(out.schema_head).toBe(HEAD)
+    expect(out.known_head).toBe(HEAD)
+    expect(out.bundle_version).toBe('0.1.0')
   })
 
-  test('imports bytes and reports what the worker did', async () => {
+  test('start reports the schema head, the known head and the bundle version', async () => {
     const { runtime } = runtimeWith(new FakeLocks())
-    expect(await runtime.importDatabase(new Uint8Array(10))).toEqual({ imported_bytes: 10, migrations: 52 })
+    await runtime.ready
+    const status = runtime.status()
+    if (status.state !== 'ready') throw new Error('not ready')
+    expect(status.info.schema_head).toBe(HEAD)
+    expect(status.info.known_head).toBe(HEAD)
+    expect(status.info.bundle_version).toBe('0.1.0')
+  })
+
+  test('imports bytes and reports what the worker did, including the schema head', async () => {
+    const { runtime } = runtimeWith(new FakeLocks())
+    expect(await runtime.importDatabase(new Uint8Array(10))).toEqual({
+      imported_bytes: 10,
+      migrations: 52,
+      schema_head: HEAD,
+      known_head: HEAD,
+      bundle_version: '0.1.0',
+    })
   })
 
   test('a rejected import surfaces the worker message', async () => {
@@ -298,7 +335,78 @@ describe('createRuntime: database export and import', () => {
       if (msg.op === 'import') throw new Error('import rejected, current data kept: not a database')
       return okBehaviour(msg)
     })
-    await expect(runtime.importDatabase(new Uint8Array(3))).rejects.toThrow('current data kept')
+    const error = await runtime.importDatabase(new Uint8Array(3)).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(ImportRefusedError)
+    expect((error as Error).message).toContain('current data kept')
+  })
+})
+
+// ── Refusing a snapshot from a newer bundle ─────────────────────────
+
+/** What forge-wasm throws for a refused import: JSON in the error message. */
+const refusal = (fields: Record<string, unknown>) =>
+  JSON.stringify({ message: 'import rejected, current data kept: refused', known_head: HEAD, ...fields })
+
+describe('createRuntime: importing a database written by a newer bundle', () => {
+  const newer = refusal({
+    code: 'schema_too_new',
+    schema_head: '999_from_the_future',
+    message: 'import rejected, current data kept: this database was written by a newer version of Forge',
+  })
+
+  test('is refused with a typed error that carries both heads', async () => {
+    const { runtime } = runtimeWith(new FakeLocks(), (msg) => {
+      if (msg.op === 'import') throw new Error(newer)
+      return okBehaviour(msg)
+    })
+    const error = await runtime.importDatabase(new Uint8Array(3)).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ImportRefusedError)
+    const refused = error as ImportRefusedError
+    expect(refused.code).toBe('schema_too_new')
+    expect(refused.schemaHead).toBe('999_from_the_future')
+    expect(refused.knownHead).toBe(HEAD)
+    expect(refused.message).toBe('import rejected, current data kept: this database was written by a newer version of Forge')
+  })
+
+  test('leaves the database open: the runtime stays ready and keeps serving requests', async () => {
+    const { runtime, workers } = runtimeWith(new FakeLocks(), (msg) => {
+      if (msg.op === 'import') throw new Error(newer)
+      return okBehaviour(msg)
+    })
+    await runtime.ready
+    await expect(runtime.importDatabase(new Uint8Array(3))).rejects.toBeInstanceOf(ImportRefusedError)
+
+    expect(runtime.status().state).toBe('ready')
+    expect((await runtime.fetch('/api/health')).status).toBe(200)
+    // The one Worker is still the database owner: nothing was restarted.
+    expect(workers).toHaveLength(1)
+    expect(workers[0].terminated).toBe(false)
+  })
+
+  test('each refusal code maps to its own typed error', async () => {
+    for (const code of ['not_sqlite', 'invalid_database', 'schema_too_new'] as const) {
+      const { runtime } = runtimeWith(new FakeLocks(), (msg) => {
+        if (msg.op === 'import') throw new Error(refusal({ code }))
+        return okBehaviour(msg)
+      })
+      const error = (await runtime.importDatabase(new Uint8Array(3)).catch((e: unknown) => e)) as ImportRefusedError
+      expect(error).toBeInstanceOf(ImportRefusedError)
+      expect(error.code).toBe(code)
+    }
+  })
+
+  test('JSON with an unknown code, and a non-JSON message, stay plain errors', async () => {
+    for (const message of [refusal({ code: 'something_else' }), '{"code":"schema_too_new"}', 'import failed (disk full)']) {
+      const { runtime } = runtimeWith(new FakeLocks(), (msg) => {
+        if (msg.op === 'import') throw new Error(message)
+        return okBehaviour(msg)
+      })
+      const error = await runtime.importDatabase(new Uint8Array(3)).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(Error)
+      expect(error).not.toBeInstanceOf(ImportRefusedError)
+      expect((error as Error).message).toBe(message)
+    }
   })
 })
 

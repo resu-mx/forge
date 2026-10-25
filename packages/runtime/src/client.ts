@@ -8,8 +8,11 @@
  */
 
 import type {
+  ExportInfo,
   HeaderPairs,
   ImportInfo,
+  ImportRefusal,
+  ImportRefusalCode,
   PdfReply,
   PdfRequest,
   RawResponse,
@@ -90,6 +93,40 @@ function changesData(method: string, pathname: string): boolean {
   return true
 }
 
+/**
+ * `importDatabase` refused the file and kept the current data. `code` says why; `message` is
+ * for people. A file from a newer bundle is `schema_too_new`, with both heads attached.
+ */
+export class ImportRefusedError extends Error {
+  readonly code: ImportRefusalCode
+  /** Newest migration this bundle knows. */
+  readonly knownHead: string
+  /** The file's newest migration (`schema_too_new` only). */
+  readonly schemaHead?: string
+
+  constructor(refusal: ImportRefusal) {
+    super(refusal.message)
+    this.name = 'ImportRefusedError'
+    this.code = refusal.code
+    this.knownHead = refusal.known_head
+    this.schemaHead = refusal.schema_head
+  }
+}
+
+const IMPORT_REFUSAL_CODES = new Set<string>(['not_sqlite', 'invalid_database', 'schema_too_new'])
+
+/** The refusal the Worker threw as JSON, or the original error when it is anything else. */
+function asImportError(e: unknown): unknown {
+  if (!(e instanceof Error)) return e
+  try {
+    const v = JSON.parse(e.message)
+    if (v && IMPORT_REFUSAL_CODES.has(v.code) && typeof v.message === 'string') return new ImportRefusedError(v)
+  } catch {
+    // a plain message: not a refusal
+  }
+  return e
+}
+
 export interface ForgeRuntime {
   status(): RuntimeStatus
   onStatus(listener: (status: RuntimeStatus) => void): () => void
@@ -97,9 +134,17 @@ export interface ForgeRuntime {
   ready: Promise<void>
   /** Serves `/api/...` from the Worker. Same signature as the platform `fetch`. */
   fetch: typeof fetch
-  /** The whole database as a SQLite file. */
-  exportDatabase(): Promise<Uint8Array>
-  /** Replace the database with a SQLite file. Keeps the current data if the file is rejected. */
+  /**
+   * The whole database as a SQLite file (`bytes`), with the schema head it carries and the
+   * bundle that wrote it. A snapshot upload declares `schema_head` and `bundle_version`.
+   */
+  exportDatabase(): Promise<ExportInfo>
+  /**
+   * Replace the database with a SQLite file. Keeps the current data, and leaves the database
+   * open, if the file is rejected. A file written by a newer bundle (`schema_head` past this
+   * bundle's `known_head`) is refused with an `ImportRefusedError` (`schema_too_new`) before
+   * anything is replaced.
+   */
   importDatabase(bytes: Uint8Array): Promise<ImportInfo>
 }
 
@@ -433,11 +478,16 @@ export function createRuntime(options: RuntimeOptions): ForgeRuntime {
     fetch: runtimeFetch as typeof fetch,
     async exportDatabase() {
       await ready
-      return call<Uint8Array>({ op: 'export' })
+      return call<ExportInfo>({ op: 'export' })
     },
     async importDatabase(bytes) {
       await ready
-      const info = await call<ImportInfo>({ op: 'import', bytes }, [bytes.buffer as ArrayBuffer])
+      let info: ImportInfo
+      try {
+        info = await call<ImportInfo>({ op: 'import', bytes }, [bytes.buffer as ArrayBuffer])
+      } catch (e) {
+        throw asImportError(e)
+      }
       announceChange({ method: 'IMPORT', path: '/database' })
       return info
     },
