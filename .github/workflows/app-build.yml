@@ -71,9 +71,9 @@ jobs:
           # connect-src). Public product hosts; these match the defaults in src/lib/config-defaults.js.
           VITE_ID_URL: https://id.resu.mx
           VITE_DATA_URL: https://data.resu.mx
-          # Cloud sync ships built in but dark: nothing is shown or requested until this is `on`.
-          # Switch it on when the snapshot service is deployed; back to `off` removes the feature.
-          VITE_CLOUD_SYNC: 'off'
+          # Cloud sync is on: the account and snapshot services are live. Any other value removes the
+          # feature from the build, and nothing is shown or requested.
+          VITE_CLOUD_SYNC: 'on'
 
       - name: Check limits and shape
         run: bash scripts/check-app-build.sh packages/webui/build
