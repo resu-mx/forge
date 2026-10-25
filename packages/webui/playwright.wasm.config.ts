@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test'
+import { E2E_DATA_URL, E2E_ID_URL } from './e2e/wasm/e2e-hosts'
 
 // The browser-first acceptance spec: the Rust API runs inside the page, so the only server is
 // the one serving the static UI. Build the wasm bundles first (`just wasm-bundle typst-bundle`).
@@ -30,6 +31,10 @@ export default defineConfig({
       ? `bun run build && bun run preview --port ${PORT} --strictPort`
       : `bun run dev --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
+    // Point the account and snapshot services at hosts that exist only inside the specs
+    // (auth.spec.ts stubs them). A dev server you started yourself and reuse here keeps the
+    // real defaults, and then that spec cannot see its stubs: start it with these two variables.
+    env: { VITE_ID_URL: E2E_ID_URL, VITE_DATA_URL: E2E_DATA_URL },
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
   },

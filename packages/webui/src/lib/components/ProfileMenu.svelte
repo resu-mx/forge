@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import { formatPhone } from '$lib/format'
   import { extensionPagesAvailable } from '$lib/extension-gate'
+  import { getSession, signIn, signOut } from '$lib/stores/session.svelte'
 
   /**
    * Profile flyout menu component.
@@ -105,6 +106,16 @@
     onclose()
   }
 
+  // Account (id.resu.mx). Where sign-in is unavailable `available` is false and the menu keeps
+  // its original "Login / Logout" entry.
+  let session = $derived(getSession())
+  let accountLabel = $derived(session.user?.email ?? session.user?.name ?? 'your account')
+
+  function accountAction(action: () => Promise<void>) {
+    onclose()
+    void action()
+  }
+
   // Derived display values
   let displayPhone = $derived(formatPhone(profile?.phone))
   let displayLocation = $derived(profile?.location ?? '')
@@ -164,9 +175,27 @@
     <!-- Account section -->
     <div class="menu-section">
       <span class="section-header">Account</span>
-      <button class="menu-item menu-link" onclick={() => navigateTo('/config/account')}>
-        Login / Logout
-      </button>
+      {#if !session.available}
+        <button class="menu-item menu-link" onclick={() => navigateTo('/config/account')}>
+          Login / Logout
+        </button>
+      {:else if session.state === 'in'}
+        <span class="profile-detail" data-testid="menu-account-email">Signed in as {accountLabel}</span>
+        <button
+          class="btn btn-ghost btn-sm account-action"
+          onclick={() => accountAction(signOut)}
+          disabled={session.busy}
+        >Sign out</button>
+      {:else if session.state === 'out'}
+        <span class="profile-detail">Not signed in. Your data stays in this browser.</span>
+        <button
+          class="btn btn-primary btn-sm account-action"
+          onclick={() => accountAction(signIn)}
+          disabled={session.busy}
+        >Sign in</button>
+      {:else}
+        <span class="profile-detail">Account unavailable right now.</span>
+      {/if}
     </div>
 
     <!-- Config section -->
@@ -325,6 +354,11 @@
     font-size: var(--text-sm);
     color: var(--text-secondary);
     margin-bottom: var(--space-1);
+  }
+
+  .account-action {
+    width: 100%;
+    margin: var(--space-1) 0;
   }
 
   .social-links {

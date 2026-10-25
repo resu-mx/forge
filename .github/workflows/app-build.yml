@@ -67,6 +67,10 @@ jobs:
         run: bun run --filter '@forge/webui' build
         env:
           VITE_FORGE_MODE: wasm
+          # The account and snapshot services the app talks to (also allowed in the CSP's
+          # connect-src). Public product hosts; these match the defaults in src/lib/config-defaults.js.
+          VITE_ID_URL: https://id.resu.mx
+          VITE_DATA_URL: https://data.resu.mx
 
       - name: Check limits and shape
         run: bash scripts/check-app-build.sh packages/webui/build
