@@ -2,7 +2,7 @@
 //! and applies them in order, tracking state in `_migrations`.
 
 use forge_core::ForgeError;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 /// Embedded SQL migrations in filename-sorted order.
 /// Source: `packages/core/src/db/migrations/*.sql`
@@ -108,16 +108,49 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, ForgeError> {
     Ok(count)
 }
 
-/// Get the set of migration names already applied.
-fn get_applied(conn: &Connection) -> Result<Vec<String>, ForgeError> {
-    // Check if _migrations table exists
-    let exists: bool = conn.query_row(
+/// Name of the newest migration this build knows: the last entry of [`MIGRATIONS`].
+///
+/// Names are zero-padded (`055_dataset_meta`), so the last entry is also the greatest by
+/// name; a test keeps the list in that order.
+pub fn known_head() -> &'static str {
+    MIGRATIONS.last().map_or("", |&(name, _)| name)
+}
+
+/// Name of the newest migration applied to the database behind `conn`, or `None` when the
+/// database has no `_migrations` rows (a new file, or not a Forge database).
+///
+/// "Newest" is the greatest name, the same ordering the demo-data tooling uses
+/// (`SELECT name FROM _migrations ORDER BY name DESC LIMIT 1`).
+pub fn schema_head(conn: &Connection) -> Result<Option<String>, ForgeError> {
+    if !has_migrations_table(conn)? {
+        return Ok(None);
+    }
+    Ok(conn
+        .query_row(
+            "SELECT name FROM _migrations ORDER BY name DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+/// True when `head` names a migration newer than any this build knows, so a database that
+/// has it was written by a newer bundle and must not be opened by this one.
+pub fn is_newer_than_known(head: &str) -> bool {
+    head > known_head()
+}
+
+fn has_migrations_table(conn: &Connection) -> Result<bool, ForgeError> {
+    Ok(conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='_migrations')",
         [],
         |row| row.get(0),
-    )?;
+    )?)
+}
 
-    if !exists {
+/// Get the set of migration names already applied.
+fn get_applied(conn: &Connection) -> Result<Vec<String>, ForgeError> {
+    if !has_migrations_table(conn)? {
         return Ok(Vec::new());
     }
 
@@ -154,6 +187,57 @@ mod tests {
 
         let second = run_migrations(&conn).unwrap();
         assert_eq!(second, 0);
+    }
+
+    #[test]
+    fn migrations_are_listed_in_name_order() {
+        // `known_head` is the last entry and `schema_head` orders by name, so the two only
+        // agree while the list is strictly increasing.
+        for pair in MIGRATIONS.windows(2) {
+            assert!(
+                pair[0].0 < pair[1].0,
+                "MIGRATIONS out of order: {} then {}",
+                pair[0].0,
+                pair[1].0
+            );
+        }
+    }
+
+    #[test]
+    fn known_head_is_the_newest_entry() {
+        assert_eq!(known_head(), MIGRATIONS.last().unwrap().0);
+        assert!(!is_newer_than_known(known_head()));
+        assert!(!is_newer_than_known("001_initial"));
+        assert!(is_newer_than_known("999_from_the_future"));
+    }
+
+    #[test]
+    fn schema_head_is_none_before_any_migration() {
+        let conn = Connection::open_in_memory().unwrap();
+        assert_eq!(schema_head(&conn).unwrap(), None);
+        // The table exists but is empty.
+        conn.execute_batch("CREATE TABLE _migrations (name TEXT PRIMARY KEY)")
+            .unwrap();
+        assert_eq!(schema_head(&conn).unwrap(), None);
+    }
+
+    #[test]
+    fn schema_head_after_migrating_is_the_known_head() {
+        let conn = fresh_db();
+        assert_eq!(schema_head(&conn).unwrap().as_deref(), Some(known_head()));
+    }
+
+    #[test]
+    fn schema_head_reports_a_newer_migration_than_this_build_knows() {
+        let conn = fresh_db();
+        conn.execute(
+            "INSERT INTO _migrations (name) VALUES ('999_from_the_future')",
+            [],
+        )
+        .unwrap();
+        let head = schema_head(&conn).unwrap().unwrap();
+        assert_eq!(head, "999_from_the_future");
+        assert!(is_newer_than_known(&head));
     }
 
     #[test]

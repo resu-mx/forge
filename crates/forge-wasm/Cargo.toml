@@ -16,7 +16,8 @@ crate-type = ["cdylib", "rlib"]
 forge-core = { workspace = true, features = ["rusqlite"] }
 forge-sdk = { workspace = true }
 forge-api = { workspace = true }
-rusqlite = { workspace = true }
+# `serialize`: read a snapshot's `_migrations` from memory before it replaces the live database.
+rusqlite = { workspace = true, features = ["serialize"] }
 # default-features = false: no tokio, so this builds for wasm32-unknown-unknown.
 axum = { version = "0.8", default-features = false, features = ["json", "query"] }
 tower = { workspace = true, features = ["util"] }

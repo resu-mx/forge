@@ -31,9 +31,10 @@ test('the runtime becomes ready after an import followed by an immediate reload,
   const b64 = file
     ? readFileSync(file).toString('base64')
     : await page.evaluate(async () => {
-        const runtime = (window as unknown as { forgeRuntime: { exportDatabase(): Promise<Uint8Array> } })
-          .forgeRuntime
-        const bytes = await runtime.exportDatabase()
+        const runtime = (
+          window as unknown as { forgeRuntime: { exportDatabase(): Promise<{ bytes: Uint8Array }> } }
+        ).forgeRuntime
+        const { bytes } = await runtime.exportDatabase()
         let s = ''
         for (const b of bytes) s += String.fromCharCode(b)
         return btoa(s)

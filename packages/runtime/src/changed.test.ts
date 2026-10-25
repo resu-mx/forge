@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { createRuntime, FORGE_CHANGED_EVENT, type ForgeChange, type LockManagerLike, type WorkerLike } from './client'
+import {
+  createRuntime,
+  FORGE_CHANGED_EVENT,
+  ImportRefusedError,
+  type ForgeChange,
+  type LockManagerLike,
+  type WorkerLike,
+} from './client'
 
 class FakeWorker implements WorkerLike {
   onmessage: ((event: MessageEvent) => void) | null = null
@@ -76,6 +83,25 @@ describe('forge:changed', () => {
     const { runtime, changes } = setup()
     await runtime.importDatabase(new Uint8Array([1]))
     expect(changes).toEqual([{ method: 'IMPORT', path: '/database' }])
+  })
+
+  test('an import the runtime refuses leaves the data as it was, so it is not a change', async () => {
+    const refusal = JSON.stringify({
+      code: 'schema_too_new',
+      message: 'import rejected, current data kept: newer',
+      known_head: '055_dataset_meta',
+      schema_head: '999_from_the_future',
+    })
+    const { runtime, changes } = setup(200, {
+      createWorker: () =>
+        new FakeWorker((msg) => {
+          if (msg.op === 'start') return { version: 't', migrations: 1 }
+          if (msg.op === 'import') throw new Error(refusal)
+          return { status: 200, headers: [], body: enc('{}') }
+        }),
+    })
+    await expect(runtime.importDatabase(new Uint8Array([1]))).rejects.toBeInstanceOf(ImportRefusedError)
+    expect(changes).toEqual([])
   })
 
   test('by default it is a DOM event on globalThis, and a throwing listener does not fail the request', async () => {
