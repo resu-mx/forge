@@ -53,11 +53,12 @@ the whole set stays well under R2's 8 KiB metadata limit. The object's `Content-
 
 | Bucket | Use | Lifecycle |
 |---|---|---|
-| `resumx-user-data` | production: the datasets people import | none |
-| `resumx-user-data-preview` | operator checks and the round-trip test | objects expire after 3 days |
+| `resumx-demo-data` | production: the datasets people import | none |
+| `resumx-demo-data-preview` | operator checks and the round-trip test | objects expire after 3 days |
 
 `R2_BUCKET_PROD` and `R2_BUCKET_PREVIEW` override the bucket names. Both buckets are managed in
-the infra repo.
+the infra repo. They hold demo data only: the buckets that hold signed-in users' own data are
+separate, and nothing in this package reads or writes them.
 
 ## Operator flow
 
@@ -103,8 +104,10 @@ The R2 recipes run the CLI through a private `_r2` recipe. It loads `R2_ACCOUNT_
 - **Never printed:** credential values never reach argv and are never printed. Error messages
   name variables, not values, and the in-process credentials object redacts itself from logs,
   `JSON.stringify` and `Bun.inspect`.
-- **One token, both buckets:** a single R2 API token (Object Read & Write) covers both buckets.
-  The production GitHub Environment adds reviewer protection.
+- **One token, the two demo buckets only:** a single R2 API token (Object Read & Write) is
+  scoped to `resumx-demo-data` and `resumx-demo-data-preview` and to nothing else. The buckets
+  that hold signed-in users' data have no static credential at all; only the sync service can
+  reach them. The production GitHub Environment adds reviewer protection.
 
 ## Push guards
 
