@@ -11,10 +11,16 @@
   import AlphaBanner from '$lib/components/AlphaBanner.svelte'
   import ChainViewModal from '$lib/components/ChainViewModal.svelte'
   import { chainViewState, closeChainView } from '$lib/stores/chain-view.svelte'
+  import { getSession, refreshSession, signIn, signOut } from '$lib/stores/session.svelte'
   import { navigation, isNavGroup } from '$lib/nav'
   import { forge } from '$lib/sdk'
 
   let { children } = $props()
+
+  // Account (id.resu.mx). Where sign-in is unavailable `available` is false and none of the
+  // account UI renders.
+  let session = $derived(getSession())
+  let accountLabel = $derived(session.user?.email ?? session.user?.name ?? 'Signed in')
 
   // Profile data for sidebar button and menu
   let profileData = $state<any>(null)
@@ -51,6 +57,9 @@
       }
     }
     loadProfile()
+    // A no-op where sign-in is unavailable. Never blocks the app: the local database does not
+    // wait on the account service.
+    void refreshSession()
   })
 
   // Accordion expanded state: keyed by group prefix.
@@ -136,6 +145,20 @@
         <span class="profile-name">{profileName}</span>
         <span class="profile-gear">&#9881;</span>
       </button>
+      {#if session.available}
+        {#if session.state === 'in'}
+          <div class="account-row" data-testid="account-signed-in">
+            <span class="account-email" title={accountLabel} data-testid="account-email">{accountLabel}</span>
+            <button class="btn btn-ghost btn-xs" onclick={signOut} disabled={session.busy}>Sign out</button>
+          </div>
+        {:else if session.state === 'out'}
+          <div class="account-row" data-testid="account-signed-out">
+            <button class="btn btn-primary btn-sm account-sign-in" onclick={signIn} disabled={session.busy}>
+              Sign in
+            </button>
+          </div>
+        {/if}
+      {/if}
     </div>
   </nav>
   <main class="content">
@@ -360,5 +383,26 @@
   .profile-gear {
     font-size: var(--text-base);
     color: var(--color-sidebar-text);
+  }
+
+  .account-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) 0;
+  }
+
+  .account-email {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-xs);
+    color: var(--color-sidebar-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-sign-in {
+    flex: 1;
   }
 </style>

@@ -19,6 +19,23 @@ needs `just api` running alongside).
     (`src/lib/forge-changed.ts`) shows agent writes made through `window.forge` without a
     reload. So far only `SourcesView` and `BulletsView` listen.
 
+## Accounts (sign-in)
+
+Signed out, the app is local-only and unchanged. Signed in, the account service (`id.resu.mx`,
+BetterAuth over Auth0) tells the app who you are; the contract is the snapshot-API spec.
+
+- `src/lib/config.ts`: `idUrl` / `dataUrl` (build variables `VITE_ID_URL` / `VITE_DATA_URL`, defaulting to the
+  production hosts) and `signInAvailable()` / `syncAvailable()`. They are true only on `app.resu.mx`,
+  `localhost` and `127.0.0.1`: a `*.pages.dev` preview cannot carry the `.resu.mx` cookie. Where they are
+  false the sign-in UI is not rendered and the app makes no request to the account service.
+- The defaults live in `src/lib/config-defaults.js` (plain JS) because `svelte.config.js` imports them to
+  build the CSP `connect-src`. Add a service host there, not in two places.
+- `src/lib/stores/session.svelte.ts` holds the `$state`; the logic is in `src/lib/session-core.ts`, which has
+  no Svelte in it so `bun test` can drive it with a stubbed `fetch`. How a refused invite-only sign-in comes
+  back on the URL is read in one function, `readAuthReturn`.
+- The wasm e2e build points both hosts at `*.e2e.test` (`e2e/wasm/e2e-hosts.ts`); `e2e/wasm/auth.spec.ts`
+  stubs them with `page.route`. Stub them in any spec that needs the signed-in UI.
+
 ## Acceptance spec
 
 `e2e/wasm/core-loop.spec.ts` drives the browser-first core loop in Chromium with no server
