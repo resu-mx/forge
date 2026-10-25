@@ -15,10 +15,14 @@ import type { DecideInput, Decision } from './types'
  * A different account always prompts, whatever the cloud holds, so one account's data is never
  * merged into another's without a choice (the local database belongs to the origin, not the user).
  *
- * Two cells the table leaves open:
+ * Cells the table leaves open:
  * - Equal ETag and clean is a `noop`.
- * - No cloud copy while this browser is bound to this account (it was deleted, from here or from
- *   another device) is decided like "never bound": upload what is here, or bind if there is nothing.
+ * - No cloud copy while this browser is bound to this account AND had synced a copy (it has a
+ *   last-synced ETag): the copy was deleted, here or from another device. If this browser holds data
+ *   that is a `prompt` (`cloud-deleted`), never a silent upload, so a deletion is not undone by a device
+ *   that did not see it. With nothing local to offer it just binds.
+ * - No cloud copy and bound with no last-synced ETag (bound to an empty cloud) is the ordinary first
+ *   upload: upload what is here, or bind if there is nothing.
  */
 export function decide({ remote, storageId, record, localHasData }: DecideInput): Decision {
   const { boundStorageId, lastSyncedEtag, dirty } = record
@@ -28,6 +32,9 @@ export function decide({ remote, storageId, record, localHasData }: DecideInput)
   }
 
   if (remote.kind === 'none') {
+    if (boundStorageId === storageId && lastSyncedEtag !== null && localHasData) {
+      return { action: 'prompt', reason: 'cloud-deleted' }
+    }
     return { action: localHasData ? 'first-upload' : 'bind' }
   }
 

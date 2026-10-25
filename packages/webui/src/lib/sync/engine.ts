@@ -15,6 +15,8 @@
  * - A 401 stops it (no retries); 413, 422, 428 and the like are not retried either; 429 waits
  *   for `Retry-After`; network and server errors back off, capped.
  * - A 412 on a push re-enters the decision table.
+ * - With sync turned off (`record.syncEnabled === false`) it makes no request at all. Deleting the
+ *   cloud copy turns sync off here, and another device that finds the copy gone asks before it uploads.
  */
 
 import { decide } from './decide'
@@ -107,6 +109,8 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     deps.storage.set(next)
     return next
   }
+  /** Sync is on unless the record says it was turned off. */
+  const enabled = (): boolean => read().syncEnabled !== false
 
   function emit(event: SyncEvent) {
     try {
@@ -149,9 +153,28 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     }, opts.debounceMs)
   }
 
+  /**
+   * Turn sync off here: unbind this browser and stop everything. Local data is untouched. Used by
+   * `disable()`, by "turn off" at a conflict and after the cloud copy is deleted.
+   */
+  function turnOff() {
+    cancelDebounce()
+    cancelRetry()
+    retryCount = 0
+    conflict = null
+    error = null
+    blocked = false
+    write({ boundStorageId: null, lastSyncedEtag: null, dirty: false, syncEnabled: false })
+    setStatus('off')
+  }
+
   /** Whether an operation may run now; sets the status when it may not. */
   function ready(): boolean {
     if (disposed || account === null) return false
+    if (!enabled()) {
+      setStatus('off')
+      return false
+    }
     if (!deps.isOwner()) {
       setStatus('not-owner')
       return false
@@ -198,7 +221,7 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     }
   }
 
-  async function request(method: 'HEAD' | 'GET' | 'PUT', headers: Record<string, string> = {}, body?: Uint8Array) {
+  async function request(method: 'HEAD' | 'GET' | 'PUT' | 'DELETE', headers: Record<string, string> = {}, body?: Uint8Array) {
     let res: Response
     try {
       res = await deps.fetch(url, {
@@ -403,6 +426,23 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     await runSync()
   }
 
+  /**
+   * Delete everything stored for the account, then turn sync off here. It runs even when sync is
+   * already off (someone who turned it off can still want the cloud copy gone) and does not need to
+   * be the owner tab: it touches the network and the sync record, not the database.
+   */
+  async function runDeleteCloudCopy(): Promise<void> {
+    if (disposed || account === null) return
+    cancelDebounce()
+    cancelRetry()
+    setStatus('syncing')
+    const res = await request('DELETE')
+    // 204 is the contract; the service answers it whether or not anything existed.
+    if (res.status !== 204 && res.status !== 200) throw failForStatus(res)
+    turnOff()
+    emit({ type: 'cloud-deleted' })
+  }
+
   // ── Failures ──────────────────────────────────────────────────────
 
   function backoffMs(attempt: number): number {
@@ -506,8 +546,9 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
     },
 
     notifyChange() {
-      // The change an import announces is the import itself, not an edit.
-      if (disposed || importing) return
+      // The change an import announces is the import itself, not an edit. With sync off there is
+      // nothing to push, so nothing is tracked.
+      if (disposed || importing || !enabled()) return
       changeSeq++
       if (!read().dirty) write({ dirty: true })
       scheduleDebounce()
@@ -525,6 +566,10 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
       return exclusive(async () => {
         const pending = conflict
         if (disposed || !pending || account === null) return
+        if (choice === 'turn-off') {
+          turnOff()
+          return
+        }
         if (choice === 'use-cloud' && pending.remote.kind === 'none') {
           throw new Error('There is no cloud copy to use; only "replace-cloud" applies to this conflict.')
         }
@@ -545,6 +590,34 @@ export function createSyncEngine(deps: SyncDeps): SyncEngine {
           }
           if (outcome === 'reenter') await runSync()
         }, null)
+      })
+    },
+
+    deleteCloudCopy() {
+      return exclusive(async () => {
+        // A failure keeps sync on and is reported; a delete that did not happen is not retried on
+        // its own, the person asks again.
+        await guarded(runDeleteCloudCopy, null)
+      })
+    },
+
+    disable() {
+      return exclusive(async () => {
+        if (disposed) return
+        turnOff()
+      })
+    },
+
+    enable() {
+      return exclusive(async () => {
+        if (disposed) return
+        write({ syncEnabled: true })
+        blocked = false
+        cancelRetry()
+        retryCount = 0
+        // Signed out: nothing to check yet. The next `setAccount` finds sync on and runs the table.
+        if (account === null) return
+        await syncOp()
       })
     },
 
