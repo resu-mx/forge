@@ -6,6 +6,9 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
+  # The app shell has nothing to index (the product page is resu.mx), and its pages.dev previews
+  # must stay out of search results.
+  X-Robots-Tag: noindex
   # The Content-Security-Policy is not here: SvelteKit's hash mode (svelte.config.js) adds it to
   # the page, because the SPA fallback has an inline bootstrap script whose hash only the build
   # knows.
