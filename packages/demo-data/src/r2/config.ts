@@ -15,8 +15,8 @@ export const CREDENTIAL_VARS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_
 
 /** The default bucket per target. */
 export const DEFAULT_BUCKETS: Readonly<Record<Target, string>> = {
-  prod: 'resumx-user-data',
-  preview: 'resumx-user-data-preview',
+  prod: 'resumx-demo-data',
+  preview: 'resumx-demo-data-preview',
 }
 
 /** The variable that overrides each target's bucket. */

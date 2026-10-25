@@ -47,7 +47,7 @@ test:
 push-preview persona="all" *flags="": (_r2 "r2-preview" "push" persona "--target" "preview" flags)
 
 # Upload a dataset (default: all personas) to the PRODUCTION bucket. Flags: --force, --allow-stale
-[confirm("Upload demo datasets to the PRODUCTION bucket resumx-user-data?")]
+[confirm("Upload demo datasets to the PRODUCTION bucket resumx-demo-data?")]
 publish persona="all" *flags="": (_r2 "r2-prod" "publish" persona "--yes" flags)
 
 # Download and verify a dataset (uuid or persona slug), then print the import steps. Flags: --out FILE, --force

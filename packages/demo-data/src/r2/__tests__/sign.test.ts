@@ -83,12 +83,12 @@ describe('config', () => {
     expect(String(cfg.credentials)).not.toContain(SECRET)
     expect(`${cfg.credentials}`).not.toContain(ENV.R2_ACCESS_KEY_ID)
     expect(String(Object.values({ ...cfg.credentials }))).not.toContain(SECRET)
-    expect(describeConfig(cfg)).toBe('preview bucket resumx-user-data-preview')
+    expect(describeConfig(cfg)).toBe('preview bucket resumx-demo-data-preview')
   })
 
   test('buckets default per target and can be overridden', () => {
     expect(bucketFor('prod', {})).toBe(DEFAULT_BUCKETS.prod)
-    expect(bucketFor('preview', {})).toBe('resumx-user-data-preview')
+    expect(bucketFor('preview', {})).toBe('resumx-demo-data-preview')
     expect(bucketFor('preview', { R2_BUCKET_PREVIEW: 'other-preview' })).toBe('other-preview')
     expect(bucketFor('prod', { R2_BUCKET_PROD: 'other-prod' })).toBe('other-prod')
     expect(() => bucketFor('preview', { R2_BUCKET_PREVIEW: 'Bad_Bucket' })).toThrow(R2ConfigError)
@@ -102,9 +102,9 @@ describe('config', () => {
   })
 
   test('the round-trip guard only accepts -preview buckets', () => {
-    expect(() => assertPreviewBucket('resumx-user-data-preview')).not.toThrow()
-    expect(() => assertPreviewBucket('resumx-user-data')).toThrow(/-preview/)
-    expect(() => assertPreviewBucket('resumx-user-data-preview-not')).toThrow()
+    expect(() => assertPreviewBucket('resumx-demo-data-preview')).not.toThrow()
+    expect(() => assertPreviewBucket('resumx-demo-data')).toThrow(/-preview/)
+    expect(() => assertPreviewBucket('resumx-demo-data-preview-not')).toThrow()
   })
 })
 
@@ -180,7 +180,7 @@ describe('signing (aws4fetch, no network)', () => {
   test('PUT goes to the path-style R2 endpoint with the SQLite content type', async () => {
     const req = await new R2Objects(config()).signPut(key, bytes, meta)
     expect(req.method).toBe('PUT')
-    expect(req.url).toBe(`https://${ENV.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/resumx-user-data-preview/${key}`)
+    expect(req.url).toBe(`https://${ENV.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/resumx-demo-data-preview/${key}`)
     expect(req.headers.get('content-type')).toBe(SQLITE_CONTENT_TYPE)
     expect(new Uint8Array(await req.arrayBuffer())).toEqual(bytes)
   })
@@ -233,7 +233,7 @@ describe('signing (aws4fetch, no network)', () => {
     for (const method of ['HEAD', 'GET', 'DELETE'] as const) {
       const req = await r2.signRequest(method, key)
       expect(req.method).toBe(method)
-      expect(req.url).toEndWith(`/resumx-user-data-preview/${key}`)
+      expect(req.url).toEndWith(`/resumx-demo-data-preview/${key}`)
       expect(authParts(req).signedHeaders).toContain('x-amz-date')
     }
   })
