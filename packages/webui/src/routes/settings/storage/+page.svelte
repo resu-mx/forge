@@ -1,11 +1,30 @@
 <script lang="ts">
   import { PageHeader, ConfirmDialog } from '$lib/components'
+  import { downloadBackup } from '$lib/backup'
   import { forgeMode, runtime } from '$lib/sdk'
   import { getRuntimeStatus } from '$lib/stores/runtime.svelte'
+  import { getSession, signIn } from '$lib/stores/session.svelte'
+  import {
+    deleteCloudCopy,
+    getSyncView,
+    reopenConflict,
+    syncNow,
+    turnSyncOff,
+    turnSyncOn,
+  } from '$lib/stores/sync.svelte'
   import { addToast } from '$lib/stores/toast.svelte'
+  import { errorMessage, lastSyncLabel, statusLabel } from '$lib/sync/copy'
 
   let status = $derived(getRuntimeStatus())
+  let sync = $derived(getSyncView())
+  let account = $derived(getSession())
+  let confirmingDelete = $state(false)
   let busy = $state(false)
+
+  async function confirmDeleteCloudCopy() {
+    confirmingDelete = false
+    await deleteCloudCopy()
+  }
   let pendingFile = $state<File | null>(null)
   let fileInput: HTMLInputElement | undefined = $state()
 
@@ -13,15 +32,8 @@
     if (!runtime) return
     busy = true
     try {
-      const { bytes } = await runtime.exportDatabase()
-      const blob = new Blob([bytes], { type: 'application/vnd.sqlite3' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `forge-${new Date().toISOString().slice(0, 10)}.db`
-      a.click()
-      URL.revokeObjectURL(url)
-      addToast({ message: `Exported ${(bytes.byteLength / 1024).toFixed(0)} KB`, type: 'success' })
+      const size = await downloadBackup(runtime)
+      addToast({ message: `Exported ${(size / 1024).toFixed(0)} KB`, type: 'success' })
     } catch (e) {
       addToast({ message: `Export failed: ${e instanceof Error ? e.message : e}`, type: 'error' })
     } finally {
@@ -83,6 +95,76 @@
       {/if}
     </div>
 
+    {#if sync.available}
+      <div class="card" data-testid="sync-card">
+        <h3>Cloud sync</h3>
+        {#if !sync.signedIn}
+          <p>
+            Sign in to back this browser's data up to the cloud and use it on your other devices. Signed
+            out, everything stays in this browser, as before.
+          </p>
+          {#if account.available && account.state === 'out'}
+            <div class="sync-actions">
+              <button class="btn btn-primary" onclick={signIn} disabled={account.busy} data-testid="sync-sign-in">
+                Sign in
+              </button>
+            </div>
+          {/if}
+        {:else}
+          <dl>
+            <dt>Status</dt><dd data-testid="sync-status">{statusLabel(sync, Date.now())}</dd>
+            <dt>Last synced</dt><dd data-testid="sync-last">{lastSyncLabel(sync.lastSyncAt, Date.now())}</dd>
+          </dl>
+          {#if sync.error}
+            <p class="error" data-testid="sync-error">{errorMessage(sync.error)}</p>
+          {/if}
+          {#if sync.enabled}
+            <p>
+              Your data is backed up automatically a short while after you change it, and whenever you leave
+              the page. Opening Forge on another device brings it up to date.
+            </p>
+          {:else}
+            <p>
+              Cloud sync is off in this browser. Nothing is sent to the cloud, and this browser keeps working
+              on its own. Turning it on checks your cloud copy first and asks before replacing anything.
+            </p>
+          {/if}
+          <div class="sync-actions">
+            {#if sync.conflict}
+              <button class="btn btn-primary" onclick={reopenConflict} data-testid="sync-resolve">
+                Choose which copy to keep
+              </button>
+            {/if}
+            {#if sync.enabled}
+              <button
+                class="btn btn-secondary"
+                onclick={syncNow}
+                disabled={sync.busy || sync.status === 'syncing'}
+                data-testid="sync-now"
+              >
+                Sync now
+              </button>
+              <button class="btn btn-ghost" onclick={turnSyncOff} disabled={sync.busy} data-testid="sync-toggle">
+                Turn off cloud sync
+              </button>
+            {:else}
+              <button class="btn btn-primary" onclick={turnSyncOn} disabled={sync.busy} data-testid="sync-toggle">
+                Turn on cloud sync
+              </button>
+            {/if}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (confirmingDelete = true)}
+              disabled={sync.busy}
+              data-testid="sync-delete"
+            >
+              Delete cloud copy
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
     <div class="card">
       <h3>Backup</h3>
       <p>
@@ -123,7 +205,21 @@
   oncancel={() => { pendingFile = null; if (fileInput) fileInput.value = '' }}
 />
 
+<ConfirmDialog
+  open={confirmingDelete}
+  title="Delete your cloud copy?"
+  message="This permanently deletes your cloud copy, including the earlier versions kept with it, and turns cloud sync off in this browser. The data in this browser is not touched. Your other devices will ask what to do the next time they sync."
+  confirmLabel="Delete cloud copy"
+  onconfirm={confirmDeleteCloudCopy}
+  oncancel={() => (confirmingDelete = false)}
+/>
+
 <style>
+  .sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
   .settings-page {
     max-width: 720px;
     display: flex;
